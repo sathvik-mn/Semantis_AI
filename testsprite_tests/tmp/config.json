@@ -1,0 +1,17 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:8000",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "Semantis_AI",
+    "projectPath": "D:\\Semantis_AI",
+    "testIds": [],
+    "additionalInstruction": "",
+    "envs": {
+      "API_KEY": "sk-user-UukR39BRZYZix-cb4Bs-Hv-UtCjsts6CGB9rNJjukAmC3c63iCrMJpZPlSRh7aVRTFVMs1oEz--xBWuEUULIl2QW5ruzpF1uwLsb5Ru4xKdSjmV60UxgZjlKGkhxh7i9h3o"
+    }
+  },
+  "proxy": "http://7c757215-a1f3-4430-a7dd-04a96bc2c251:So4wUUQpG6JW4phgZeSaqGMQ90t8DbKN@tun.testsprite.com:8080"
+}
