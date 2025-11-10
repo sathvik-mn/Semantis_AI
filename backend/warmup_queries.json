@@ -1,0 +1,63 @@
+[
+  {
+    "prompt": "What is artificial intelligence?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "Explain machine learning in simple terms",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is the difference between AI and ML?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "How does deep learning work?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is neural network?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is Python programming language?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "Explain REST API",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is Docker?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "How does caching work?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is semantic caching?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is the capital of France?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "Explain quantum computing",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What are the benefits of cloud computing?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "How does blockchain work?",
+    "model": "gpt-4o-mini"
+  },
+  {
+    "prompt": "What is cybersecurity?",
+    "model": "gpt-4o-mini"
+  }
+]
+

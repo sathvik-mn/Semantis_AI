@@ -1,0 +1,25 @@
+{
+  "total": 3,
+  "successful": 3,
+  "failed": 0,
+  "details": [
+    {
+      "prompt": "What is artificial intelligence?",
+      "status": "success",
+      "hit_type": "exact",
+      "latency_ms": 0.05
+    },
+    {
+      "prompt": "Explain machine learning in simple terms",
+      "status": "success",
+      "hit_type": "miss",
+      "latency_ms": 7011.78
+    },
+    {
+      "prompt": "What is the difference between AI and ML?",
+      "status": "success",
+      "hit_type": "miss",
+      "latency_ms": 15540.16
+    }
+  ]
+}
