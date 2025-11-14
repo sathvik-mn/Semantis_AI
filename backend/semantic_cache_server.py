@@ -50,8 +50,11 @@ os.makedirs("logs", exist_ok=True)
 def make_rotating_logger(name: str, filename: str, level=logging.INFO):
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    # Prevent duplicate handlers
+    if logger.handlers:
+        return logger
     handler = RotatingFileHandler(
-        os.path.join("logs", filename), maxBytes=5_000_000, backupCount=3
+        os.path.join("logs", filename), maxBytes=10_000_000, backupCount=5
     )
     formatter = logging.Formatter(
         fmt="%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"
@@ -64,9 +67,14 @@ def make_rotating_logger(name: str, filename: str, level=logging.INFO):
     logger.addHandler(stream)
     return logger
 
-access_log   = make_rotating_logger("access", "access.log", logging.INFO)
-error_log    = make_rotating_logger("errors", "errors.log", logging.ERROR)
-semantic_log = make_rotating_logger("semantic", "semantic_ops.log", logging.INFO)
+# Create comprehensive loggers
+access_log      = make_rotating_logger("access", "access.log", logging.INFO)
+error_log       = make_rotating_logger("errors", "errors.log", logging.ERROR)
+semantic_log    = make_rotating_logger("semantic", "semantic_ops.log", logging.INFO)
+performance_log = make_rotating_logger("performance", "performance.log", logging.INFO)
+security_log    = make_rotating_logger("security", "security.log", logging.WARNING)
+system_log      = make_rotating_logger("system", "system.log", logging.INFO)
+app_log         = make_rotating_logger("application", "application.log", logging.INFO)
 
 # -----------------------------
 # Domain heuristics (optional)
@@ -92,19 +100,60 @@ def domain_hint(text: str) -> str:
 # -----------------------------
 def get_embedding(text: str) -> np.ndarray:
     """Return L2-normalized embedding vector."""
-    resp = openai.embeddings.create(model=EMBED_MODEL, input=text)
-    v = np.array(resp.data[0].embedding, dtype="float32")
-    v /= (np.linalg.norm(v) + 1e-12)
-    return v
+    start_time = time.time()
+    try:
+        resp = openai.embeddings.create(model=EMBED_MODEL, input=text)
+        v = np.array(resp.data[0].embedding, dtype="float32")
+        v /= (np.linalg.norm(v) + 1e-12)
+        embedding_time = round((time.time() - start_time) * 1000, 2)
+        performance_log.debug(
+            f"Embedding generated | model={EMBED_MODEL} | "
+            f"text_len={len(text)} | time={embedding_time}ms"
+        )
+        return v
+    except Exception as e:
+        embedding_time = round((time.time() - start_time) * 1000, 2)
+        error_log.exception(
+            f"Embedding failed | model={EMBED_MODEL} | "
+            f"text_len={len(text)} | time={embedding_time}ms | error={str(e)}"
+        )
+        raise
 
 def call_llm(messages: List[dict], temperature: float = 0.2) -> str:
     """Minimal OpenAI chat call wrapper."""
-    resp = openai.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=messages,
-        temperature=temperature,
-    )
-    return resp.choices[0].message.content.strip()
+    start_time = time.time()
+    prompt_tokens = sum(len(m.get("content", "").split()) for m in messages)  # Rough estimate
+    try:
+        resp = openai.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=messages,
+            temperature=temperature,
+        )
+        llm_time = round((time.time() - start_time) * 1000, 2)
+        response_text = resp.choices[0].message.content.strip()
+        completion_tokens = len(response_text.split())  # Rough estimate
+        total_tokens = prompt_tokens + completion_tokens
+        
+        # Log LLM call
+        app_log.info(
+            f"LLM call | model={CHAT_MODEL} | temp={temperature} | "
+            f"prompt_tokens~={prompt_tokens} | completion_tokens~={completion_tokens} | "
+            f"total_tokens~={total_tokens} | time={llm_time}ms"
+        )
+        
+        performance_log.debug(
+            f"LLM performance | model={CHAT_MODEL} | time={llm_time}ms | "
+            f"tokens~={total_tokens}"
+        )
+        
+        return response_text
+    except Exception as e:
+        llm_time = round((time.time() - start_time) * 1000, 2)
+        error_log.exception(
+            f"LLM call failed | model={CHAT_MODEL} | temp={temperature} | "
+            f"time={llm_time}ms | error={str(e)}"
+        )
+        raise
 
 # -----------------------------
 # Cache data models
@@ -163,20 +212,37 @@ class SemanticCacheService:
         """Load cache from disk on startup."""
         try:
             from cache_persistence import load_cache
+            start_time = time.time()
             loaded_tenants = load_cache()
+            load_time = round((time.time() - start_time) * 1000, 2)
             if loaded_tenants:
+                total_entries = sum(len(t.rows) for t in loaded_tenants.values())
                 self.tenants.update(loaded_tenants)
-                print(f"Loaded cache for {len(loaded_tenants)} tenant(s) from disk")
+                system_log.info(
+                    f"Cache loaded | tenants={len(loaded_tenants)} | "
+                    f"entries={total_entries} | time={load_time}ms"
+                )
+            else:
+                system_log.info(f"Cache load | no cache found | time={load_time}ms")
         except Exception as e:
-            print(f"Could not load cache from disk: {e}")
+            error_log.exception(f"Cache load failed | error={str(e)}")
+            system_log.error(f"Could not load cache from disk: {e}")
     
     def _save_cache(self):
         """Save cache to disk periodically."""
         try:
             from cache_persistence import save_cache
+            start_time = time.time()
+            total_entries = sum(len(t.rows) for t in self.tenants.values())
             save_cache(self.tenants)
+            save_time = round((time.time() - start_time) * 1000, 2)
+            system_log.info(
+                f"Cache saved | tenants={len(self.tenants)} | "
+                f"entries={total_entries} | time={save_time}ms"
+            )
         except Exception as e:
-            print(f"Could not save cache to disk: {e}")
+            error_log.exception(f"Cache save failed | error={str(e)}")
+            system_log.error(f"Could not save cache to disk: {e}")
 
     def tenant(self, tenant_id: str) -> TenantState:
         if tenant_id not in self.tenants:
@@ -416,12 +482,78 @@ svc = SemanticCacheService()
 
 # Save cache on shutdown
 import atexit
+import signal
+
+def shutdown_handler(signum=None, frame=None):
+    """Handle graceful shutdown."""
+    system_log.info("Shutdown signal received | saving cache...")
+    try:
+        svc._save_cache()
+        system_log.info("Shutdown complete | cache saved")
+    except Exception as e:
+        error_log.exception(f"Shutdown error | {str(e)}")
+    finally:
+        import sys
+        sys.exit(0)
+
 atexit.register(lambda: svc._save_cache())
+signal.signal(signal.SIGTERM, shutdown_handler)
+signal.signal(signal.SIGINT, shutdown_handler)
 
 # -----------------------------
 # FastAPI app + middleware
 # -----------------------------
 app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all requests with detailed information."""
+    import uuid
+    start_time = time.time()
+    request_id = str(uuid.uuid4())[:8]
+    
+    # Get client IP
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+    
+    # Log request
+    access_log.info(
+        f"{request_id} | REQ | {request.method} {request.url.path} | "
+        f"tenant=extracting | ip={client_ip} | ua={user_agent[:100]}"
+    )
+    
+    try:
+        response = await call_next(request)
+        process_time = round((time.time() - start_time) * 1000, 2)
+        response_size = 0
+        if hasattr(response, 'body'):
+            try:
+                response_size = len(response.body) if response.body else 0
+            except:
+                pass
+        
+        access_log.info(
+            f"{request_id} | RESP | {request.method} {request.url.path} | "
+            f"status={response.status_code} | time={process_time}ms | size={response_size}B"
+        )
+        
+        # Log slow requests
+        if process_time > 5000:  # > 5 seconds
+            performance_log.warning(
+                f"{request_id} | SLOW_REQUEST | {request.method} {request.url.path} | "
+                f"time={process_time}ms | ip={client_ip}"
+            )
+        
+        return response
+    except Exception as e:
+        process_time = round((time.time() - start_time) * 1000, 2)
+        error_log.exception(
+            f"{request_id} | REQ_ERROR | {request.method} {request.url.path} | "
+            f"ip={client_ip} | time={process_time}ms | error={str(e)}"
+        )
+        raise
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # tighten for production
@@ -465,6 +597,19 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+# Include admin router (after app is created)
+def setup_admin_routes():
+    """Setup admin routes after all dependencies are loaded."""
+    try:
+        from admin_api import admin_router
+        app.include_router(admin_router)
+        system_log.info("Admin routes registered")
+    except Exception as e:
+        error_log.warning(f"Could not register admin routes: {e}")
+
+# Setup admin routes
+setup_admin_routes()
+
 # Simple API-key format: Bearer sc-{tenant}-{anything}
 API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]+)$")
 
@@ -472,15 +617,24 @@ API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]+)$")
 _current_api_key = {"key": None}
 
 def get_tenant_from_key(request: Request) -> str:
+    client_ip = request.client.host if request.client else "unknown"
     auth = request.headers.get("Authorization", "")
     m = API_KEY_REGEX.match(auth)
     if not m:
-        error_log.error(f"Unauthorized access. Header: {auth}")
+        security_log.warning(
+            f"Auth failed | ip={client_ip} | reason=invalid_format | "
+            f"header_length={len(auth)} | path={request.url.path}"
+        )
+        error_log.error(f"Unauthorized access | ip={client_ip} | Header length: {len(auth)}")
         raise HTTPException(status_code=401, detail="Missing or invalid API key")
     token = m.group(1)
     # sc-devA-foo -> tenant = 'devA'
     parts = token.split("-")
     if len(parts) < 3:
+        security_log.warning(
+            f"Auth failed | ip={client_ip} | reason=malformed_key | "
+            f"token_prefix={token[:10]} | path={request.url.path}"
+        )
         raise HTTPException(status_code=401, detail="Malformed API key")
     tenant = parts[1]
     
@@ -494,13 +648,23 @@ def get_tenant_from_key(request: Request) -> str:
         if key_info:
             # Key exists and is active
             update_api_key_usage(token, tenant)
+            security_log.debug(
+                f"Auth success | tenant={tenant} | ip={client_ip} | "
+                f"plan={key_info.get('plan', 'unknown')}"
+            )
         else:
             # Auto-create key in database if it doesn't exist (for backward compatibility)
             create_api_key(token, tenant, plan='free')
             update_api_key_usage(token, tenant)
+            app_log.info(
+                f"API key auto-created | tenant={tenant} | ip={client_ip} | plan=free"
+            )
+            security_log.info(
+                f"New API key | tenant={tenant} | ip={client_ip}"
+            )
     except Exception as e:
         # Don't fail if database is not available, but log it
-        error_log.warning(f"Database operation failed: {e}")
+        error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
     
     return tenant
 
@@ -522,7 +686,54 @@ class ChatRequest(BaseModel):
 # -----------------------------
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "semantic-cache", "version": "0.1.0"}
+    """Health check endpoint with system status."""
+    import sys
+    
+    try:
+        try:
+            import psutil
+            # Get system metrics
+            memory = psutil.virtual_memory()
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            has_system_metrics = True
+        except ImportError:
+            # psutil not available, skip system metrics
+            has_system_metrics = False
+        
+        # Cache statistics
+        total_tenants = len(svc.tenants)
+        total_entries = sum(len(t.rows) for t in svc.tenants.values())
+        
+        health_status = {
+            "status": "ok",
+            "service": "semantic-cache",
+            "version": "0.1.0",
+            "cache": {
+                "tenants": total_tenants,
+                "total_entries": total_entries,
+            }
+        }
+        
+        if has_system_metrics:
+            health_status["system"] = {
+                "memory_percent": round(memory.percent, 2),
+                "memory_available_gb": round(memory.available / (1024**3), 2),
+                "cpu_percent": round(cpu_percent, 2),
+            }
+            system_log.debug(
+                f"Health check | memory={memory.percent:.1f}% | "
+                f"cpu={cpu_percent:.1f}% | tenants={total_tenants} | entries={total_entries}"
+            )
+        else:
+            system_log.debug(
+                f"Health check | psutil not available | "
+                f"tenants={total_tenants} | entries={total_entries}"
+            )
+        
+        return health_status
+    except Exception as e:
+        error_log.exception(f"Health check failed | error={str(e)}")
+        return {"status": "error", "service": "semantic-cache", "version": "0.1.0"}
 
 @app.get("/metrics")
 def get_metrics(tenant: str = Depends(get_tenant_from_key)):
@@ -535,12 +746,41 @@ def get_metrics(tenant: str = Depends(get_tenant_from_key)):
 def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str = Depends(get_tenant_from_key)):
     messages = [{"role": "user", "content": prompt}]
     prompt_norm = SemanticCacheService.norm_text(prompt)
+    prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()[:8]
+    
     try:
         ans, meta = svc.query(tenant, prompt_norm, messages, model)
-        access_log.info(f"{tenant} | /query | {meta['hit']} | sim={meta['similarity']:.3f} | {meta['latency_ms']}ms")
+        
+        # Enhanced logging
+        access_log.info(
+            f"{tenant} | /query | {meta['hit']} | sim={meta['similarity']:.3f} | "
+            f"latency={meta['latency_ms']}ms | prompt_hash={prompt_hash} | "
+            f"model={model} | prompt_len={len(prompt)}"
+        )
+        
+        # Log usage to database
+        try:
+            from database import log_usage
+            api_key = _current_api_key.get("key", "unknown")
+            log_usage(
+                api_key=api_key,
+                tenant_id=tenant,
+                endpoint="/query",
+                request_count=1,
+                cache_hits=1 if meta.get('hit') != 'miss' else 0,
+                cache_misses=1 if meta.get('hit') == 'miss' else 0,
+                tokens_used=0,
+                cost_estimate=0
+            )
+        except Exception as e:
+            error_log.warning(f"Could not log usage to database | tenant={tenant} | error={str(e)}")
+        
         return {"answer": ans, "meta": meta, "metrics": svc.metrics(tenant)}
     except Exception as e:
-        error_log.exception(f"{tenant} | /query | error: {e}")
+        error_log.exception(
+            f"{tenant} | /query | error: {e} | prompt_hash={prompt_hash} | "
+            f"prompt_len={len(prompt)} | model={model}"
+        )
         raise HTTPException(status_code=500, detail="Internal error")
 
 @app.get("/events")
@@ -611,6 +851,29 @@ def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_k
 # -----------------------------
 if __name__ == "__main__":
     import uvicorn
+    import sys
     port = int(os.getenv("PORT", 8000))
+    
+    # Log startup
+    system_log.info(
+        f"Server starting | port={port} | version=0.1.0 | "
+        f"python={sys.version.split()[0]}"
+    )
+    
     print(f"Semantis AI Semantic Cache API running on http://0.0.0.0:{port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    print(f"Logs directory: {os.path.abspath('logs')}")
+    print(f"Access logs: logs/access.log")
+    print(f"Error logs: logs/errors.log")
+    print(f"Semantic logs: logs/semantic_ops.log")
+    print(f"Performance logs: logs/performance.log")
+    print(f"Security logs: logs/security.log")
+    print(f"System logs: logs/system.log")
+    print(f"Application logs: logs/application.log")
+    
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    except KeyboardInterrupt:
+        system_log.info("Server stopped by user")
+    except Exception as e:
+        error_log.exception(f"Server startup failed | error={str(e)}")
+        raise

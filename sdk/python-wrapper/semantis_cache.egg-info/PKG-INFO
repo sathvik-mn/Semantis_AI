@@ -5,14 +5,13 @@ Summary: Semantis Cache - Semantic Caching SDK for LLM Applications
 Home-page: https://github.com/semantis-ai/semantis-cache-python
 Author: Semantis AI
 Author-email: Semantis AI <support@semantis.ai>
-License: MIT
+License-Expression: MIT
 Project-URL: Documentation, https://docs.semantis.ai
 Project-URL: Source, https://github.com/semantis-ai/semantis-cache-python
 Project-URL: Issues, https://github.com/semantis-ai/semantis-cache-python/issues
 Keywords: semantic caching,llm,openai,cache,ai,semantic search
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11

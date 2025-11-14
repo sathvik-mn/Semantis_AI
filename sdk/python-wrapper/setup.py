@@ -18,7 +18,7 @@ setup(
     author="Semantis AI",
     author_email="support@semantis.ai",
     url="https://github.com/semantis-ai/semantis-cache-python",
-    packages=find_packages(exclude=["tests", "tests.*"]),
+    packages=find_packages(include=["semantis_cache", "semantis_cache.*", "semantis_ai", "semantis_ai.*"]),
     install_requires=[
         "httpx>=0.23.0,<0.29.0",
         "attrs>=22.2.0",
