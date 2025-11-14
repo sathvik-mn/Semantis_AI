@@ -1,2 +1,0 @@
-semantis_ai
-semantis_cache

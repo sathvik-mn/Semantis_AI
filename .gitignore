@@ -88,8 +88,10 @@ Thumbs.db
 # Build artifacts
 *.whl
 *.tar.gz
-!sdk/python-wrapper/dist/*.whl
-!sdk/python-wrapper/dist/*.tar.gz
+# Keep dist/ for reference but exclude wheel/source files
+dist/
+sdk/python-wrapper/dist/
+*.egg-info/
 
 # Test artifacts
 .pytest_cache/
