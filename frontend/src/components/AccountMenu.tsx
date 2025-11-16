@@ -95,53 +95,68 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-slate-700/50 transition-all border border-transparent hover:border-slate-600"
       >
-        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-bold shadow-lg ring-2 ring-blue-500/20">
           {userInfo.name.charAt(0).toUpperCase()}
         </div>
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+        <span className="text-sm font-semibold text-white">
           {userInfo.name}
         </span>
-        <ChevronDown className="w-4 h-4 text-gray-500" />
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
-          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-            <p className="text-sm font-medium text-gray-900 dark:text-white">{userInfo.name}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{userInfo.email}</p>
+        <div className="absolute right-0 mt-2 w-72 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-xl shadow-2xl border border-slate-700 overflow-hidden z-50 backdrop-blur-xl">
+          <div className="px-5 py-4 bg-gradient-to-r from-blue-600/20 to-purple-600/20 border-b border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                {userInfo.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-base font-bold text-white">{userInfo.name}</p>
+                <p className="text-xs text-slate-400">{userInfo.email}</p>
+              </div>
+            </div>
           </div>
 
-          <button
-            onClick={() => {
-              setShowSettings(true);
-              setIsOpen(false);
-            }}
-            className="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <Settings className="w-4 h-4 mr-3" />
-            Account Settings
-          </button>
+          <div className="py-2">
+            <button
+              onClick={() => {
+                setShowSettings(true);
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center px-5 py-3 text-sm font-medium text-slate-200 hover:text-white hover:bg-gradient-to-r hover:from-blue-600/10 hover:to-purple-600/10 transition-all group"
+            >
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 flex items-center justify-center mr-3 transition-all">
+                <Settings className="w-4 h-4 text-blue-400" />
+              </div>
+              <span>Account Settings</span>
+            </button>
 
-          <button
-            onClick={() => {
-              setShowApiKeys(true);
-              setIsOpen(false);
-            }}
-            className="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <Key className="w-4 h-4 mr-3" />
-            API Keys
-          </button>
+            <button
+              onClick={() => {
+                setShowApiKeys(true);
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center px-5 py-3 text-sm font-medium text-slate-200 hover:text-white hover:bg-gradient-to-r hover:from-emerald-600/10 hover:to-blue-600/10 transition-all group"
+            >
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 flex items-center justify-center mr-3 transition-all">
+                <Key className="w-4 h-4 text-emerald-400" />
+              </div>
+              <span>API Keys</span>
+            </button>
+          </div>
 
-          <div className="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
+          <div className="border-t border-slate-700 bg-slate-900/50">
             <button
               onClick={onLogout}
-              className="w-full flex items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="w-full flex items-center px-5 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all group"
             >
-              <LogOut className="w-4 h-4 mr-3" />
-              Sign Out
+              <div className="w-8 h-8 rounded-lg bg-red-500/10 group-hover:bg-red-500/20 flex items-center justify-center mr-3 transition-all">
+                <LogOut className="w-4 h-4 text-red-400" />
+              </div>
+              <span>Sign Out</span>
             </button>
           </div>
         </div>
