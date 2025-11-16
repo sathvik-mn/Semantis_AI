@@ -17,6 +17,7 @@ import os, time, re, logging, hashlib
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+from collections import OrderedDict
 
 import numpy as np
 import faiss
@@ -182,6 +183,8 @@ class CacheEvent:
     decision: str  # "exact", "semantic", "miss"
     similarity: float
     latency_ms: float
+    confidence: float = 0.0  # Confidence score for semantic matches
+    hybrid_score: float = 0.0  # Hybrid similarity score
 
 @dataclass
 class TenantState:
@@ -196,6 +199,8 @@ class TenantState:
     latencies_ms: List[float] = field(default_factory=list)
     # adaptive similarity threshold (lowered default for better semantic matching and typo tolerance)
     sim_threshold: float = 0.72  # Lowered from 0.78 to 0.72 for better matching of similar queries and typos
+    # domain-specific thresholds
+    domain_thresholds: Dict[str, float] = field(default_factory=dict)  # domain -> threshold
     # events log
     events: List[CacheEvent] = field(default_factory=list)
 
@@ -205,6 +210,9 @@ class TenantState:
 class SemanticCacheService:
     def __init__(self):
         self.tenants: Dict[str, TenantState] = {}
+        # Embedding cache with LRU eviction
+        self._embedding_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._embedding_cache_max_size = 1000
         # Load cache from disk if available
         self._load_cache()
     
@@ -257,6 +265,176 @@ class SemanticCacheService:
         # Remove common articles and prepositions for better matching
         # But keep them for semantic matching (handled separately)
         return s
+    
+    @staticmethod
+    def _expand_query(text: str) -> List[str]:
+        """Expand query with variations for better matching."""
+        variations = [text.lower().strip()]
+        
+        # Handle contractions
+        contractions = {
+            "what's": "what is", "who's": "who is", "where's": "where is",
+            "it's": "it is", "that's": "that is", "how's": "how is",
+            "when's": "when is", "why's": "why is", "there's": "there is"
+        }
+        for cont, exp in contractions.items():
+            if cont in text.lower():
+                variations.append(text.lower().replace(cont, exp))
+        
+        # Handle question variations
+        question_starters = ["what is", "tell me about", "explain", "describe", "define"]
+        for starter in question_starters:
+            if text.lower().startswith(starter):
+                for alt in question_starters:
+                    if alt != starter:
+                        variations.append(text.lower().replace(starter, alt, 1))
+        
+        return list(set(variations))  # Remove duplicates
+    
+    def _get_cached_embedding(self, text: str) -> Optional[np.ndarray]:
+        """Get cached embedding or None."""
+        text_key = text.lower().strip()
+        if text_key in self._embedding_cache:
+            # Move to end (LRU)
+            self._embedding_cache.move_to_end(text_key)
+            return self._embedding_cache[text_key]
+        return None
+    
+    def _cache_embedding(self, text: str, emb: np.ndarray):
+        """Cache embedding with LRU eviction."""
+        text_key = text.lower().strip()
+        if text_key in self._embedding_cache:
+            self._embedding_cache.move_to_end(text_key)
+        else:
+            self._embedding_cache[text_key] = emb
+            # Evict oldest if cache full
+            if len(self._embedding_cache) > self._embedding_cache_max_size:
+                self._embedding_cache.popitem(last=False)
+    
+    def _get_context_aware_embedding(self, messages: List[dict], prompt_norm: str) -> Tuple[np.ndarray, str]:
+        """Generate context-aware embedding considering conversation history."""
+        user_messages = [m["content"] for m in messages if m.get("role") == "user"]
+        
+        # Primary: Last user message (most important)
+        primary_text = user_messages[-1] if user_messages else prompt_norm
+        
+        # Check cache first
+        cached_emb = self._get_cached_embedding(primary_text)
+        if cached_emb is not None:
+            return cached_emb, primary_text
+        
+        # Generate embedding
+        primary_emb = get_embedding(primary_text)
+        self._cache_embedding(primary_text, primary_emb)
+        
+        # Context: Last 2-3 messages for context (if multiple messages)
+        if len(user_messages) > 1:
+            context_text = " ".join(user_messages[-3:])
+            cached_context = self._get_cached_embedding(context_text)
+            if cached_context is not None:
+                context_emb = cached_context
+            else:
+                context_emb = get_embedding(context_text)
+                self._cache_embedding(context_text, context_emb)
+            
+            # Weighted combination: 70% primary, 30% context
+            combined_emb = 0.7 * primary_emb + 0.3 * context_emb
+            combined_emb /= (np.linalg.norm(combined_emb) + 1e-12)
+            return combined_emb, primary_text
+        
+        return primary_emb, primary_text
+    
+    def _calculate_hybrid_score(
+        self, 
+        query_emb: np.ndarray, 
+        query_text: str,
+        entry: CacheEntry, 
+        entry_emb: np.ndarray,
+        base_sim: float
+    ) -> float:
+        """Calculate hybrid similarity score combining multiple signals."""
+        # 1. Embedding similarity (primary, 60% weight)
+        emb_score = base_sim
+        
+        # 2. Text overlap (20% weight)
+        query_words = set(query_text.lower().split())
+        entry_words = set(entry.prompt_norm.lower().split())
+        jaccard = len(query_words & entry_words) / len(query_words | entry_words) if (query_words | entry_words) else 0
+        text_score = jaccard
+        
+        # 3. Domain match (10% weight) - boost if same domain
+        query_domain = domain_hint(query_text)
+        domain_boost = 0.1 if entry.domain == query_domain else 0
+        
+        # 4. Recency score (5% weight) - fresher entries slightly preferred
+        age_days = (time.time() - entry.created_at) / 86400
+        recency_score = max(0, 1 - (age_days / 30))  # Decay over 30 days
+        
+        # 5. Usage score (5% weight) - more used = more reliable
+        usage_score = min(1.0, entry.use_count / 10)  # Cap at 10 uses
+        
+        # Weighted combination
+        hybrid_score = (
+            0.60 * emb_score +
+            0.20 * text_score +
+            0.10 * domain_boost +
+            0.05 * recency_score +
+            0.05 * usage_score
+        )
+        return min(1.0, hybrid_score)  # Cap at 1.0
+    
+    def _calculate_confidence(
+        self, 
+        hybrid_score: float, 
+        base_sim: float, 
+        entry: CacheEntry
+    ) -> float:
+        """Calculate confidence score for a match (0.0-1.0)."""
+        # Base confidence from hybrid score
+        confidence = hybrid_score
+        
+        # Boost if base similarity is high (strong embedding match)
+        if base_sim > 0.85:
+            confidence += 0.1
+        elif base_sim > 0.80:
+            confidence += 0.05
+        
+        # Boost if entry is well-used (proven reliable)
+        if entry.use_count > 5:
+            confidence += 0.05
+        
+        # Boost if entry is fresh
+        age_days = (time.time() - entry.created_at) / 86400
+        if age_days < 7:
+            confidence += 0.05
+        
+        # Penalize if similarity is borderline
+        if base_sim < 0.75:
+            confidence -= 0.1
+        
+        return max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
+    
+    def _get_adaptive_threshold(self, T: TenantState, num_candidates: int, domain: str = None) -> float:
+        """Get adaptive threshold considering domain and cache size."""
+        # Base threshold from cache size
+        if len(T.rows) < 10:
+            base = max(0.70, T.sim_threshold)
+        elif len(T.rows) < 20:
+            base = max(0.72, T.sim_threshold)
+        else:
+            base = T.sim_threshold
+        
+        # Domain-specific adjustment
+        if domain and domain in T.domain_thresholds:
+            domain_thresh = T.domain_thresholds[domain]
+            # Use stricter of base or domain threshold
+            base = max(base, domain_thresh)
+        
+        # Adjust based on number of candidates (more candidates = can be stricter)
+        if num_candidates > 10:
+            base += 0.02  # Slightly stricter with more options
+        
+        return base
 
     def _faiss_add(self, T: TenantState, emb: np.ndarray):
         v = emb.astype("float32").reshape(1, -1)
@@ -334,65 +512,97 @@ class SemanticCacheService:
                     T.events = T.events[-1000:]
                 return entry.response_text, meta
 
-        # 2) semantic - improved matching with top-k search and typo tolerance
+        # 2) semantic - enhanced matching with context-aware embeddings, hybrid scoring, and reranking
         if T.index is not None and len(T.rows) > 0:
             user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
-            emb = get_embedding(user_text)
-            # Search top 5 matches and use the best one that meets threshold
-            top_matches = self._faiss_search_top_k(T, emb, k=min(5, len(T.rows)))
-            best_idx = None
-            best_sim = 0.0
             
-            # Find best match from top-K results
+            # Use context-aware embedding (considers conversation history)
+            emb, primary_text = self._get_context_aware_embedding(messages, prompt_norm)
+            
+            # Search more candidates initially (top 20 for better reranking)
+            top_matches = self._faiss_search_top_k(T, emb, k=min(20, len(T.rows)))
+            
+            # Calculate hybrid scores for all candidates
+            candidates = []
             for idx, sim in top_matches:
-                if idx < len(T.rows) and T.rows[idx].fresh() and sim > best_sim:
-                    best_sim = sim
-                    best_idx = idx
+                if idx < len(T.rows) and T.rows[idx].fresh():
+                    entry = T.rows[idx]
+                    hybrid_score = self._calculate_hybrid_score(
+                        emb, primary_text, entry, entry.embedding, sim
+                    )
+                    confidence = self._calculate_confidence(hybrid_score, sim, entry)
+                    candidates.append({
+                        'idx': idx,
+                        'entry': entry,
+                        'base_sim': sim,
+                        'hybrid_score': hybrid_score,
+                        'confidence': confidence
+                    })
             
-            # Use adaptive threshold with typo tolerance
-            # Base threshold: lower for small caches to catch typos better
-            if len(T.rows) < 10:
-                base_threshold = max(0.70, T.sim_threshold)  # Very lenient for small cache
-            elif len(T.rows) < 20:
-                base_threshold = max(0.72, T.sim_threshold)  # Lenient for medium cache
-            else:
-                base_threshold = T.sim_threshold  # Standard for larger cache
+            # Sort by hybrid score (best matches first)
+            candidates.sort(key=lambda x: x['hybrid_score'], reverse=True)
             
-            adaptive_threshold = base_threshold
+            # Get domain for domain-aware threshold
+            query_domain = domain_hint(primary_text)
+            
+            # Apply adaptive threshold with confidence check
+            adaptive_threshold = self._get_adaptive_threshold(T, len(candidates), query_domain)
             
             # Typo tolerance: be more lenient for very similar queries
-            if best_idx is not None and best_sim > 0:
-                if best_sim >= adaptive_threshold:
-                    # Normal match - above threshold
-                    pass
-                elif best_sim >= 0.65:  # Very lenient for typos
-                    # Typo tolerance: accept if similarity is 0.65+ (very similar)
-                    # This handles typos like "comptr" vs "computer", "iz" vs "is"
-                    adaptive_threshold = max(0.65, best_sim - 0.02)  # Lower threshold to just below similarity
-                    semantic_log.info(f"{tenant_id} | typo-tolerance | sim={best_sim:.3f} | threshold-adjusted-to={adaptive_threshold:.3f}")
-                else:
-                    # Too low similarity, skip semantic match
-                    best_idx = None
-                    best_sim = 0.0
+            best_match = None
+            for candidate in candidates:
+                hybrid_score = candidate['hybrid_score']
+                base_sim = candidate['base_sim']
+                confidence = candidate['confidence']
+                
+                # Normal match - above threshold with good confidence
+                if hybrid_score >= adaptive_threshold and confidence >= 0.7:
+                    best_match = candidate
+                    break
+                # Typo tolerance: accept if similarity is 0.65+ with decent confidence
+                elif base_sim >= 0.65 and confidence >= 0.65:
+                    # Lower threshold to just below similarity for typo tolerance
+                    if hybrid_score >= max(0.65, base_sim - 0.02):
+                        best_match = candidate
+                        semantic_log.info(f"{tenant_id} | typo-tolerance | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
+                        break
             
-            if best_idx is not None and best_sim >= adaptive_threshold:
-                entry = T.rows[best_idx]
+            if best_match is not None:
+                entry = best_match['entry']
                 entry.use_count += 1
                 entry.last_used_at = time.time()
                 T.hits += 1
                 T.semantic_hits += 1
                 latency = round((time.time() - t0) * 1000, 2)
                 T.latencies_ms.append(latency)
-                meta = {"hit": "semantic", "similarity": round(best_sim, 4), "latency_ms": latency, "strategy": "hybrid", "threshold_used": round(adaptive_threshold, 3)}
-                semantic_log.info(f"{tenant_id} | semantic | sim={best_sim:.3f} | threshold={adaptive_threshold:.3f} | key={prompt_norm[:80]}")
-                # Store event
+                
+                hybrid_score = best_match['hybrid_score']
+                base_sim = best_match['base_sim']
+                confidence = best_match['confidence']
+                
+                meta = {
+                    "hit": "semantic", 
+                    "similarity": round(base_sim, 4), 
+                    "hybrid_score": round(hybrid_score, 4),
+                    "confidence": round(confidence, 4),
+                    "latency_ms": latency, 
+                    "strategy": "hybrid-enhanced", 
+                    "threshold_used": round(adaptive_threshold, 3)
+                }
+                semantic_log.info(
+                    f"{tenant_id} | semantic | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | "
+                    f"conf={confidence:.3f} | threshold={adaptive_threshold:.3f} | key={prompt_norm[:80]}"
+                )
+                # Store event with enhanced metrics
                 T.events.append(CacheEvent(
                     timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
                     tenant_id=tenant_id,
                     prompt_hash=prompt_hash,
                     decision="semantic",
-                    similarity=round(best_sim, 4),
-                    latency_ms=latency
+                    similarity=round(base_sim, 4),
+                    latency_ms=latency,
+                    confidence=round(confidence, 4),
+                    hybrid_score=round(hybrid_score, 4)
                 ))
                 # Keep only last 1000 events
                 if len(T.events) > 1000:
@@ -403,7 +613,9 @@ class SemanticCacheService:
         T.misses += 1
         response_text = call_llm(messages, temperature=temperature)
         user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
-        emb = get_embedding(user_text)
+        
+        # Use context-aware embedding for storing (consistent with query)
+        emb, _ = self._get_context_aware_embedding(messages, prompt_norm)
         entry = CacheEntry(
             prompt_norm=prompt_norm,
             response_text=response_text,
@@ -447,6 +659,13 @@ class SemanticCacheService:
         p95 = np.percentile(T.latencies_ms, 95) if T.latencies_ms else 0
         avg_latency = np.mean(T.latencies_ms) if T.latencies_ms else 0
         semantic_hit_ratio = (T.semantic_hits / total) if total > 0 else 0.0
+        
+        # Calculate quality metrics for semantic hits
+        semantic_events = [e for e in T.events if e.decision == "semantic"]
+        avg_confidence = np.mean([e.confidence for e in semantic_events]) if semantic_events else 0.0
+        avg_hybrid_score = np.mean([e.hybrid_score for e in semantic_events]) if semantic_events else 0.0
+        high_confidence_hits = len([e for e in semantic_events if e.confidence >= 0.8])
+        
         # Estimate tokens saved (rough estimate: 100 tokens per miss saved)
         tokens_saved_est = T.hits * 100  # Rough estimate
         return {
@@ -464,6 +683,11 @@ class SemanticCacheService:
             "entries": len(T.rows),
             "p50_latency_ms": round(float(p50), 2),
             "p95_latency_ms": round(float(p95), 2),
+            # Enhanced quality metrics
+            "avg_confidence": round(avg_confidence, 3),
+            "avg_hybrid_score": round(avg_hybrid_score, 3),
+            "high_confidence_hits": high_confidence_hits,
+            "high_confidence_ratio": round((high_confidence_hits / len(semantic_events)) if semantic_events else 0.0, 3),
         }
 
     def adapt_threshold(self, tenant_id: str):
@@ -737,10 +961,31 @@ def health():
 
 @app.get("/metrics")
 def get_metrics(tenant: str = Depends(get_tenant_from_key)):
+    """Get cache performance metrics for the tenant."""
     svc.adapt_threshold(tenant)
     m = svc.metrics(tenant)
     access_log.info(f"{tenant} | /metrics | hit_ratio={m['hit_ratio']}")
     return m
+
+@app.get("/prometheus/metrics")
+def prometheus_metrics():
+    """Prometheus metrics endpoint."""
+    try:
+        from prometheus_metrics import get_metrics_response
+        return get_metrics_response()
+    except ImportError:
+        # Prometheus not available, return basic metrics
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            "# Prometheus metrics not available. Install prometheus-client for full metrics.\n"
+            "# Basic metrics:\n"
+            f"cache_entries_total {sum(len(t.rows) for t in svc.tenants.values())}\n"
+            f"cache_tenants_total {len(svc.tenants)}\n",
+            media_type="text/plain"
+        )
+    except Exception as e:
+        error_log.exception(f"Prometheus metrics endpoint failed | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Metrics endpoint failed")
 
 @app.get("/query")
 def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str = Depends(get_tenant_from_key)):

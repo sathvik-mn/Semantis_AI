@@ -1,40 +1,46 @@
 import requests
 
 BASE_URL = "http://localhost:8000"
-API_KEY = "sc-test-local"
-HEADERS = {
-    "Authorization": f"Bearer {API_KEY}"
-}
-TIMEOUT = 30
+API_KEY = "sc-test-local"  # Use a valid tenant API key here
 
 def test_simple_query_endpoint_returns_semantic_cache_response():
-    prompt = "What is Python?"
-    params = {"prompt": prompt, "model": "gpt-4o-mini"}
+    url = f"{BASE_URL}/query"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}"
+    }
+    params = {
+        "prompt": "What is Python?",
+        "model": "gpt-4o-mini"
+    }
 
     try:
-        response = requests.get(f"{BASE_URL}/query", headers=HEADERS, params=params, timeout=TIMEOUT)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        assert False, f"Request to /query failed: {e}"
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        assert response.status_code == 200, f"Expected status code 200 but got {response.status_code}"
+        json_data = response.json()
 
-    json_data = response.json()
-    # Validate top-level keys
-    assert "answer" in json_data, "Response missing 'answer'"
-    assert "meta" in json_data, "Response missing 'meta'"
-    meta = json_data["meta"]
-    # Validate meta contents
-    assert isinstance(meta, dict), "'meta' should be an object"
-    assert "hit" in meta, "'meta' missing 'hit'"
-    assert meta["hit"] in ("exact", "semantic", "miss"), "'hit' must be 'exact', 'semantic', or 'miss'"
-    assert "similarity" in meta, "'meta' missing 'similarity'"
-    assert isinstance(meta["similarity"], (float, int)), "'similarity' must be a number"
-    assert "latency_ms" in meta, "'meta' missing 'latency_ms'"
-    assert isinstance(meta["latency_ms"], (float, int)), "'latency_ms' must be a number"
-    assert "strategy" in meta, "'meta' missing 'strategy'"
-    assert isinstance(meta["strategy"], str), "'strategy' must be a string"
+        # Validate presence of main fields
+        assert "answer" in json_data, "Missing 'answer' field in response"
+        assert isinstance(json_data["answer"], str), "'answer' field should be a string"
 
-    # Optional: Check metrics key presence (type object) if present
-    if "metrics" in json_data:
-        assert isinstance(json_data["metrics"], dict), "'metrics' should be an object if present"
+        assert "meta" in json_data, "Missing 'meta' field in response"
+        meta = json_data["meta"]
+        assert isinstance(meta, dict), "'meta' field should be a dict"
+
+        # Validate required meta fields
+        assert "hit" in meta, "Missing 'hit' in meta"
+        assert meta["hit"] in ["exact", "semantic", "miss"], f"Invalid hit type: {meta['hit']}"
+        assert "similarity" in meta, "Missing 'similarity' in meta"
+        assert isinstance(meta["similarity"], (int, float)), "'similarity' should be a number"
+        assert "latency_ms" in meta, "Missing 'latency_ms' in meta"
+        assert isinstance(meta["latency_ms"], (int, float)), "'latency_ms' should be a number"
+        assert "strategy" in meta, "Missing 'strategy' in meta"
+        assert isinstance(meta["strategy"], str), "'strategy' should be a string"
+
+        # Validate metrics field presence
+        assert "metrics" in json_data, "Missing 'metrics' field in response"
+        assert isinstance(json_data["metrics"], dict), "'metrics' field should be a dict"
+
+    except requests.exceptions.RequestException as e:
+        assert False, f"Request failed: {e}"
 
 test_simple_query_endpoint_returns_semantic_cache_response()

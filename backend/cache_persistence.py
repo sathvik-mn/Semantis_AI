@@ -101,9 +101,12 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
                     "decision": e.decision,
                     "similarity": e.similarity,
                     "latency_ms": e.latency_ms,
+                    "confidence": getattr(e, 'confidence', 0.0),  # Backward compatible
+                    "hybrid_score": getattr(e, 'hybrid_score', 0.0),  # Backward compatible
                 }
                 for e in tenant_state.events
-            ]
+            ],
+            "domain_thresholds": getattr(tenant_state, 'domain_thresholds', {}),  # Backward compatible
         }
     
     # Save to file
@@ -195,6 +198,8 @@ def load_cache(filepath: str = CACHE_FILE):
                     decision=event_data["decision"],
                     similarity=event_data["similarity"],
                     latency_ms=event_data["latency_ms"],
+                    confidence=event_data.get("confidence", 0.0),  # Backward compatible
+                    hybrid_score=event_data.get("hybrid_score", 0.0),  # Backward compatible
                 )
                 events.append(event)
             
@@ -208,7 +213,8 @@ def load_cache(filepath: str = CACHE_FILE):
                 misses=tenant_data.get("misses", 0),
                 semantic_hits=tenant_data.get("semantic_hits", 0),
                 latencies_ms=tenant_data.get("latencies_ms", []),
-                sim_threshold=tenant_data.get("sim_threshold", 0.83),
+                sim_threshold=tenant_data.get("sim_threshold", 0.72),
+                domain_thresholds=tenant_data.get("domain_thresholds", {}),  # Backward compatible
                 events=events,
             )
             

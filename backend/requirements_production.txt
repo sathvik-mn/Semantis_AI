@@ -1,0 +1,47 @@
+# Production Dependencies for Semantis AI Cache
+
+# Core dependencies (already in requirements.txt)
+fastapi
+uvicorn
+openai
+faiss-cpu
+numpy
+pydantic
+python-dotenv
+requests
+
+# Database support
+psycopg2-binary>=2.9.0  # PostgreSQL
+mysql-connector-python>=8.0.0  # MySQL (optional)
+sqlalchemy>=2.0.0  # Database ORM
+
+# Redis support
+redis>=4.5.0  # Redis client
+hiredis>=2.0.0  # Redis performance
+
+# AWS S3 support
+boto3>=1.28.0  # AWS SDK
+botocore>=1.31.0  # AWS core
+
+# Monitoring
+prometheus-client>=0.18.0  # Prometheus metrics
+psutil>=5.9.0  # System metrics
+
+# Vector databases (optional)
+# pymilvus>=2.3.0  # Milvus vector database
+# pinecone-client>=2.2.0  # Pinecone vector database
+
+# Logging
+python-json-logger>=2.0.0  # JSON logging
+
+# Performance
+uvloop>=0.19.0  # Fast event loop (Linux/Mac)
+orjson>=3.9.0  # Fast JSON parser
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0
+
+
+
