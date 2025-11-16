@@ -1,6 +1,7 @@
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useHealthCheck } from '../hooks/useSemanticCache';
 import * as api from '../api/semanticAPI';
+import { AccountMenu } from './AccountMenu';
 
 export function Layout() {
   const location = useLocation();
@@ -57,9 +58,7 @@ export function Layout() {
               </span>
             </div>
 
-            <button onClick={handleLogout} style={styles.logoutButton}>
-              Logout
-            </button>
+            <AccountMenu onLogout={handleLogout} />
           </div>
         </div>
       </nav>
@@ -144,17 +143,6 @@ const styles: Record<string, React.CSSProperties> = {
   healthText: {
     fontSize: '13px',
     color: 'rgba(255, 255, 255, 0.7)',
-  },
-  logoutButton: {
-    padding: '8px 16px',
-    fontSize: '14px',
-    fontWeight: '500',
-    background: 'transparent',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '6px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
   },
   main: {
     flex: 1,

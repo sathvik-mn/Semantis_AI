@@ -58,6 +58,20 @@ export function LandingPage() {
     <div style={styles.container}>
       <Prism />
 
+      <nav style={styles.nav}>
+        <div style={styles.navContent}>
+          <div style={styles.logo}>
+            <span style={styles.logoIcon}>🔷</span>
+            <span style={styles.logoText}>Semantis AI</span>
+          </div>
+          <div style={styles.navLinks}>
+            <a href="#features" style={styles.navLink}>Features</a>
+            <a href="#pricing" style={styles.navLink}>Pricing</a>
+            <a href="#docs" style={styles.navLink}>Docs</a>
+          </div>
+        </div>
+      </nav>
+
       <div style={styles.content}>
         <div style={styles.hero}>
           <h1 style={styles.title}>
@@ -359,5 +373,48 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: '1px',
+  },
+  nav: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    background: 'rgba(0, 0, 0, 0.3)',
+    backdropFilter: 'blur(20px)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+  },
+  navContent: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '16px 24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  logoIcon: {
+    fontSize: '24px',
+  },
+  logoText: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: '-0.02em',
+  },
+  navLinks: {
+    display: 'flex',
+    gap: '32px',
+  },
+  navLink: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    textDecoration: 'none',
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'color 0.2s',
   },
 };
