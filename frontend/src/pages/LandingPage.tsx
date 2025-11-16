@@ -6,6 +6,10 @@ import * as api from '../api/semanticAPI';
 export function LandingPage() {
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState('');
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState('');
+  const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -24,6 +28,30 @@ export function LandingPage() {
 
     api.setApiKey(apiKey);
     navigate('/playground');
+  };
+
+  const handleGenerateKey = async () => {
+    setIsGenerating(true);
+    setGenerateError('');
+    setGeneratedKey(null);
+
+    try {
+      const response = await api.generateApiKey({ length: 32 });
+      setGeneratedKey(response.api_key);
+      setApiKey(response.api_key); // Auto-fill the input field
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Failed to generate API key');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCopyKey = () => {
+    if (generatedKey) {
+      navigator.clipboard.writeText(generatedKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -46,9 +74,55 @@ export function LandingPage() {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Get Started</h2>
           <p style={styles.cardSubtitle}>
-            Enter your API key to access the dashboard and start saving on LLM costs
+            Generate a new API key or enter your existing one to access the dashboard
           </p>
 
+          {/* Generate API Key Section */}
+          <div style={styles.generateSection}>
+            <button
+              onClick={handleGenerateKey}
+              disabled={isGenerating}
+              style={{
+                ...styles.generateButton,
+                opacity: isGenerating ? 0.6 : 1,
+                cursor: isGenerating ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isGenerating ? 'Generating...' : '🔑 Generate API Key'}
+            </button>
+            
+            {generateError && (
+              <div style={styles.error}>{generateError}</div>
+            )}
+
+            {generatedKey && (
+              <div style={styles.generatedKeyContainer}>
+                <div style={styles.generatedKeyHeader}>
+                  <strong>✅ API Key Generated!</strong>
+                  <button
+                    onClick={handleCopyKey}
+                    style={styles.copyButton}
+                    title="Copy to clipboard"
+                  >
+                    {copied ? '✓ Copied' : '📋 Copy'}
+                  </button>
+                </div>
+                <div style={styles.generatedKey}>
+                  {generatedKey}
+                </div>
+                <div style={styles.warning}>
+                  ⚠️ Save this key securely - it won't be shown again!
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div style={styles.divider}>
+            <span style={styles.dividerText}>OR</span>
+          </div>
+
+          {/* Enter Existing API Key */}
           <form onSubmit={handleSubmit} style={styles.form}>
             <input
               type="password"
@@ -213,5 +287,77 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     color: 'rgba(255, 255, 255, 0.6)',
     lineHeight: '1.5',
+  },
+  generateSection: {
+    marginBottom: '24px',
+  },
+  generateButton: {
+    width: '100%',
+    padding: '14px 16px',
+    fontSize: '15px',
+    fontWeight: '600',
+    background: 'linear-gradient(135deg, #10b981, #059669)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'transform 0.2s',
+    marginBottom: '16px',
+  },
+  generatedKeyContainer: {
+    background: 'rgba(16, 185, 129, 0.1)',
+    border: '1px solid rgba(16, 185, 129, 0.3)',
+    borderRadius: '8px',
+    padding: '16px',
+    marginTop: '16px',
+  },
+  generatedKeyHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+    color: '#34d399',
+    fontSize: '14px',
+  },
+  copyButton: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    background: 'rgba(16, 185, 129, 0.2)',
+    border: '1px solid rgba(16, 185, 129, 0.4)',
+    borderRadius: '6px',
+    color: '#34d399',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  generatedKey: {
+    background: 'rgba(0, 0, 0, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '6px',
+    padding: '12px',
+    marginBottom: '12px',
+    wordBreak: 'break-all',
+    color: '#34d399',
+    fontSize: '13px',
+    fontFamily: 'monospace',
+  },
+  warning: {
+    fontSize: '12px',
+    color: 'rgba(251, 191, 36, 0.9)',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    margin: '24px 0',
+    textAlign: 'center',
+  },
+  dividerText: {
+    flex: 1,
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: '13px',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
   },
 };

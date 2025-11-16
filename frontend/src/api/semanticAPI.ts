@@ -128,3 +128,43 @@ export function clearApiKey(): void {
 export function hasApiKey(): boolean {
   return !!getApiKey();
 }
+
+export interface GenerateApiKeyResponse {
+  api_key: string;
+  tenant_id: string;
+  plan: string;
+  created_at: string;
+  format: string;
+  message: string;
+}
+
+export interface GenerateApiKeyParams {
+  tenant?: string;
+  length?: number;
+  email?: string;
+  name?: string;
+  plan?: string;
+}
+
+export async function generateApiKey(params: GenerateApiKeyParams = {}): Promise<GenerateApiKeyResponse> {
+  const queryParams = new URLSearchParams();
+  if (params.tenant) queryParams.append('tenant', params.tenant);
+  if (params.length) queryParams.append('length', params.length.toString());
+  if (params.email) queryParams.append('email', params.email);
+  if (params.name) queryParams.append('name', params.name);
+  if (params.plan) queryParams.append('plan', params.plan);
+
+  const response = await fetch(`${BACKEND_URL}/api/keys/generate?${queryParams.toString()}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to generate API key' }));
+    throw new Error(error.detail || 'Failed to generate API key');
+  }
+
+  return response.json();
+}

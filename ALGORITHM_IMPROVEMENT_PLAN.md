@@ -424,3 +424,4 @@ def metrics(self, tenant_id: str) -> dict:
 - **Metrics method**: `backend/semantic_cache_server.py` line ~443
 
 
+

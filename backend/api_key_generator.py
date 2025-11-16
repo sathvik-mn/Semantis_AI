@@ -9,48 +9,75 @@ import json
 from typing import List, Dict
 from datetime import datetime
 
-def generate_api_key(tenant: str, length: int = 16) -> str:
+def generate_api_key(tenant: str = None, length: int = 32, auto_tenant: bool = False) -> tuple[str, str]:
     """
-    Generate an API key for a tenant.
+    Generate a complex API key for a tenant.
     
     Format: sc-{tenant}-{random_string}
     
     Args:
-        tenant: Tenant identifier (e.g., 'user123', 'company-abc')
-        length: Length of random string (default: 16)
+        tenant: Tenant identifier (e.g., 'user123', 'company-abc'). If None and auto_tenant=True, generates a unique tenant ID
+        length: Length of random string (default: 32 for better security)
+        auto_tenant: If True and tenant is None, generates a unique tenant ID automatically
     
     Returns:
-        API key string (e.g., 'sc-user123-a1b2c3d4e5f6g7h8')
+        Tuple of (api_key, tenant_id)
+        API key string (e.g., 'sc-usr_Ab3xY9z2-Mn5qR7t1-8kJ4vN6w-PxL2hC9s')
+        Tenant ID string
     """
+    # Generate tenant ID if not provided
+    if not tenant:
+        if auto_tenant:
+            # Generate unique tenant ID: usr_{8 random chars}
+            tenant_alphabet = string.ascii_lowercase + string.digits
+            tenant_random = ''.join(secrets.choice(tenant_alphabet) for _ in range(8))
+            tenant = f"usr_{tenant_random}"
+        else:
+            raise ValueError("Tenant identifier is required (or set auto_tenant=True)")
+    
     # Validate tenant name (alphanumeric, dash, underscore only)
     if not all(c.isalnum() or c in ['-', '_'] for c in tenant):
         raise ValueError("Tenant name can only contain alphanumeric characters, dashes, and underscores")
     
-    # Generate random string
+    # Generate complex random string with better entropy
+    # Use mixed case letters, digits for high entropy (like real API keys)
     alphabet = string.ascii_letters + string.digits
     random_part = ''.join(secrets.choice(alphabet) for _ in range(length))
     
-    # Format: sc-{tenant}-{random}
-    api_key = f"sc-{tenant}-{random_part}"
+    # Format: sc-{tenant}-{random} (with hyphens for readability if long)
+    # For keys > 24 chars, add hyphens every 8 characters for readability
+    if length > 24:
+        # Split into groups of 8 for readability
+        formatted_random = '-'.join([random_part[i:i+8] for i in range(0, length, 8)])
+        api_key = f"sc-{tenant}-{formatted_random}"
+    else:
+        api_key = f"sc-{tenant}-{random_part}"
     
-    return api_key
+    return api_key, tenant
 
-def generate_multiple_keys(tenant: str, count: int = 1, length: int = 16) -> List[str]:
+def generate_multiple_keys(tenant: str = None, count: int = 1, length: int = 32, auto_tenant: bool = False) -> List[tuple[str, str]]:
     """
     Generate multiple API keys for a tenant.
     
     Args:
-        tenant: Tenant identifier
+        tenant: Tenant identifier (optional if auto_tenant=True)
         count: Number of keys to generate
-        length: Length of random string
+        length: Length of random string (default: 32)
+        auto_tenant: If True and tenant is None, generates unique tenant IDs automatically
     
     Returns:
-        List of API keys
+        List of (api_key, tenant_id) tuples
     """
     keys = []
-    for _ in range(count):
-        key = generate_api_key(tenant, length)
-        keys.append(key)
+    base_tenant = tenant  # Keep original tenant if provided
+    for i in range(count):
+        # If auto_tenant and no base tenant, generate unique tenant for each key
+        if auto_tenant and not base_tenant:
+            tenant_for_key = None
+        else:
+            tenant_for_key = base_tenant
+        api_key, tenant_id = generate_api_key(tenant_for_key, length, auto_tenant=auto_tenant or not base_tenant)
+        keys.append((api_key, tenant_id))
     return keys
 
 def save_keys(keys: List[Dict[str, str]], filename: str = "api_keys.json"):
@@ -157,9 +184,9 @@ def extract_tenant(api_key: str) -> str:
 def main():
     """Main function for CLI."""
     parser = argparse.ArgumentParser(description="Generate API keys for Semantis AI")
-    parser.add_argument("--tenant", type=str, help="Tenant identifier (e.g., 'user123', 'company-abc')")
+    parser.add_argument("--tenant", type=str, help="Tenant identifier (e.g., 'user123', 'company-abc'). If not provided, auto-generates unique tenant IDs")
     parser.add_argument("--count", type=int, default=1, help="Number of keys to generate (default: 1)")
-    parser.add_argument("--length", type=int, default=16, help="Length of random string (default: 16)")
+    parser.add_argument("--length", type=int, default=32, help="Length of random string (default: 32)")
     parser.add_argument("--save", action="store_true", help="Save keys to database and api_keys.json")
     parser.add_argument("--list", action="store_true", help="List all saved keys from database")
     parser.add_argument("--validate", type=str, help="Validate an API key")
@@ -212,14 +239,16 @@ def main():
         return
     
     # Generate keys
-    if not args.tenant:
-        print("Error: --tenant is required for key generation")
-        return
-    
     try:
-        keys = generate_multiple_keys(args.tenant, args.count, args.length)
+        # Allow auto-generation if no tenant provided
+        if not args.tenant:
+            keys_tuples = generate_multiple_keys(None, args.count, args.length, auto_tenant=True)
+            tenant_label = "auto-generated"
+        else:
+            keys_tuples = generate_multiple_keys(args.tenant, args.count, args.length, auto_tenant=False)
+            tenant_label = args.tenant
         
-        print(f"\nGenerated {len(keys)} API key(s) for tenant '{args.tenant}':")
+        print(f"\nGenerated {len(keys_tuples)} API key(s):")
         print("=" * 80)
         
         key_records = []
@@ -234,14 +263,14 @@ def main():
             except Exception as e:
                 print(f"Warning: Could not create user in database: {e}")
         
-        for i, key in enumerate(keys, 1):
-            print(f"\n{i}. {key}")
-            print(f"   Format: Bearer {key}")
-            print(f"   Tenant: {args.tenant}")
+        for i, (api_key, tenant_id) in enumerate(keys_tuples, 1):
+            print(f"\n{i}. {api_key}")
+            print(f"   Format: Bearer {api_key}")
+            print(f"   Tenant: {tenant_id}")
             
             key_records.append({
-                "tenant": args.tenant,
-                "api_key": key,
+                "tenant": tenant_id,
+                "api_key": api_key,
                 "created_at": datetime.now().isoformat(),
                 "length": args.length
             })
@@ -250,7 +279,7 @@ def main():
             if args.save:
                 try:
                     from database import create_api_key
-                    create_api_key(key, args.tenant, user_id=user_id, plan=args.plan)
+                    create_api_key(api_key, tenant_id, user_id=user_id, plan=args.plan)
                     print(f"   Saved to database (plan: {args.plan})")
                 except Exception as e:
                     print(f"   Warning: Could not save to database: {e}")
@@ -262,10 +291,12 @@ def main():
             print("\n[NOTE] Use --save to save keys to database and api_keys.json")
         
         print("\n" + "=" * 80)
-        print("Usage in API calls:")
-        print(f"  Authorization: Bearer {keys[0]}")
-        print("\nUsage in frontend:")
-        print(f"  API Key: {keys[0]}")
+        if keys_tuples:
+            first_key, first_tenant = keys_tuples[0]
+            print("Usage in API calls:")
+            print(f"  Authorization: Bearer {first_key}")
+            print("\nUsage in frontend:")
+            print(f"  API Key: {first_key}")
         
     except ValueError as e:
         print(f"Error: {e}")
