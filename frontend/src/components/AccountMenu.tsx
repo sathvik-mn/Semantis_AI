@@ -148,25 +148,32 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Account Settings</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl max-w-md w-full mx-4 border border-slate-700">
+            <div className="flex items-center justify-between p-6 border-b border-slate-700 bg-gradient-to-r from-blue-600/20 to-purple-600/20">
+              <div>
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Settings className="w-6 h-6 text-blue-400" />
+                  Account Settings
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">Manage your profile information</p>
+              </div>
               <button
                 onClick={() => {
                   setShowSettings(false);
                   setEditMode(false);
                   setEditedInfo(userInfo);
                 }}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                className="text-slate-400 hover:text-white transition-colors p-2 hover:bg-slate-700 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <div className="p-6 space-y-5">
+              <div className="relative">
+                <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
+                  <div className="w-1 h-4 bg-blue-500 rounded"></div>
                   Name
                 </label>
                 <input
@@ -174,12 +181,14 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   value={editMode ? editedInfo.name : userInfo.name}
                   onChange={(e) => setEditedInfo({ ...editedInfo, name: e.target.value })}
                   disabled={!editMode}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  placeholder="Enter your name"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <div className="relative">
+                <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
+                  <div className="w-1 h-4 bg-green-500 rounded"></div>
                   Email
                 </label>
                 <input
@@ -187,12 +196,14 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   value={editMode ? editedInfo.email : userInfo.email}
                   onChange={(e) => setEditedInfo({ ...editedInfo, email: e.target.value })}
                   disabled={!editMode}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  placeholder="your.email@example.com"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <div className="relative">
+                <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
+                  <div className="w-1 h-4 bg-purple-500 rounded"></div>
                   Company
                 </label>
                 <input
@@ -200,12 +211,24 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   value={editMode ? editedInfo.company : userInfo.company}
                   onChange={(e) => setEditedInfo({ ...editedInfo, company: e.target.value })}
                   disabled={!editMode}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  placeholder="Your company name"
                 />
               </div>
+
+              {!editMode && (
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <p className="text-sm text-blue-300 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                    Click "Edit Information" to update your details
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex justify-end gap-3 p-6 border-t border-slate-700 bg-slate-900/50">
               {editMode ? (
                 <>
                   <button
@@ -213,13 +236,13 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                       setEditMode(false);
                       setEditedInfo(userInfo);
                     }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                    className="px-5 py-2.5 text-sm font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-all border border-slate-700"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveSettings}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-xl transition-all shadow-lg shadow-blue-500/50"
                   >
                     Save Changes
                   </button>
@@ -227,7 +250,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               ) : (
                 <button
                   onClick={() => setEditMode(true)}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-xl transition-all shadow-lg shadow-blue-500/50"
                 >
                   Edit Information
                 </button>
@@ -238,68 +261,83 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showApiKeys && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">API Keys</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto border border-slate-700">
+            <div className="flex items-center justify-between p-6 border-b border-slate-700 bg-gradient-to-r from-emerald-600/20 to-blue-600/20 sticky top-0 backdrop-blur-sm z-10">
+              <div>
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Key className="w-6 h-6 text-emerald-400" />
+                  API Keys
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">Manage your authentication keys</p>
+              </div>
               <button
                 onClick={() => setShowApiKeys(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                className="text-slate-400 hover:text-white transition-colors p-2 hover:bg-slate-700 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Manage your API keys. Keep them secure and never share them publicly.
-                </p>
+              <div className="flex justify-between items-center mb-6">
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex-1 mr-4">
+                  <p className="text-sm text-amber-300 flex items-center gap-2">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    Keep your API keys secure and never share them publicly
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowNewKeyModal(true)}
-                  className="flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                  className="flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 rounded-xl transition-all shadow-lg shadow-emerald-500/50"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   New Key
                 </button>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {apiKeys.map((apiKey) => (
                   <div
                     key={apiKey.id}
-                    className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg"
+                    className="p-5 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-xl hover:border-slate-600 transition-all"
                   >
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <h3 className="font-medium text-gray-900 dark:text-white">{apiKey.name}</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Created {new Date(apiKey.created_at).toLocaleDateString()}
+                        <h3 className="font-semibold text-white text-lg">{apiKey.name}</h3>
+                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                          </svg>
+                          Created {new Date(apiKey.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       </div>
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleCopyKey(apiKey.key)}
-                          className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                          className="p-2.5 text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-all border border-blue-500/30"
                           title="Copy API key"
                         >
                           {copiedKey === apiKey.key ? (
-                            <span className="text-xs text-green-600">Copied!</span>
+                            <span className="text-xs font-semibold text-emerald-400">✓ Copied</span>
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
                         </button>
                         <button
                           onClick={() => handleDeleteKey(apiKey.id)}
-                          className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                          className="p-2.5 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-all border border-red-500/30"
                           title="Delete API key"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-900 rounded p-3 font-mono text-sm text-gray-700 dark:text-gray-300 break-all">
-                      {apiKey.key}
+                    <div className="bg-slate-950 border border-slate-700 rounded-lg p-4 font-mono text-sm text-emerald-400 break-all relative group">
+                      <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-blue-500/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      <span className="relative">{apiKey.key}</span>
                     </div>
                   </div>
                 ))}

@@ -61,7 +61,6 @@ export function LandingPage() {
       <nav style={styles.nav}>
         <div style={styles.navContent}>
           <div style={styles.logo}>
-            <span style={styles.logoIcon}>🔷</span>
             <span style={styles.logoText}>Semantis AI</span>
           </div>
           <div style={styles.navLinks}>
@@ -191,7 +190,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '40px 20px',
+    padding: '100px 20px 40px',
     position: 'relative',
   },
   content: {
@@ -380,14 +379,14 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     zIndex: 100,
-    background: 'rgba(0, 0, 0, 0.3)',
+    background: 'rgba(0, 0, 0, 0.8)',
     backdropFilter: 'blur(20px)',
     borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
   },
   navContent: {
-    maxWidth: '1200px',
+    maxWidth: '1400px',
     margin: '0 auto',
-    padding: '16px 24px',
+    padding: '16px 20px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -395,26 +394,29 @@ const styles: Record<string, React.CSSProperties> = {
   logo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-  },
-  logoIcon: {
-    fontSize: '24px',
   },
   logoText: {
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: '700',
     color: '#fff',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
     letterSpacing: '-0.02em',
   },
   navLinks: {
     display: 'flex',
-    gap: '32px',
+    gap: '8px',
+    alignItems: 'center',
   },
   navLink: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.7)',
     textDecoration: 'none',
     fontSize: '14px',
     fontWeight: '500',
-    transition: 'color 0.2s',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    transition: 'all 0.2s',
   },
 };
