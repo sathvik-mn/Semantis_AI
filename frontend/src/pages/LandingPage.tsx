@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Prism } from '../components/Prism';
 import * as api from '../api/semanticAPI';
+import { useAuth } from '../contexts/AuthContext';
 
 export function LandingPage() {
   const [apiKey, setApiKey] = useState('');
@@ -11,6 +12,7 @@ export function LandingPage() {
   const [generateError, setGenerateError] = useState('');
   const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,8 +71,17 @@ export function LandingPage() {
             <a href="#docs" style={styles.navLink}>Docs</a>
           </div>
           <div style={styles.authButtons}>
-            <a href="/login" style={styles.loginButton}>Sign In</a>
-            <a href="/signup" style={styles.signupButton}>Get Started</a>
+            {isAuthenticated ? (
+              <>
+                <span style={styles.userInfo}>{user?.email}</span>
+                <Link to="/playground" style={styles.dashboardButton}>Go to Dashboard</Link>
+              </>
+            ) : (
+              <>
+                <Link to="/login" style={styles.loginButton}>Sign In</Link>
+                <Link to="/signup" style={styles.signupButton}>Get Started</Link>
+              </>
+            )}
           </div>
         </div>
       </nav>
@@ -440,6 +451,21 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(255, 255, 255, 0.05)',
   },
   signupButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#fff',
+    textDecoration: 'none',
+    borderRadius: '8px',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    transition: 'all 0.2s',
+  },
+  userInfo: {
+    fontSize: '14px',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginRight: '8px',
+  },
+  dashboardButton: {
     padding: '10px 20px',
     fontSize: '14px',
     fontWeight: '600',

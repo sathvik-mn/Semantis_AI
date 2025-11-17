@@ -197,8 +197,8 @@ class TenantState:
     misses: int = 0
     semantic_hits: int = 0
     latencies_ms: List[float] = field(default_factory=list)
-    # adaptive similarity threshold (lowered default for better semantic matching and typo tolerance)
-    sim_threshold: float = 0.72  # Lowered from 0.78 to 0.72 for better matching of similar queries and typos
+    # adaptive similarity threshold (aggressively lowered for maximum hit rate)
+    sim_threshold: float = 0.65  # Lowered from 0.72 to 0.65 for much better matching
     # domain-specific thresholds
     domain_thresholds: Dict[str, float] = field(default_factory=dict)  # domain -> threshold
     # events log
@@ -259,35 +259,88 @@ class SemanticCacheService:
 
     @staticmethod
     def norm_text(s: str) -> str:
-        """Normalize text for exact matching. Preserves semantic meaning better."""
+        """Normalize text for exact matching. Aggressively normalizes for better matching."""
         # Remove extra whitespace and convert to lowercase
         s = " ".join(s.strip().split()).lower()
-        # Remove common articles and prepositions for better matching
-        # But keep them for semantic matching (handled separately)
-        return s
+        # Remove punctuation for better matching
+        import string
+        s = s.translate(str.maketrans('', '', string.punctuation))
+        # Remove common stop words/articles for better exact matching
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+        words = s.split()
+        words = [w for w in words if w not in stop_words]
+        return " ".join(words)
     
     @staticmethod
     def _expand_query(text: str) -> List[str]:
-        """Expand query with variations for better matching."""
+        """Expand query with variations, synonyms, and alternative phrasings for better matching."""
         variations = [text.lower().strip()]
+        text_lower = text.lower()
         
         # Handle contractions
         contractions = {
             "what's": "what is", "who's": "who is", "where's": "where is",
             "it's": "it is", "that's": "that is", "how's": "how is",
-            "when's": "when is", "why's": "why is", "there's": "there is"
+            "when's": "when is", "why's": "why is", "there's": "there is",
+            "can't": "cannot", "won't": "will not", "don't": "do not",
+            "doesn't": "does not", "isn't": "is not", "aren't": "are not"
         }
         for cont, exp in contractions.items():
-            if cont in text.lower():
-                variations.append(text.lower().replace(cont, exp))
+            if cont in text_lower:
+                variations.append(text_lower.replace(cont, exp))
         
-        # Handle question variations
-        question_starters = ["what is", "tell me about", "explain", "describe", "define"]
+        # Handle question variations (expanded list)
+        question_starters = [
+            "what is", "what are", "what does", "what do", "what can",
+            "tell me about", "explain", "describe", "define", "what",
+            "how is", "how does", "how do", "how can", "how",
+            "why is", "why does", "why do", "why",
+            "when is", "when does", "when do", "when",
+            "where is", "where does", "where do", "where",
+            "who is", "who are", "who does", "who do", "who"
+        ]
         for starter in question_starters:
-            if text.lower().startswith(starter):
+            if text_lower.startswith(starter):
                 for alt in question_starters:
-                    if alt != starter:
-                        variations.append(text.lower().replace(starter, alt, 1))
+                    if alt != starter and len(alt) <= len(starter) + 3:  # Similar length
+                        variations.append(text_lower.replace(starter, alt, 1))
+        
+        # Add synonym variations (common synonyms)
+        synonyms = {
+            "big": ["large", "huge", "enormous"],
+            "small": ["tiny", "little", "mini"],
+            "good": ["great", "excellent", "fine"],
+            "bad": ["poor", "terrible", "awful"],
+            "fast": ["quick", "rapid", "swift"],
+            "slow": ["sluggish", "gradual"],
+            "help": ["assist", "aid", "support"],
+            "use": ["utilize", "employ"],
+            "make": ["create", "build", "construct"],
+            "show": ["display", "demonstrate", "present"],
+            "get": ["obtain", "acquire", "receive"],
+            "find": ["locate", "discover"],
+            "start": ["begin", "commence"],
+            "stop": ["end", "finish", "halt"],
+            "change": ["modify", "alter"],
+        }
+        words = text_lower.split()
+        for i, word in enumerate(words):
+            if word in synonyms:
+                for syn in synonyms[word]:
+                    new_words = words.copy()
+                    new_words[i] = syn
+                    variations.append(" ".join(new_words))
+        
+        # Add version without question words (for statements)
+        question_words = ["what", "how", "why", "when", "where", "who", "which"]
+        if any(text_lower.startswith(qw) for qw in question_words):
+            # Remove question word and make it a statement
+            for qw in question_words:
+                if text_lower.startswith(qw):
+                    rest = text_lower[len(qw):].strip()
+                    if rest.startswith(" is ") or rest.startswith(" are "):
+                        variations.append(rest[3:].strip())
+                    break
         
         return list(set(variations))  # Remove duplicates
     
@@ -352,14 +405,25 @@ class SemanticCacheService:
         entry_emb: np.ndarray,
         base_sim: float
     ) -> float:
-        """Calculate hybrid similarity score combining multiple signals."""
-        # 1. Embedding similarity (primary, 60% weight)
+        """Calculate hybrid similarity score combining multiple signals - enhanced for better matching."""
+        # 1. Embedding similarity (primary, 50% weight - reduced to give more weight to text matching)
         emb_score = base_sim
         
-        # 2. Text overlap (20% weight)
+        # 2. Text overlap (30% weight - increased for better word matching)
         query_words = set(query_text.lower().split())
         entry_words = set(entry.prompt_norm.lower().split())
+        
+        # Jaccard similarity
         jaccard = len(query_words & entry_words) / len(query_words | entry_words) if (query_words | entry_words) else 0
+        
+        # Subset/superset bonus (if query is subset or superset of entry)
+        if query_words.issubset(entry_words) or entry_words.issubset(query_words):
+            jaccard = max(jaccard, 0.7)  # Boost for subset/superset
+        
+        # Word order invariant matching (check if same words, different order)
+        if query_words == entry_words and len(query_words) > 1:
+            jaccard = max(jaccard, 0.8)  # High score for same words
+        
         text_score = jaccard
         
         # 3. Domain match (10% weight) - boost if same domain
@@ -375,8 +439,8 @@ class SemanticCacheService:
         
         # Weighted combination
         hybrid_score = (
-            0.60 * emb_score +
-            0.20 * text_score +
+            0.50 * emb_score +
+            0.30 * text_score +
             0.10 * domain_boost +
             0.05 * recency_score +
             0.05 * usage_score
@@ -389,50 +453,58 @@ class SemanticCacheService:
         base_sim: float, 
         entry: CacheEntry
     ) -> float:
-        """Calculate confidence score for a match (0.0-1.0)."""
+        """Calculate confidence score for a match (0.0-1.0) - more lenient for better matching."""
         # Base confidence from hybrid score
         confidence = hybrid_score
         
         # Boost if base similarity is high (strong embedding match)
         if base_sim > 0.85:
-            confidence += 0.1
+            confidence += 0.15
         elif base_sim > 0.80:
+            confidence += 0.10
+        elif base_sim > 0.75:
             confidence += 0.05
+        elif base_sim > 0.70:
+            confidence += 0.03
+        elif base_sim > 0.65:
+            confidence += 0.01  # Small boost for moderate similarity
         
-        # Boost if entry is well-used (proven reliable)
+        # Boost if entry has been used before (proven useful)
         if entry.use_count > 5:
-            confidence += 0.05
+            confidence += 0.08
+        elif entry.use_count > 2:
+            confidence += 0.04
+        elif entry.use_count > 0:
+            confidence += 0.02
         
-        # Boost if entry is fresh
-        age_days = (time.time() - entry.created_at) / 86400
-        if age_days < 7:
-            confidence += 0.05
-        
-        # Penalize if similarity is borderline
-        if base_sim < 0.75:
-            confidence -= 0.1
+        # Less penalty for borderline similarity (more lenient)
+        if base_sim < 0.65:
+            confidence -= 0.05  # Reduced penalty
+        elif base_sim < 0.60:
+            confidence -= 0.10
         
         return max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
     
     def _get_adaptive_threshold(self, T: TenantState, num_candidates: int, domain: str = None) -> float:
-        """Get adaptive threshold considering domain and cache size."""
-        # Base threshold from cache size
-        if len(T.rows) < 10:
-            base = max(0.70, T.sim_threshold)
+        """Get adaptive threshold - aggressively lowered for maximum hit rate."""
+        # Base threshold from cache size (much more aggressive)
+        if len(T.rows) < 5:
+            base = max(0.60, T.sim_threshold)  # Very lenient for small cache
+        elif len(T.rows) < 10:
+            base = max(0.62, T.sim_threshold)
         elif len(T.rows) < 20:
-            base = max(0.72, T.sim_threshold)
+            base = max(0.63, T.sim_threshold)
         else:
-            base = T.sim_threshold
+            base = T.sim_threshold  # Use tenant's threshold
         
-        # Domain-specific adjustment
+        # Domain-specific adjustment (can be more lenient per domain)
         if domain and domain in T.domain_thresholds:
             domain_thresh = T.domain_thresholds[domain]
-            # Use stricter of base or domain threshold
-            base = max(base, domain_thresh)
+            # Use more lenient threshold
+            base = min(base, domain_thresh) if domain_thresh < base else base
         
-        # Adjust based on number of candidates (more candidates = can be stricter)
-        if num_candidates > 10:
-            base += 0.02  # Slightly stricter with more options
+        # Don't increase threshold with more candidates - keep it low for better hits
+        # More candidates means we can find better matches, not that we should be stricter
         
         return base
 
@@ -519,8 +591,8 @@ class SemanticCacheService:
             # Use context-aware embedding (considers conversation history)
             emb, primary_text = self._get_context_aware_embedding(messages, prompt_norm)
             
-            # Search more candidates initially (top 20 for better reranking)
-            top_matches = self._faiss_search_top_k(T, emb, k=min(20, len(T.rows)))
+            # Search more candidates initially (top 30 for better reranking and more opportunities)
+            top_matches = self._faiss_search_top_k(T, emb, k=min(30, len(T.rows)))
             
             # Calculate hybrid scores for all candidates
             candidates = []
@@ -548,24 +620,58 @@ class SemanticCacheService:
             # Apply adaptive threshold with confidence check
             adaptive_threshold = self._get_adaptive_threshold(T, len(candidates), query_domain)
             
-            # Typo tolerance: be more lenient for very similar queries
+            # Aggressive matching with multiple fallback strategies
             best_match = None
             for candidate in candidates:
                 hybrid_score = candidate['hybrid_score']
                 base_sim = candidate['base_sim']
                 confidence = candidate['confidence']
+                entry = candidate['entry']
                 
-                # Normal match - above threshold with good confidence
-                if hybrid_score >= adaptive_threshold and confidence >= 0.7:
+                # Strategy 1: Normal match - above threshold with decent confidence
+                if hybrid_score >= adaptive_threshold and confidence >= 0.60:
                     best_match = candidate
+                    semantic_log.info(f"{tenant_id} | match-normal | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
                     break
-                # Typo tolerance: accept if similarity is 0.65+ with decent confidence
-                elif base_sim >= 0.65 and confidence >= 0.65:
-                    # Lower threshold to just below similarity for typo tolerance
-                    if hybrid_score >= max(0.65, base_sim - 0.02):
+                
+                # Strategy 2: High embedding similarity (even if hybrid is lower)
+                if base_sim >= 0.70 and confidence >= 0.55:
+                    best_match = candidate
+                    semantic_log.info(f"{tenant_id} | match-high-sim | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
+                    break
+                
+                # Strategy 3: Good hybrid score with moderate similarity
+                if hybrid_score >= max(0.60, adaptive_threshold - 0.05) and base_sim >= 0.60:
+                    best_match = candidate
+                    semantic_log.info(f"{tenant_id} | match-hybrid | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
+                    break
+                
+                # Strategy 4: Typo tolerance - accept if similarity is 0.58+ with decent confidence
+                if base_sim >= 0.58 and confidence >= 0.55:
+                    # Check if it's likely a typo/variation (high text overlap)
+                    query_words = set(primary_text.lower().split())
+                    entry_words = set(entry.prompt_norm.lower().split())
+                    word_overlap = len(query_words & entry_words) / max(len(query_words), len(entry_words), 1)
+                    if word_overlap >= 0.5:  # At least 50% word overlap
                         best_match = candidate
-                        semantic_log.info(f"{tenant_id} | typo-tolerance | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
+                        semantic_log.info(f"{tenant_id} | match-typo | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | overlap={word_overlap:.2f}")
                         break
+                
+                # Strategy 5: Partial match - query is subset or superset
+                query_words = set(primary_text.lower().split())
+                entry_words = set(entry.prompt_norm.lower().split())
+                if (query_words.issubset(entry_words) or entry_words.issubset(query_words)) and base_sim >= 0.55:
+                    if len(query_words) >= 3 or len(entry_words) >= 3:  # Only for substantial queries
+                        best_match = candidate
+                        semantic_log.info(f"{tenant_id} | match-partial | sim={base_sim:.3f} | hybrid={hybrid_score:.3f}")
+                        break
+                
+                # Strategy 6: Same domain with moderate similarity
+                query_domain = domain_hint(primary_text)
+                if entry.domain == query_domain and base_sim >= 0.60:
+                    best_match = candidate
+                    semantic_log.info(f"{tenant_id} | match-domain | sim={base_sim:.3f} | domain={query_domain}")
+                    break
             
             if best_match is not None:
                 entry = best_match['entry']
@@ -691,16 +797,19 @@ class SemanticCacheService:
         }
 
     def adapt_threshold(self, tenant_id: str):
-        """Gently adjust sim threshold based on hit ratio when traffic is non-trivial."""
+        """Aggressively adjust sim threshold based on hit ratio for maximum hit rate."""
         T = self.tenant(tenant_id)
         total = T.hits + T.misses
-        if total < 20:
-            return
+        if total < 10:
+            return  # Need some data first
         hit_ratio = T.hits / total
-        if hit_ratio < 0.55:
-            T.sim_threshold = max(0.70, T.sim_threshold - 0.01)
-        elif hit_ratio > 0.85:
-            T.sim_threshold = min(0.92, T.sim_threshold + 0.01)
+        # More aggressive lowering when hit rate is low
+        if hit_ratio < 0.50:
+            T.sim_threshold = max(0.55, T.sim_threshold - 0.02)  # Lower faster
+        elif hit_ratio < 0.60:
+            T.sim_threshold = max(0.58, T.sim_threshold - 0.01)
+        elif hit_ratio > 0.90:
+            T.sim_threshold = min(0.75, T.sim_threshold + 0.01)  # Only raise if very high hit rate
 
 svc = SemanticCacheService()
 
