@@ -92,418 +92,360 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
   };
 
   return (
-    <div className="relative" ref={menuRef}>
-      {/* Trigger Button */}
+    <div style={styles.container} ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="group relative flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-cyan-500/30 transition-all duration-300 shadow-lg hover:shadow-cyan-500/10"
+        style={{
+          ...styles.triggerButton,
+          ...(isOpen ? styles.triggerButtonActive : {}),
+        }}
       >
-        {/* Avatar with neon glow */}
-        <div className="relative">
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 blur-md transition-opacity duration-300" />
-          <div className="relative w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500 via-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-lg ring-2 ring-cyan-400/20 group-hover:ring-cyan-400/40 transition-all duration-300">
-            {userInfo.name.charAt(0).toUpperCase()}
-          </div>
+        <div style={styles.avatar}>
+          <span style={styles.avatarText}>{userInfo.name.charAt(0).toUpperCase()}</span>
         </div>
-
-        <span className="text-sm font-semibold text-white/90 group-hover:text-white transition-colors">
-          {userInfo.name}
-        </span>
-
+        <span style={styles.userName}>{userInfo.name}</span>
         <ChevronDown
-          className={`w-4 h-4 text-slate-400 group-hover:text-cyan-400 transition-all duration-300 ${isOpen ? 'rotate-180' : ''}`}
+          style={{
+            ...styles.chevron,
+            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+          }}
+          size={16}
         />
       </button>
 
-      {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-3 w-80 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="relative bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 overflow-hidden">
-            {/* Neon glow effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-blue-500/5 to-transparent pointer-events-none" />
-            <div className="absolute -top-px left-0 right-0 h-px bg-gradient-to-r from-transparent via-cyan-400 to-transparent" />
-
-            {/* Header Section */}
-            <div className="relative px-6 py-5 border-b border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-transparent">
-              <div className="flex items-center gap-4">
-                {/* Large Avatar */}
-                <div className="relative">
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 blur-lg opacity-40" />
-                  <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-cyan-500 via-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-xl ring-4 ring-cyan-400/20">
-                    {userInfo.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-base font-bold text-white truncate">{userInfo.name}</h3>
-                  <p className="text-sm text-slate-400 truncate">{userInfo.email}</p>
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/10 rounded-md border border-cyan-500/20">
-                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    <span className="text-xs font-medium text-cyan-400">Connected</span>
-                  </div>
-                </div>
+        <div style={styles.dropdown}>
+          <div style={styles.dropdownHeader}>
+            <div style={styles.avatarLarge}>
+              <span style={styles.avatarLargeText}>{userInfo.name.charAt(0).toUpperCase()}</span>
+            </div>
+            <div style={styles.userInfoSection}>
+              <div style={styles.userNameLarge}>{userInfo.name}</div>
+              <div style={styles.userEmail}>{userInfo.email}</div>
+              <div style={styles.statusBadge}>
+                <div style={styles.statusDot} />
+                <span style={styles.statusText}>Connected</span>
               </div>
             </div>
+          </div>
 
-            {/* Menu Items */}
-            <div className="py-2 px-2">
-              {/* Account Settings */}
-              <button
-                onClick={() => {
-                  setShowSettings(true);
-                  setIsOpen(false);
-                }}
-                className="group w-full flex items-center gap-4 px-4 py-3.5 text-sm font-medium text-slate-300 hover:text-white rounded-xl hover:bg-gradient-to-r hover:from-cyan-500/10 hover:to-blue-500/10 transition-all duration-300 relative overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/0 to-blue-500/0 group-hover:from-cyan-500/5 group-hover:to-blue-500/5 transition-all duration-300" />
-                <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/10 to-blue-500/10 group-hover:from-cyan-500/20 group-hover:to-blue-500/20 border border-cyan-500/20 group-hover:border-cyan-400/40 transition-all duration-300 shadow-lg group-hover:shadow-cyan-500/20">
-                  <Settings className="w-5 h-5 text-cyan-400" />
-                </div>
-                <span className="relative">Account Settings</span>
-                <div className="relative ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ChevronDown className="w-4 h-4 -rotate-90 text-cyan-400" />
-                </div>
-              </button>
+          <div style={styles.menuItems}>
+            <button
+              onClick={() => {
+                setShowSettings(true);
+                setIsOpen(false);
+              }}
+              style={styles.menuItem}
+              onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.menuItemHover)}
+              onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.menuItem)}
+            >
+              <div style={{...styles.menuIconContainer, ...styles.menuIconContainerBlue}}>
+                <Settings size={18} style={styles.menuIcon} />
+              </div>
+              <span style={styles.menuLabel}>Account Settings</span>
+            </button>
 
-              {/* API Keys */}
-              <button
-                onClick={() => {
-                  setShowApiKeys(true);
-                  setIsOpen(false);
-                }}
-                className="group w-full flex items-center gap-4 px-4 py-3.5 text-sm font-medium text-slate-300 hover:text-white rounded-xl hover:bg-gradient-to-r hover:from-blue-500/10 hover:to-purple-500/10 transition-all duration-300 relative overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 to-purple-500/0 group-hover:from-blue-500/5 group-hover:to-purple-500/5 transition-all duration-300" />
-                <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/10 to-purple-500/10 group-hover:from-blue-500/20 group-hover:to-purple-500/20 border border-blue-500/20 group-hover:border-blue-400/40 transition-all duration-300 shadow-lg group-hover:shadow-blue-500/20">
-                  <Key className="w-5 h-5 text-blue-400" />
-                </div>
-                <span className="relative">API Keys</span>
-                <div className="relative ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ChevronDown className="w-4 h-4 -rotate-90 text-blue-400" />
-                </div>
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                setShowApiKeys(true);
+                setIsOpen(false);
+              }}
+              style={styles.menuItem}
+              onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.menuItemHover)}
+              onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.menuItem)}
+            >
+              <div style={{...styles.menuIconContainer, ...styles.menuIconContainerGreen}}>
+                <Key size={18} style={styles.menuIcon} />
+              </div>
+              <span style={styles.menuLabel}>API Keys</span>
+            </button>
+          </div>
 
-            {/* Sign Out Section */}
-            <div className="border-t border-slate-700/50 p-2 bg-slate-900/50">
-              <button
-                onClick={onLogout}
-                className="group w-full flex items-center gap-4 px-4 py-3.5 text-sm font-medium text-red-400 hover:text-red-300 rounded-xl hover:bg-red-500/10 transition-all duration-300 relative overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-red-500/0 group-hover:bg-red-500/5 transition-all duration-300" />
-                <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/10 group-hover:bg-red-500/20 border border-red-500/20 group-hover:border-red-400/40 transition-all duration-300">
-                  <LogOut className="w-5 h-5 text-red-400" />
-                </div>
-                <span className="relative">Sign Out</span>
-              </button>
-            </div>
+          <div style={styles.menuFooter}>
+            <button
+              onClick={onLogout}
+              style={styles.logoutButton}
+              onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.logoutButtonHover)}
+              onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.logoutButton)}
+            >
+              <div style={styles.logoutIconContainer}>
+                <LogOut size={18} style={styles.logoutIcon} />
+              </div>
+              <span style={styles.logoutLabel}>Sign Out</span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* Account Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="relative bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl max-w-lg w-full border border-slate-700/50 animate-in zoom-in-95 duration-200">
-            {/* Neon border glow */}
-            <div className="absolute -inset-px bg-gradient-to-br from-cyan-500/20 via-blue-500/20 to-purple-500/20 rounded-2xl blur-xl" />
-
-            {/* Modal content */}
-            <div className="relative">
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-transparent">
-                <div>
-                  <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30">
-                      <Settings className="w-5 h-5 text-cyan-400" />
-                    </div>
-                    Account Settings
-                  </h2>
-                  <p className="text-sm text-slate-400 mt-1.5 ml-13">Manage your profile information</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowSettings(false);
-                    setEditMode(false);
-                    setEditedInfo(userInfo);
-                  }}
-                  className="group p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all duration-200 border border-transparent hover:border-slate-700"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <h2 style={styles.modalTitle}>
+                  <Settings size={20} style={{ marginRight: '8px' }} />
+                  Account Settings
+                </h2>
+                <p style={styles.modalSubtitle}>Manage your profile information</p>
               </div>
-
-              {/* Form */}
-              <div className="p-6 space-y-5">
-                {/* Name Field */}
-                <div className="relative group">
-                  <label className="block text-sm font-semibold text-slate-300 mb-2.5 flex items-center gap-2">
-                    <User className="w-4 h-4 text-cyan-400" />
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editMode ? editedInfo.name : userInfo.name}
-                    onChange={(e) => setEditedInfo({ ...editedInfo, name: e.target.value })}
-                    disabled={!editMode}
-                    className="w-full px-4 py-3.5 bg-slate-800/50 border border-slate-700/50 text-white rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 placeholder:text-slate-500"
-                    placeholder="Enter your name"
-                  />
-                </div>
-
-                {/* Email Field */}
-                <div className="relative group">
-                  <label className="block text-sm font-semibold text-slate-300 mb-2.5 flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-blue-400" />
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={editMode ? editedInfo.email : userInfo.email}
-                    onChange={(e) => setEditedInfo({ ...editedInfo, email: e.target.value })}
-                    disabled={!editMode}
-                    className="w-full px-4 py-3.5 bg-slate-800/50 border border-slate-700/50 text-white rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 placeholder:text-slate-500"
-                    placeholder="your.email@example.com"
-                  />
-                </div>
-
-                {/* Company Field */}
-                <div className="relative group">
-                  <label className="block text-sm font-semibold text-slate-300 mb-2.5 flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-purple-400" />
-                    Company
-                  </label>
-                  <input
-                    type="text"
-                    value={editMode ? editedInfo.company : userInfo.company}
-                    onChange={(e) => setEditedInfo({ ...editedInfo, company: e.target.value })}
-                    disabled={!editMode}
-                    className="w-full px-4 py-3.5 bg-slate-800/50 border border-slate-700/50 text-white rounded-xl focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 placeholder:text-slate-500"
-                    placeholder="Your company name"
-                  />
-                </div>
-
-                {/* Info Box */}
-                {!editMode && (
-                  <div className="relative bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-xl p-4 overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-blue-500/5" />
-                    <p className="relative text-sm text-cyan-300 flex items-start gap-3">
-                      <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                      </svg>
-                      Click "Edit Information" to update your details
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer Actions */}
-              <div className="flex justify-end gap-3 px-6 py-5 border-t border-slate-700/50 bg-slate-900/50">
-                {editMode ? (
-                  <>
-                    <button
-                      onClick={() => {
-                        setEditMode(false);
-                        setEditedInfo(userInfo);
-                      }}
-                      className="px-6 py-3 text-sm font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-all duration-200 border border-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveSettings}
-                      className="relative px-6 py-3 text-sm font-semibold text-white rounded-xl transition-all duration-200 overflow-hidden group"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500" />
-                      <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                      <div className="absolute inset-0 shadow-lg shadow-cyan-500/50 group-hover:shadow-cyan-500/70 transition-all duration-200" />
-                      <span className="relative">Save Changes</span>
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setEditMode(true)}
-                    className="relative px-6 py-3 text-sm font-semibold text-white rounded-xl transition-all duration-200 overflow-hidden group"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                    <div className="absolute inset-0 shadow-lg shadow-cyan-500/50 group-hover:shadow-cyan-500/70 transition-all duration-200" />
-                    <span className="relative">Edit Information</span>
-                  </button>
-                )}
-              </div>
+              <button
+                onClick={() => {
+                  setShowSettings(false);
+                  setEditMode(false);
+                  setEditedInfo(userInfo);
+                }}
+                style={styles.closeButton}
+                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.closeButtonHover)}
+                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.closeButton)}
+              >
+                <X size={20} />
+              </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* API Keys Modal */}
-      {showApiKeys && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="relative bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden border border-slate-700/50 animate-in zoom-in-95 duration-200">
-            {/* Neon border glow */}
-            <div className="absolute -inset-px bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-cyan-500/20 rounded-2xl blur-xl" />
-
-            {/* Modal content */}
-            <div className="relative flex flex-col h-full max-h-[85vh]">
-              {/* Header */}
-              <div className="flex-shrink-0 flex items-center justify-between px-6 py-5 border-b border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-transparent">
-                <div>
-                  <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
-                      <Key className="w-5 h-5 text-blue-400" />
-                    </div>
-                    API Keys
-                  </h2>
-                  <p className="text-sm text-slate-400 mt-1.5 ml-13">Manage your authentication keys</p>
-                </div>
-                <button
-                  onClick={() => setShowApiKeys(false)}
-                  className="group p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all duration-200 border border-transparent hover:border-slate-700"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {/* Warning + New Key Button */}
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center mb-6">
-                  <div className="flex-1 relative bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl p-4 overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-orange-500/5" />
-                    <p className="relative text-sm text-amber-300 flex items-start gap-3">
-                      <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      Keep your API keys secure and never share them publicly
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setShowNewKeyModal(true)}
-                    className="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold text-white rounded-xl transition-all duration-200 overflow-hidden group flex-shrink-0"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                    <div className="absolute inset-0 shadow-lg shadow-blue-500/50 group-hover:shadow-blue-500/70 transition-all duration-200" />
-                    <Plus className="relative w-4 h-4" />
-                    <span className="relative">New Key</span>
-                  </button>
-                </div>
-
-                {/* API Keys List */}
-                <div className="space-y-4">
-                  {apiKeys.map((apiKey) => (
-                    <div
-                      key={apiKey.id}
-                      className="relative group bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-slate-600/50 transition-all duration-200 overflow-hidden"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/0 to-purple-500/0 group-hover:from-blue-500/5 group-hover:to-purple-500/5 transition-all duration-200" />
-
-                      <div className="relative flex items-start justify-between mb-4">
-                        <div className="flex-1">
-                          <h3 className="font-bold text-white text-lg mb-1">{apiKey.name}</h3>
-                          <p className="text-xs text-slate-400 flex items-center gap-2">
-                            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                            </svg>
-                            Created {new Date(apiKey.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleCopyKey(apiKey.key)}
-                            className="relative p-2.5 rounded-lg transition-all duration-200 overflow-hidden group/btn"
-                            title="Copy API key"
-                          >
-                            <div className="absolute inset-0 bg-blue-500/10 group-hover/btn:bg-blue-500/20" />
-                            <div className="absolute inset-0 border border-blue-500/30 group-hover/btn:border-blue-500/50 rounded-lg" />
-                            {copiedKey === apiKey.key ? (
-                              <span className="relative text-xs font-bold text-emerald-400">✓</span>
-                            ) : (
-                              <Copy className="relative w-4 h-4 text-blue-400" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteKey(apiKey.id)}
-                            className="relative p-2.5 rounded-lg transition-all duration-200 overflow-hidden group/btn"
-                            title="Delete API key"
-                          >
-                            <div className="absolute inset-0 bg-red-500/10 group-hover/btn:bg-red-500/20" />
-                            <div className="absolute inset-0 border border-red-500/30 group-hover/btn:border-red-500/50 rounded-lg" />
-                            <Trash2 className="relative w-4 h-4 text-red-400" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="relative bg-slate-950/80 border border-slate-700/50 rounded-lg p-4 font-mono text-sm text-blue-400 break-all overflow-hidden group/code">
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5 opacity-0 group-hover/code:opacity-100 transition-opacity duration-200" />
-                        <span className="relative">{apiKey.key}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* New Key Modal */}
-      {showNewKeyModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="relative bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl max-w-md w-full border border-slate-700/50 animate-in zoom-in-95 duration-200">
-            {/* Neon border glow */}
-            <div className="absolute -inset-px bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl blur-xl" />
-
-            {/* Modal content */}
-            <div className="relative">
-              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-transparent">
-                <h2 className="text-xl font-bold text-white">Create New API Key</h2>
-                <button
-                  onClick={() => {
-                    setShowNewKeyModal(false);
-                    setNewKeyName('');
-                  }}
-                  className="group p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all duration-200"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-6">
-                <label className="block text-sm font-semibold text-slate-300 mb-2.5">
-                  Key Name
+            <div style={styles.modalBody}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <User size={14} style={{ marginRight: '6px' }} />
+                  Name
                 </label>
+                <input
+                  type="text"
+                  value={editMode ? editedInfo.name : userInfo.name}
+                  onChange={(e) => setEditedInfo({ ...editedInfo, name: e.target.value })}
+                  disabled={!editMode}
+                  style={{
+                    ...styles.input,
+                    opacity: editMode ? 1 : 0.6,
+                    cursor: editMode ? 'text' : 'not-allowed',
+                  }}
+                  placeholder="Enter your name"
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Mail size={14} style={{ marginRight: '6px' }} />
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={editMode ? editedInfo.email : userInfo.email}
+                  onChange={(e) => setEditedInfo({ ...editedInfo, email: e.target.value })}
+                  disabled={!editMode}
+                  style={{
+                    ...styles.input,
+                    opacity: editMode ? 1 : 0.6,
+                    cursor: editMode ? 'text' : 'not-allowed',
+                  }}
+                  placeholder="your.email@example.com"
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Building2 size={14} style={{ marginRight: '6px' }} />
+                  Company
+                </label>
+                <input
+                  type="text"
+                  value={editMode ? editedInfo.company : userInfo.company}
+                  onChange={(e) => setEditedInfo({ ...editedInfo, company: e.target.value })}
+                  disabled={!editMode}
+                  style={{
+                    ...styles.input,
+                    opacity: editMode ? 1 : 0.6,
+                    cursor: editMode ? 'text' : 'not-allowed',
+                  }}
+                  placeholder="Your company name"
+                />
+              </div>
+
+              {!editMode && (
+                <div style={styles.infoBox}>
+                  <svg style={{ width: '16px', height: '16px', flexShrink: 0, marginTop: '2px' }} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <span>Click "Edit Information" to update your details</span>
+                </div>
+              )}
+            </div>
+
+            <div style={styles.modalFooter}>
+              {editMode ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setEditMode(false);
+                      setEditedInfo(userInfo);
+                    }}
+                    style={styles.cancelButton}
+                    onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.cancelButtonHover)}
+                    onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.cancelButton)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveSettings}
+                    style={styles.primaryButton}
+                    onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+                  >
+                    Save Changes
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setEditMode(true)}
+                  style={styles.primaryButton}
+                  onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  Edit Information
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApiKeys && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '700px'}}>
+            <div style={styles.modalHeader}>
+              <div>
+                <h2 style={styles.modalTitle}>
+                  <Key size={20} style={{ marginRight: '8px' }} />
+                  API Keys
+                </h2>
+                <p style={styles.modalSubtitle}>Manage your authentication keys</p>
+              </div>
+              <button
+                onClick={() => setShowApiKeys(false)}
+                style={styles.closeButton}
+                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.closeButtonHover)}
+                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.closeButton)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              <div style={styles.apiKeysTopBar}>
+                <div style={styles.warningBox}>
+                  <svg style={{ width: '16px', height: '16px', flexShrink: 0 }} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span>Keep your API keys secure and never share them publicly</span>
+                </div>
+                <button
+                  onClick={() => setShowNewKeyModal(true)}
+                  style={styles.newKeyButton}
+                  onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  <Plus size={16} style={{ marginRight: '6px' }} />
+                  New Key
+                </button>
+              </div>
+
+              <div style={styles.apiKeysList}>
+                {apiKeys.map((apiKey) => (
+                  <div key={apiKey.id} style={styles.apiKeyCard}>
+                    <div style={styles.apiKeyCardHeader}>
+                      <div>
+                        <h3 style={styles.apiKeyName}>{apiKey.name}</h3>
+                        <p style={styles.apiKeyDate}>
+                          Created {new Date(apiKey.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <div style={styles.apiKeyActions}>
+                        <button
+                          onClick={() => handleCopyKey(apiKey.key)}
+                          style={styles.actionButton}
+                          title="Copy API key"
+                          onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.actionButtonHover)}
+                          onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.actionButton)}
+                        >
+                          {copiedKey === apiKey.key ? (
+                            <span style={{fontSize: '11px', fontWeight: 'bold'}}>✓ Copied</span>
+                          ) : (
+                            <Copy size={14} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteKey(apiKey.id)}
+                          style={{...styles.actionButton, ...styles.deleteButton}}
+                          title="Delete API key"
+                          onMouseOver={(e) => Object.assign(e.currentTarget.style, {...styles.actionButton, ...styles.deleteButtonHover})}
+                          onMouseOut={(e) => Object.assign(e.currentTarget.style, {...styles.actionButton, ...styles.deleteButton})}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div style={styles.apiKeyDisplay}>
+                      {apiKey.key}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewKeyModal && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '450px'}}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Create New API Key</h2>
+              <button
+                onClick={() => {
+                  setShowNewKeyModal(false);
+                  setNewKeyName('');
+                }}
+                style={styles.closeButton}
+                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.closeButtonHover)}
+                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.closeButton)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Key Name</label>
                 <input
                   type="text"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                   placeholder="e.g., Production Key"
-                  className="w-full px-4 py-3.5 bg-slate-800/50 border border-slate-700/50 text-white rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 placeholder:text-slate-500"
+                  style={styles.input}
                   autoFocus
                 />
               </div>
+            </div>
 
-              <div className="flex justify-end gap-3 px-6 py-5 border-t border-slate-700/50 bg-slate-900/50">
-                <button
-                  onClick={() => {
-                    setShowNewKeyModal(false);
-                    setNewKeyName('');
-                  }}
-                  className="px-5 py-2.5 text-sm font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-all duration-200 border border-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateKey}
-                  className="relative px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition-all duration-200 overflow-hidden group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                  <div className="absolute inset-0 shadow-lg shadow-blue-500/50 group-hover:shadow-blue-500/70 transition-all duration-200" />
-                  <span className="relative">Create Key</span>
-                </button>
-              </div>
+            <div style={styles.modalFooter}>
+              <button
+                onClick={() => {
+                  setShowNewKeyModal(false);
+                  setNewKeyName('');
+                }}
+                style={styles.cancelButton}
+                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.cancelButtonHover)}
+                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.cancelButton)}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateKey}
+                style={styles.primaryButton}
+                onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                Create Key
+              </button>
             </div>
           </div>
         </div>
@@ -511,3 +453,439 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
     </div>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    position: 'relative',
+  },
+  triggerButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '8px 14px',
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  triggerButtonActive: {
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  avatar: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '600',
+    fontSize: '14px',
+  },
+  avatarText: {
+    color: '#fff',
+  },
+  userName: {
+    fontSize: '14px',
+    fontWeight: '500',
+  },
+  chevron: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    transition: 'transform 0.2s',
+  },
+  dropdown: {
+    position: 'absolute',
+    right: 0,
+    top: 'calc(100% + 8px)',
+    width: '300px',
+    background: 'rgba(0, 0, 0, 0.9)',
+    backdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '12px',
+    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
+    zIndex: 1000,
+    overflow: 'hidden',
+  },
+  dropdownHeader: {
+    padding: '20px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+    background: 'rgba(59, 130, 246, 0.1)',
+  },
+  avatarLarge: {
+    width: '52px',
+    height: '52px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '700',
+    fontSize: '22px',
+    marginBottom: '12px',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+  },
+  avatarLargeText: {
+    color: '#fff',
+  },
+  userInfoSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  userNameLarge: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#fff',
+  },
+  userEmail: {
+    fontSize: '13px',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  statusBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 10px',
+    background: 'rgba(16, 185, 129, 0.1)',
+    border: '1px solid rgba(16, 185, 129, 0.3)',
+    borderRadius: '6px',
+    marginTop: '6px',
+    width: 'fit-content',
+  },
+  statusDot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    background: '#10b981',
+    animation: 'pulse 2s infinite',
+  },
+  statusText: {
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  menuItems: {
+    padding: '8px',
+  },
+  menuItem: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 12px',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  menuItemHover: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    color: '#fff',
+  },
+  menuIconContainer: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s',
+  },
+  menuIconContainerBlue: {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.2)',
+  },
+  menuIconContainerGreen: {
+    background: 'rgba(16, 185, 129, 0.1)',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
+  },
+  menuIcon: {
+    color: '#3b82f6',
+  },
+  menuLabel: {
+    flex: 1,
+    textAlign: 'left',
+  },
+  menuFooter: {
+    padding: '8px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    background: 'rgba(0, 0, 0, 0.3)',
+  },
+  logoutButton: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 12px',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#ef4444',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  logoutButtonHover: {
+    background: 'rgba(239, 68, 68, 0.1)',
+  },
+  logoutIconContainer: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(239, 68, 68, 0.1)',
+    border: '1px solid rgba(239, 68, 68, 0.2)',
+  },
+  logoutIcon: {
+    color: '#ef4444',
+  },
+  logoutLabel: {
+    flex: 1,
+    textAlign: 'left',
+  },
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0, 0, 0, 0.7)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2000,
+    padding: '20px',
+  },
+  modal: {
+    width: '100%',
+    maxWidth: '500px',
+    maxHeight: '90vh',
+    background: 'rgba(0, 0, 0, 0.95)',
+    backdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '16px',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    padding: '24px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+    background: 'rgba(59, 130, 246, 0.05)',
+  },
+  modalTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '4px',
+  },
+  modalSubtitle: {
+    fontSize: '13px',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  closeButton: {
+    padding: '8px',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '6px',
+    color: 'rgba(255, 255, 255, 0.6)',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  closeButtonHover: {
+    background: 'rgba(255, 255, 255, 0.1)',
+    color: '#fff',
+  },
+  modalBody: {
+    padding: '24px',
+    overflowY: 'auto',
+    flex: 1,
+  },
+  inputGroup: {
+    marginBottom: '20px',
+  },
+  label: {
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '13px',
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: '8px',
+  },
+  input: {
+    width: '100%',
+    padding: '12px 14px',
+    fontSize: '14px',
+    background: 'rgba(0, 0, 0, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '8px',
+    color: '#fff',
+    outline: 'none',
+    transition: 'all 0.2s',
+  },
+  infoBox: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    padding: '14px',
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.2)',
+    borderRadius: '8px',
+    color: '#60a5fa',
+    fontSize: '13px',
+    lineHeight: '1.5',
+  },
+  modalFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    padding: '20px 24px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    background: 'rgba(0, 0, 0, 0.3)',
+  },
+  cancelButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '8px',
+    color: 'rgba(255, 255, 255, 0.8)',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  cancelButtonHover: {
+    background: 'rgba(255, 255, 255, 0.1)',
+    color: '#fff',
+  },
+  primaryButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+  },
+  apiKeysTopBar: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+  },
+  warningBox: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    padding: '12px 14px',
+    background: 'rgba(251, 191, 36, 0.1)',
+    border: '1px solid rgba(251, 191, 36, 0.2)',
+    borderRadius: '8px',
+    color: '#fbbf24',
+    fontSize: '12px',
+    lineHeight: '1.4',
+    minWidth: '200px',
+  },
+  newKeyButton: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '10px 18px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    flexShrink: 0,
+  },
+  apiKeysList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+  },
+  apiKeyCard: {
+    padding: '16px',
+    background: 'rgba(255, 255, 255, 0.02)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '10px',
+    transition: 'all 0.2s',
+  },
+  apiKeyCardHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+  },
+  apiKeyName: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '4px',
+  },
+  apiKeyDate: {
+    fontSize: '12px',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  apiKeyActions: {
+    display: 'flex',
+    gap: '8px',
+  },
+  actionButton: {
+    padding: '8px 10px',
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.2)',
+    borderRadius: '6px',
+    color: '#3b82f6',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonHover: {
+    background: 'rgba(59, 130, 246, 0.2)',
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+  },
+  deleteButton: {
+    background: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    color: '#ef4444',
+  },
+  deleteButtonHover: {
+    background: 'rgba(239, 68, 68, 0.2)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  apiKeyDisplay: {
+    padding: '12px 14px',
+    background: 'rgba(0, 0, 0, 0.4)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '8px',
+    fontFamily: 'monospace',
+    fontSize: '13px',
+    color: '#10b981',
+    wordBreak: 'break-all',
+  },
+};
