@@ -6,4 +6,6 @@ numpy
 pydantic
 python-dotenv
 requests
+bcrypt==4.1.2
+python-jose[cryptography]==3.3.0
 

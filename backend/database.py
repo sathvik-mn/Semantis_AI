@@ -41,6 +41,9 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE,
                 name TEXT,
+                password_hash TEXT,
+                email_verified BOOLEAN DEFAULT 0,
+                last_login_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -351,6 +354,103 @@ def update_plan(tenant_id: str, plan: str, expires_at: Optional[str] = None) -> 
             SET plan = ?, plan_expires_at = ?, updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = ? AND is_active = 1
         ''', (plan, expires_at, tenant_id))
+        return cursor.rowcount > 0
+
+# Auth-related functions
+
+def create_user_with_password(email: str, password_hash: str, name: Optional[str] = None) -> int:
+    """
+    Create a new user with password authentication.
+
+    Args:
+        email: User email
+        password_hash: Hashed password
+        name: User name (optional)
+
+    Returns:
+        User ID
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)',
+            (email, password_hash, name)
+        )
+        return cursor.lastrowid
+
+def get_user_by_email(email: str) -> Optional[Dict]:
+    """
+    Get user by email address.
+
+    Args:
+        email: User email
+
+    Returns:
+        User dict or None if not found
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, email, name, password_hash, email_verified, last_login_at, created_at FROM users WHERE email = ?',
+            (email,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                'id': row[0],
+                'email': row[1],
+                'name': row[2],
+                'password_hash': row[3],
+                'email_verified': row[4],
+                'last_login_at': row[5],
+                'created_at': row[6]
+            }
+        return None
+
+def get_user_by_id(user_id: int) -> Optional[Dict]:
+    """
+    Get user by ID.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        User dict or None if not found
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, email, name, email_verified, last_login_at, created_at FROM users WHERE id = ?',
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                'id': row[0],
+                'email': row[1],
+                'name': row[2],
+                'email_verified': row[3],
+                'last_login_at': row[4],
+                'created_at': row[5]
+            }
+        return None
+
+def update_last_login(user_id: int) -> bool:
+    """
+    Update user's last login timestamp.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        True if updated, False otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (user_id,)
+        )
         return cursor.rowcount > 0
 
 # Initialize database on import

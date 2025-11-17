@@ -1,15 +1,22 @@
-import { Link, useLocation, Outlet } from 'react-router-dom';
+import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { useHealthCheck } from '../hooks/useSemanticCache';
 import * as api from '../api/semanticAPI';
+import { useAuth } from '../contexts/AuthContext';
 import { AccountMenu } from './AccountMenu';
 
 export function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isHealthy = useHealthCheck(30000);
+  const { user, isAuthenticated, logout: authLogout } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Clear both auth token and API key
+    if (isAuthenticated) {
+      await authLogout();
+    }
     api.clearApiKey();
-    window.location.href = '/';
+    navigate('/');
   };
 
   const isActive = (path: string) => location.pathname === path;

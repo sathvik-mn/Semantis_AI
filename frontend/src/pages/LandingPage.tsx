@@ -68,6 +68,10 @@ export function LandingPage() {
             <a href="#pricing" style={styles.navLink}>Pricing</a>
             <a href="#docs" style={styles.navLink}>Docs</a>
           </div>
+          <div style={styles.authButtons}>
+            <a href="/login" style={styles.loginButton}>Sign In</a>
+            <a href="/signup" style={styles.signupButton}>Get Started</a>
+          </div>
         </div>
       </nav>
 
@@ -418,5 +422,33 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 16px',
     borderRadius: '6px',
     transition: 'all 0.2s',
+  },
+  authButtons: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+  },
+  loginButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.8)',
+    textDecoration: 'none',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    transition: 'all 0.2s',
+    background: 'rgba(255, 255, 255, 0.05)',
+  },
+  signupButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#fff',
+    textDecoration: 'none',
+    borderRadius: '8px',
+    border: 'none',
+    transition: 'all 0.2s',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
   },
 };

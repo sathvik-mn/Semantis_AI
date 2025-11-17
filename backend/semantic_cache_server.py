@@ -1096,6 +1096,160 @@ def generate_api_key_endpoint(
         error_log.exception(f"API key generation failed | error={str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
 
+# -----------------------------
+# Authentication endpoints
+# -----------------------------
+
+class SignUpRequest(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/auth/signup")
+def signup(request: SignUpRequest):
+    """
+    Create a new user account with email and password.
+    """
+    try:
+        from auth import get_password_hash, validate_email, validate_password_strength
+        from database import get_user_by_email, create_user_with_password
+
+        # Validate email
+        email_valid, email_error = validate_email(request.email)
+        if not email_valid:
+            raise HTTPException(status_code=400, detail=email_error)
+
+        # Validate password strength
+        password_valid, password_error = validate_password_strength(request.password)
+        if not password_valid:
+            raise HTTPException(status_code=400, detail=password_error)
+
+        # Check if user already exists
+        existing_user = get_user_by_email(request.email)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        # Hash password
+        password_hash = get_password_hash(request.password)
+
+        # Create user
+        user_id = create_user_with_password(request.email, password_hash, request.name)
+
+        app_log.info(f"User signed up | email={request.email} | user_id={user_id}")
+
+        return {
+            "user_id": user_id,
+            "email": request.email,
+            "name": request.name,
+            "message": "Account created successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Signup failed | email={request.email} | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create account")
+
+@app.post("/api/auth/login")
+def login(request: LoginRequest):
+    """
+    Login with email and password, returns JWT access token.
+    """
+    try:
+        from auth import verify_password, create_access_token
+        from database import get_user_by_email, update_last_login
+
+        # Get user by email
+        user = get_user_by_email(request.email)
+
+        # Generic error message for security (don't reveal if email exists)
+        if not user or not user.get('password_hash'):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        # Verify password
+        if not verify_password(request.password, user['password_hash']):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        # Update last login
+        update_last_login(user['id'])
+
+        # Create access token
+        token_data = {
+            "sub": str(user['id']),
+            "email": user['email']
+        }
+        access_token = create_access_token(token_data)
+
+        app_log.info(f"User logged in | email={request.email} | user_id={user['id']}")
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "name": user['name']
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Login failed | email={request.email} | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
+@app.get("/api/auth/me")
+def get_current_user(request: Request):
+    """
+    Get current authenticated user info from JWT token.
+    """
+    try:
+        from auth import verify_token
+        from database import get_user_by_id
+
+        # Get token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Not authenticated")
+
+        token = auth_header.split(" ")[1]
+
+        # Verify token
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+        # Get user from database
+        user_id = int(payload.get("sub"))
+        user = get_user_by_id(user_id)
+
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return {
+            "id": user['id'],
+            "email": user['email'],
+            "name": user['name'],
+            "created_at": user['created_at']
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Get current user failed | error={str(e)}")
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+@app.post("/api/auth/logout")
+def logout():
+    """
+    Logout (client should clear token).
+    """
+    return {"message": "Logged out successfully"}
+
 @app.post("/v1/chat/completions")
 def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_key)):
     prompt_norm = SemanticCacheService.norm_text(
