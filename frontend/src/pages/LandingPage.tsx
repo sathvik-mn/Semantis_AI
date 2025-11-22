@@ -1,200 +1,258 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Prism } from '../components/Prism';
-import * as api from '../api/semanticAPI';
-import { useAuth } from '../contexts/AuthContext';
+import { ArrowLeft, Zap, Shield, Layers, TrendingDown, Clock, CheckCircle } from 'lucide-react';
 
 export function LandingPage() {
-  const [apiKey, setApiKey] = useState('');
-  const [error, setError] = useState('');
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState('');
-  const [copied, setCopied] = useState(false);
-  const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!apiKey.trim()) {
-      setError('Please enter your API key');
-      return;
-    }
-
-    if (!apiKey.startsWith('sc-')) {
-      setError('API key should start with "sc-"');
-      return;
-    }
-
-    api.setApiKey(apiKey);
-    navigate('/playground');
-  };
-
-  const handleGenerateKey = async () => {
-    setIsGenerating(true);
-    setGenerateError('');
-    setGeneratedKey(null);
-
-    try {
-      const response = await api.generateApiKey({ length: 32 });
-      setGeneratedKey(response.api_key);
-      setApiKey(response.api_key); // Auto-fill the input field
-    } catch (err) {
-      setGenerateError(err instanceof Error ? err.message : 'Failed to generate API key');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleCopyKey = () => {
-    if (generatedKey) {
-      navigator.clipboard.writeText(generatedKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
   return (
     <div style={styles.container}>
       <Prism />
 
+      {/* Header / Navbar */}
       <nav style={styles.nav}>
         <div style={styles.navContent}>
-          <div style={styles.logo}>
-            <span style={styles.logoText}>Semantis AI</span>
-          </div>
-          <div style={styles.navLinks}>
-            <a href="#features" style={styles.navLink}>Features</a>
-            <a href="#pricing" style={styles.navLink}>Pricing</a>
-            <a href="#docs" style={styles.navLink}>Docs</a>
+          <div style={styles.leftNav}>
+            <Link to="/" style={styles.backButton}>
+              <ArrowLeft size={18} />
+            </Link>
+            <div style={styles.logo}>
+              <span style={styles.logoText}>Semantis AI</span>
+            </div>
+            <div style={styles.navLinks}>
+              <Link to="/" style={styles.navLink}>Home</Link>
+              <Link to="/playground" style={styles.navLink}>Playground</Link>
+              <Link to="/docs" style={styles.navLink}>Docs</Link>
+              <Link to="/pricing" style={styles.navLink}>Pricing</Link>
+            </div>
           </div>
           <div style={styles.authButtons}>
-            {isAuthenticated ? (
-              <>
-                <span style={styles.userInfo}>{user?.email}</span>
-                <Link to="/playground" style={styles.dashboardButton}>Go to Dashboard</Link>
-              </>
-            ) : (
-              <>
-                <Link to="/login" style={styles.loginButton}>Sign In</Link>
-                <Link to="/signup" style={styles.signupButton}>Get Started</Link>
-              </>
-            )}
+            <Link to="/signin" style={styles.signInButton}>Sign In</Link>
+            <Link to="/signup" style={styles.signUpButton}>Sign Up</Link>
           </div>
         </div>
       </nav>
 
-      <div style={styles.content}>
-        <div style={styles.hero}>
-          <h1 style={styles.title}>
-            Semantic Caching
-            <br />
-            for LLM APIs
+      {/* Hero Section */}
+      <section style={styles.heroSection}>
+        <div style={styles.heroContent}>
+          <h1 style={styles.heroTitle}>
+            Semantis AI – The Semantic Cache Layer for AI Systems
           </h1>
-          <p style={styles.subtitle}>
-            Reduce costs by up to 70% and accelerate response times with intelligent semantic
-            caching
+          <p style={styles.heroSubtext}>
+            Reduce your LLM cost by up to 80% using intelligent semantic caching.
           </p>
+          <div style={styles.heroButtons}>
+            <Link to="/signup" style={styles.ctaButton}>
+              Get Started
+            </Link>
+            <Link to="/docs" style={styles.docsButton}>
+              Read Docs
+            </Link>
+          </div>
         </div>
+      </section>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Get Started</h2>
-          <p style={styles.cardSubtitle}>
-            Generate a new API key or enter your existing one to access the dashboard
-          </p>
-
-          {/* Generate API Key Section */}
-          <div style={styles.generateSection}>
-            <button
-              onClick={handleGenerateKey}
-              disabled={isGenerating}
-              style={{
-                ...styles.generateButton,
-                opacity: isGenerating ? 0.6 : 1,
-                cursor: isGenerating ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {isGenerating ? 'Generating...' : '🔑 Generate API Key'}
-            </button>
-            
-            {generateError && (
-              <div style={styles.error}>{generateError}</div>
-            )}
-
-            {generatedKey && (
-              <div style={styles.generatedKeyContainer}>
-                <div style={styles.generatedKeyHeader}>
-                  <strong>✅ API Key Generated!</strong>
-                  <button
-                    onClick={handleCopyKey}
-                    style={styles.copyButton}
-                    title="Copy to clipboard"
-                  >
-                    {copied ? '✓ Copied' : '📋 Copy'}
-                  </button>
-                </div>
-                <div style={styles.generatedKey}>
-                  {generatedKey}
-                </div>
-                <div style={styles.warning}>
-                  ⚠️ Save this key securely - it won't be shown again!
-                </div>
+      {/* What is Semantis AI Section */}
+      <section style={styles.section}>
+        <div style={styles.sectionContent}>
+          <h2 style={styles.sectionTitle}>What is Semantis AI?</h2>
+          <div style={styles.tilesGrid}>
+            <div style={styles.tile}>
+              <div style={styles.tileIcon}>
+                <Layers size={32} color="#3b82f6" />
               </div>
-            )}
+              <h3 style={styles.tileTitle}>What is Semantis AI?</h3>
+              <p style={styles.tileText}>
+                A middleware semantic cache layer sitting between your application and LLM, intelligently caching responses based on semantic similarity.
+              </p>
+            </div>
+
+            <div style={styles.tile}>
+              <div style={styles.tileIcon}>
+                <TrendingDown size={32} color="#10b981" />
+              </div>
+              <h3 style={styles.tileTitle}>How it Saves Cost</h3>
+              <p style={styles.tileText}>
+                Repeated or similar questions reuse previous responses, eliminating redundant API calls and reducing token consumption by 60-80%.
+              </p>
+            </div>
+
+            <div style={styles.tile}>
+              <div style={styles.tileIcon}>
+                <Shield size={32} color="#8b5cf6" />
+              </div>
+              <h3 style={styles.tileTitle}>How We're Different</h3>
+              <p style={styles.tileText}>
+                Not a vector DB. Not a prompt store. We sit in the middle of your LLM infrastructure as an intelligent caching layer.
+              </p>
+            </div>
+
+            <div style={styles.tile}>
+              <div style={styles.tileIcon}>
+                <CheckCircle size={32} color="#f59e0b" />
+              </div>
+              <h3 style={styles.tileTitle}>AI Infrastructure Layer</h3>
+              <p style={styles.tileText}>
+                We become an infrastructure layer for all AI applications, seamlessly integrating with any LLM provider.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works Section */}
+      <section style={styles.section}>
+        <div style={styles.sectionContent}>
+          <h2 style={styles.sectionTitle}>How It Works</h2>
+          <div style={styles.flowDiagram}>
+            <div style={styles.flowBox}>
+              <div style={styles.flowIcon}>🚀</div>
+              <div style={styles.flowTitle}>Your App</div>
+              <div style={styles.flowDescription}>Sends LLM Query</div>
+            </div>
+
+            <div style={styles.flowArrow}>→</div>
+
+            <div style={{...styles.flowBox, ...styles.flowBoxHighlight}}>
+              <div style={styles.flowIcon}>⚡</div>
+              <div style={styles.flowTitle}>Semantis AI</div>
+              <div style={styles.flowDescription}>Checks Similarity</div>
+            </div>
+
+            <div style={styles.flowArrow}>→</div>
+
+            <div style={styles.flowBox}>
+              <div style={styles.flowIcon}>🤖</div>
+              <div style={styles.flowTitle}>LLM Provider</div>
+              <div style={styles.flowDescription}>If Cache Miss</div>
+            </div>
           </div>
 
-          {/* Divider */}
-          <div style={styles.divider}>
-            <span style={styles.dividerText}>OR</span>
+          <div style={styles.flowSteps}>
+            <div style={styles.step}>
+              <div style={styles.stepNumber}>1</div>
+              <div style={styles.stepContent}>
+                <h4 style={styles.stepTitle}>Developer sends LLM query</h4>
+                <p style={styles.stepText}>Your application makes a request to Semantis AI</p>
+              </div>
+            </div>
+
+            <div style={styles.step}>
+              <div style={styles.stepNumber}>2</div>
+              <div style={styles.stepContent}>
+                <h4 style={styles.stepTitle}>We check semantic similarity</h4>
+                <p style={styles.stepText}>Advanced algorithms determine if a similar query was cached</p>
+              </div>
+            </div>
+
+            <div style={styles.step}>
+              <div style={styles.stepNumber}>3</div>
+              <div style={styles.stepContent}>
+                <h4 style={styles.stepTitle}>If hit → return cached</h4>
+                <p style={styles.stepText}>Instant response from cache, saving time and money</p>
+              </div>
+            </div>
+
+            <div style={styles.step}>
+              <div style={styles.stepNumber}>4</div>
+              <div style={styles.stepContent}>
+                <h4 style={styles.stepTitle}>If miss → call LLM & store</h4>
+                <p style={styles.stepText}>Forward to LLM provider and cache the response for future use</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Why Semantis AI Section */}
+      <section style={styles.section}>
+        <div style={styles.sectionContent}>
+          <h2 style={styles.sectionTitle}>Why Choose Semantis AI?</h2>
+          <div style={styles.benefitsGrid}>
+            <div style={styles.benefitCard}>
+              <TrendingDown size={40} style={styles.benefitIcon} />
+              <h3 style={styles.benefitTitle}>60-80% Cost Reduction</h3>
+              <p style={styles.benefitText}>
+                Dramatically reduce your LLM API costs by eliminating redundant calls
+              </p>
+            </div>
+
+            <div style={styles.benefitCard}>
+              <Clock size={40} style={styles.benefitIcon} />
+              <h3 style={styles.benefitTitle}>Faster Response Time</h3>
+              <p style={styles.benefitText}>
+                Cache hits return in milliseconds instead of seconds
+              </p>
+            </div>
+
+            <div style={styles.benefitCard}>
+              <Zap size={40} style={styles.benefitIcon} />
+              <h3 style={styles.benefitTitle}>Plug & Play SDK</h3>
+              <p style={styles.benefitText}>
+                Easy integration with just a few lines of code
+              </p>
+            </div>
+
+            <div style={styles.benefitCard}>
+              <Layers size={40} style={styles.benefitIcon} />
+              <h3 style={styles.benefitTitle}>Works with All LLMs</h3>
+              <p style={styles.benefitText}>
+                Compatible with OpenAI, Anthropic, Cohere, and more
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Call to Action Section */}
+      <section style={styles.ctaSection}>
+        <div style={styles.ctaSectionContent}>
+          <h2 style={styles.ctaSectionTitle}>
+            Stop burning money on repeated LLM calls.
+          </h2>
+          <p style={styles.ctaSectionText}>
+            Join hundreds of developers saving thousands on their AI infrastructure costs.
+          </p>
+          <Link to="/signup" style={styles.ctaSectionButton}>
+            Get Started - Generate API Key
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer style={styles.footer}>
+        <div style={styles.footerContent}>
+          <div style={styles.footerSection}>
+            <h4 style={styles.footerTitle}>Product</h4>
+            <Link to="/docs" style={styles.footerLink}>Docs</Link>
+            <Link to="/playground" style={styles.footerLink}>Playground</Link>
+            <Link to="/pricing" style={styles.footerLink}>Pricing</Link>
           </div>
 
-          {/* Enter Existing API Key */}
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sc-your-api-key-here"
-              style={styles.input}
-            />
-            {error && <div style={styles.error}>{error}</div>}
-            <button type="submit" style={styles.button}>
-              Access Dashboard
-            </button>
-          </form>
+          <div style={styles.footerSection}>
+            <h4 style={styles.footerTitle}>Resources</h4>
+            <a href="https://github.com" style={styles.footerLink} target="_blank" rel="noopener noreferrer">GitHub</a>
+            <Link to="/docs" style={styles.footerLink}>API Reference</Link>
+          </div>
 
-          <div style={styles.note}>
-            Your API key is stored locally and never transmitted except for authenticated requests
-            to the backend.
+          <div style={styles.footerSection}>
+            <h4 style={styles.footerTitle}>Company</h4>
+            <a href="mailto:contact@semantis.ai" style={styles.footerLink}>Contact</a>
+            <Link to="/careers" style={styles.footerLink}>Careers</Link>
+          </div>
+
+          <div style={styles.footerSection}>
+            <h4 style={styles.footerTitle}>Legal</h4>
+            <Link to="/privacy" style={styles.footerLink}>Privacy</Link>
+            <Link to="/terms" style={styles.footerLink}>Terms</Link>
           </div>
         </div>
 
-        <div style={styles.features}>
-          <div style={styles.feature}>
-            <div style={styles.featureIcon}>⚡</div>
-            <h3 style={styles.featureTitle}>Lightning Fast</h3>
-            <p style={styles.featureText}>
-              Cache hits return in milliseconds, dramatically reducing latency
-            </p>
-          </div>
-          <div style={styles.feature}>
-            <div style={styles.featureIcon}>💰</div>
-            <h3 style={styles.featureTitle}>Cost Savings</h3>
-            <p style={styles.featureText}>
-              Save 50-70% on token costs with intelligent semantic matching
-            </p>
-          </div>
-          <div style={styles.feature}>
-            <div style={styles.featureIcon}>🎯</div>
-            <h3 style={styles.featureTitle}>High Accuracy</h3>
-            <p style={styles.featureText}>
-              Hybrid exact + semantic matching ensures relevant cache hits
-            </p>
-          </div>
+        <div style={styles.footerBottom}>
+          <p style={styles.footerCopyright}>
+            © 2025 Semantis AI. All rights reserved.
+          </p>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
@@ -202,192 +260,11 @@ export function LandingPage() {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '100px 20px 40px',
     position: 'relative',
+    background: '#000',
   },
-  content: {
-    maxWidth: '600px',
-    width: '100%',
-    position: 'relative',
-    zIndex: 1,
-  },
-  hero: {
-    textAlign: 'center',
-    marginBottom: '48px',
-  },
-  title: {
-    fontSize: '48px',
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: '20px',
-    lineHeight: '1.2',
-    letterSpacing: '-0.02em',
-  },
-  subtitle: {
-    fontSize: '20px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    lineHeight: '1.5',
-  },
-  card: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '16px',
-    padding: '32px',
-    backdropFilter: 'blur(20px)',
-    marginBottom: '48px',
-  },
-  cardTitle: {
-    fontSize: '24px',
-    color: '#fff',
-    marginBottom: '8px',
-    fontWeight: '600',
-  },
-  cardSubtitle: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginBottom: '24px',
-    lineHeight: '1.5',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  input: {
-    width: '100%',
-    padding: '14px 16px',
-    fontSize: '15px',
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
-    color: '#fff',
-    fontFamily: 'monospace',
-  },
-  button: {
-    width: '100%',
-    padding: '16px',
-    fontSize: '16px',
-    fontWeight: '600',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'transform 0.2s',
-  },
-  error: {
-    padding: '12px',
-    background: 'rgba(239, 68, 68, 0.1)',
-    border: '1px solid rgba(239, 68, 68, 0.3)',
-    borderRadius: '8px',
-    color: '#fca5a5',
-    fontSize: '14px',
-  },
-  note: {
-    marginTop: '16px',
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.5)',
-    textAlign: 'center',
-    lineHeight: '1.5',
-  },
-  features: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-    gap: '20px',
-  },
-  feature: {
-    textAlign: 'center',
-  },
-  featureIcon: {
-    fontSize: '40px',
-    marginBottom: '12px',
-  },
-  featureTitle: {
-    fontSize: '16px',
-    color: '#fff',
-    marginBottom: '8px',
-    fontWeight: '600',
-  },
-  featureText: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    lineHeight: '1.5',
-  },
-  generateSection: {
-    marginBottom: '24px',
-  },
-  generateButton: {
-    width: '100%',
-    padding: '14px 16px',
-    fontSize: '15px',
-    fontWeight: '600',
-    background: 'linear-gradient(135deg, #10b981, #059669)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'transform 0.2s',
-    marginBottom: '16px',
-  },
-  generatedKeyContainer: {
-    background: 'rgba(16, 185, 129, 0.1)',
-    border: '1px solid rgba(16, 185, 129, 0.3)',
-    borderRadius: '8px',
-    padding: '16px',
-    marginTop: '16px',
-  },
-  generatedKeyHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-    color: '#34d399',
-    fontSize: '14px',
-  },
-  copyButton: {
-    padding: '6px 12px',
-    fontSize: '12px',
-    background: 'rgba(16, 185, 129, 0.2)',
-    border: '1px solid rgba(16, 185, 129, 0.4)',
-    borderRadius: '6px',
-    color: '#34d399',
-    cursor: 'pointer',
-    transition: 'background 0.2s',
-  },
-  generatedKey: {
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '6px',
-    padding: '12px',
-    marginBottom: '12px',
-    wordBreak: 'break-all',
-    color: '#34d399',
-    fontSize: '13px',
-    fontFamily: 'monospace',
-  },
-  warning: {
-    fontSize: '12px',
-    color: 'rgba(251, 191, 36, 0.9)',
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  divider: {
-    display: 'flex',
-    alignItems: 'center',
-    margin: '24px 0',
-    textAlign: 'center',
-  },
-  dividerText: {
-    flex: 1,
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: '13px',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-  },
+
+  // Navigation
   nav: {
     position: 'fixed',
     top: 0,
@@ -401,34 +278,47 @@ const styles: Record<string, React.CSSProperties> = {
   navContent: {
     maxWidth: '1400px',
     margin: '0 auto',
-    padding: '16px 20px',
+    padding: '16px 32px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  leftNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '32px',
+  },
+  backButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px',
+    color: 'rgba(255, 255, 255, 0.7)',
+    textDecoration: 'none',
+    borderRadius: '6px',
+    transition: 'all 0.2s',
+    background: 'rgba(255, 255, 255, 0.05)',
   },
   logo: {
     display: 'flex',
     alignItems: 'center',
   },
   logoText: {
-    fontSize: '20px',
+    fontSize: '22px',
     fontWeight: '700',
-    color: '#fff',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     backgroundClip: 'text',
-    letterSpacing: '-0.02em',
   },
   navLinks: {
     display: 'flex',
     gap: '8px',
-    alignItems: 'center',
   },
   navLink: {
     color: 'rgba(255, 255, 255, 0.7)',
     textDecoration: 'none',
-    fontSize: '14px',
+    fontSize: '15px',
     fontWeight: '500',
     padding: '8px 16px',
     borderRadius: '6px',
@@ -437,44 +327,323 @@ const styles: Record<string, React.CSSProperties> = {
   authButtons: {
     display: 'flex',
     gap: '12px',
-    alignItems: 'center',
   },
-  loginButton: {
-    padding: '10px 20px',
-    fontSize: '14px',
+  signInButton: {
+    padding: '10px 24px',
+    fontSize: '15px',
     fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
     textDecoration: 'none',
     borderRadius: '8px',
     border: '1px solid rgba(255, 255, 255, 0.2)',
-    transition: 'all 0.2s',
     background: 'rgba(255, 255, 255, 0.05)',
+    transition: 'all 0.2s',
   },
-  signupButton: {
-    padding: '10px 20px',
-    fontSize: '14px',
+  signUpButton: {
+    padding: '10px 24px',
+    fontSize: '15px',
     fontWeight: '600',
     color: '#fff',
     textDecoration: 'none',
     borderRadius: '8px',
     background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
     transition: 'all 0.2s',
-  },
-  userInfo: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginRight: '8px',
-  },
-  dashboardButton: {
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#fff',
-    textDecoration: 'none',
-    borderRadius: '8px',
-    border: 'none',
-    transition: 'all 0.2s',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
     boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+  },
+
+  // Hero Section
+  heroSection: {
+    paddingTop: '160px',
+    paddingBottom: '120px',
+    position: 'relative',
+    zIndex: 1,
+  },
+  heroContent: {
+    maxWidth: '900px',
+    margin: '0 auto',
+    textAlign: 'center',
+    padding: '0 32px',
+  },
+  heroTitle: {
+    fontSize: '64px',
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: '24px',
+    lineHeight: '1.1',
+    letterSpacing: '-0.02em',
+  },
+  heroSubtext: {
+    fontSize: '24px',
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: '48px',
+    lineHeight: '1.5',
+  },
+  heroButtons: {
+    display: 'flex',
+    gap: '16px',
+    justifyContent: 'center',
+  },
+  ctaButton: {
+    padding: '16px 32px',
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fff',
+    textDecoration: 'none',
+    borderRadius: '12px',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    transition: 'all 0.2s',
+    boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
+  },
+  docsButton: {
+    padding: '16px 32px',
+    fontSize: '18px',
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.9)',
+    textDecoration: 'none',
+    borderRadius: '12px',
+    border: '2px solid rgba(255, 255, 255, 0.2)',
+    background: 'rgba(255, 255, 255, 0.05)',
+    transition: 'all 0.2s',
+  },
+
+  // Section Styles
+  section: {
+    padding: '100px 32px',
+    position: 'relative',
+    zIndex: 1,
+  },
+  sectionContent: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+  },
+  sectionTitle: {
+    fontSize: '48px',
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: '64px',
+    textAlign: 'center',
+  },
+
+  // Tiles Grid
+  tilesGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '24px',
+  },
+  tile: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '16px',
+    padding: '32px',
+    backdropFilter: 'blur(20px)',
+    transition: 'all 0.3s',
+  },
+  tileIcon: {
+    marginBottom: '20px',
+  },
+  tileTitle: {
+    fontSize: '22px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '12px',
+  },
+  tileText: {
+    fontSize: '16px',
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: '1.6',
+  },
+
+  // Flow Diagram
+  flowDiagram: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '24px',
+    marginBottom: '64px',
+    flexWrap: 'wrap',
+  },
+  flowBox: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '12px',
+    padding: '24px',
+    minWidth: '200px',
+    textAlign: 'center',
+  },
+  flowBoxHighlight: {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.3)',
+  },
+  flowIcon: {
+    fontSize: '40px',
+    marginBottom: '12px',
+  },
+  flowTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '8px',
+  },
+  flowDescription: {
+    fontSize: '14px',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  flowArrow: {
+    fontSize: '32px',
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontWeight: 'bold',
+  },
+
+  // Flow Steps
+  flowSteps: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '24px',
+  },
+  step: {
+    display: 'flex',
+    gap: '16px',
+  },
+  stepNumber: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    fontWeight: '700',
+    flexShrink: 0,
+  },
+  stepContent: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '8px',
+  },
+  stepText: {
+    fontSize: '15px',
+    color: 'rgba(255, 255, 255, 0.6)',
+    lineHeight: '1.5',
+  },
+
+  // Benefits Grid
+  benefitsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '24px',
+  },
+  benefitCard: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '16px',
+    padding: '32px',
+    textAlign: 'center',
+    transition: 'all 0.3s',
+  },
+  benefitIcon: {
+    color: '#3b82f6',
+    marginBottom: '20px',
+  },
+  benefitTitle: {
+    fontSize: '22px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '12px',
+  },
+  benefitText: {
+    fontSize: '16px',
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: '1.6',
+  },
+
+  // CTA Section
+  ctaSection: {
+    padding: '120px 32px',
+    position: 'relative',
+    zIndex: 1,
+  },
+  ctaSectionContent: {
+    maxWidth: '800px',
+    margin: '0 auto',
+    textAlign: 'center',
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.3)',
+    borderRadius: '24px',
+    padding: '80px 40px',
+    backdropFilter: 'blur(20px)',
+  },
+  ctaSectionTitle: {
+    fontSize: '48px',
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: '24px',
+    lineHeight: '1.2',
+  },
+  ctaSectionText: {
+    fontSize: '20px',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: '40px',
+  },
+  ctaSectionButton: {
+    display: 'inline-block',
+    padding: '18px 40px',
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fff',
+    textDecoration: 'none',
+    borderRadius: '12px',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    transition: 'all 0.2s',
+    boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
+  },
+
+  // Footer
+  footer: {
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    padding: '60px 32px 32px',
+    position: 'relative',
+    zIndex: 1,
+  },
+  footerContent: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '40px',
+    marginBottom: '40px',
+  },
+  footerSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  footerTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '8px',
+  },
+  footerLink: {
+    fontSize: '15px',
+    color: 'rgba(255, 255, 255, 0.6)',
+    textDecoration: 'none',
+    transition: 'color 0.2s',
+  },
+  footerBottom: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    paddingTop: '32px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    textAlign: 'center',
+  },
+  footerCopyright: {
+    fontSize: '14px',
+    color: 'rgba(255, 255, 255, 0.5)',
   },
 };
