@@ -53,7 +53,7 @@ export interface Event {
   latency_ms: number;
 }
 
-function getApiKey(): string | null {
+export function getApiKey(): string | null {
   return localStorage.getItem('semantic_api_key');
 }
 
@@ -150,14 +150,19 @@ export async function generateApiKey(params: GenerateApiKeyParams = {}): Promise
   const queryParams = new URLSearchParams();
   if (params.tenant) queryParams.append('tenant', params.tenant);
   if (params.length) queryParams.append('length', params.length.toString());
-  if (params.email) queryParams.append('email', params.email);
-  if (params.name) queryParams.append('name', params.name);
   if (params.plan) queryParams.append('plan', params.plan);
+
+  // Get auth token from localStorage
+  const authToken = localStorage.getItem('auth_token');
+  if (!authToken) {
+    throw new Error('Authentication required. Please log in first.');
+  }
 
   const response = await fetch(`${BACKEND_URL}/api/keys/generate?${queryParams.toString()}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
     },
   });
 

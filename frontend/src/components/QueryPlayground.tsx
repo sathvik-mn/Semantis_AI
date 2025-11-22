@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useSemanticCache } from '../hooks/useSemanticCache';
 import { ChatResponse } from '../api/semanticAPI';
+import { setApiKey, hasApiKey } from '../api/semanticAPI';
+import { Key, ExternalLink } from 'lucide-react';
 
 interface QueryPlaygroundProps {
   onQueryComplete?: () => void;
@@ -11,7 +14,26 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [model, setModel] = useState('gpt-4o-mini');
   const [temperature, setTemperature] = useState(0.2);
   const [response, setResponse] = useState<ChatResponse | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey());
   const { sendQuery, isLoading, error } = useSemanticCache();
+
+  useEffect(() => {
+    // Check if API key exists in localStorage
+    const storedKey = localStorage.getItem('semantic_api_key');
+    if (storedKey) {
+      setShowApiKeyInput(false);
+    }
+  }, []);
+
+  const handleApiKeySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (apiKeyInput.trim()) {
+      setApiKey(apiKeyInput.trim());
+      setShowApiKeyInput(false);
+      setApiKeyInput('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,12 +105,44 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
           </div>
         </div>
 
-        <button type="submit" disabled={isLoading || !prompt.trim()} style={styles.button}>
+        <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey()} style={styles.button}>
           {isLoading ? 'Processing...' : 'Run Query'}
         </button>
 
         {error && <div style={styles.error}>{error}</div>}
       </form>
+
+      {showApiKeyInput && (
+        <div style={styles.apiKeySection}>
+          <div style={styles.apiKeyHeader}>
+            <Key size={18} style={styles.apiKeyIcon} />
+            <h3 style={styles.apiKeyTitle}>API Key Required</h3>
+          </div>
+          <p style={styles.apiKeyDescription}>
+            You need an API key to use the playground. Generate one in Settings or paste an existing key below.
+          </p>
+          <form onSubmit={handleApiKeySubmit} style={styles.apiKeyForm}>
+            <input
+              type="text"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="Paste your API key here (e.g., sc-tenant-xxxxx)"
+              style={styles.apiKeyInput}
+            />
+            <button type="submit" disabled={!apiKeyInput.trim()} style={styles.apiKeyButton}>
+              Save API Key
+            </button>
+          </form>
+          <div style={styles.apiKeyHelp}>
+            <p style={styles.apiKeyHelpText}>
+              Don't have an API key?{' '}
+              <Link to="/settings" style={styles.apiKeyLink}>
+                Go to Settings to generate one <ExternalLink size={14} style={styles.linkIcon} />
+              </Link>
+            </p>
+          </div>
+        </div>
+      )}
 
       {response && (
         <div style={styles.responseContainer}>
@@ -285,5 +339,81 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '12px',
     fontSize: '13px',
     color: 'rgba(255, 255, 255, 0.5)',
+  },
+  apiKeySection: {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.3)',
+    borderRadius: '12px',
+    padding: '24px',
+    marginTop: '20px',
+    backdropFilter: 'blur(10px)',
+  },
+  apiKeyHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '12px',
+  },
+  apiKeyIcon: {
+    color: '#60a5fa',
+  },
+  apiKeyTitle: {
+    fontSize: '18px',
+    color: '#fff',
+    fontWeight: '600',
+    margin: 0,
+  },
+  apiKeyDescription: {
+    fontSize: '14px',
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: '16px',
+    lineHeight: '1.5',
+  },
+  apiKeyForm: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '12px',
+  },
+  apiKeyInput: {
+    flex: 1,
+    padding: '12px',
+    fontSize: '14px',
+    background: 'rgba(0, 0, 0, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '8px',
+    color: '#fff',
+    fontFamily: 'monospace',
+  },
+  apiKeyButton: {
+    padding: '12px 24px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'opacity 0.2s',
+  },
+  apiKeyHelp: {
+    marginTop: '12px',
+    paddingTop: '12px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+  },
+  apiKeyHelpText: {
+    fontSize: '13px',
+    color: 'rgba(255, 255, 255, 0.6)',
+    margin: 0,
+  },
+  apiKeyLink: {
+    color: '#60a5fa',
+    textDecoration: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontWeight: '500',
+  },
+  linkIcon: {
+    display: 'inline-block',
   },
 };

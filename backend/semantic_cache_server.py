@@ -1160,42 +1160,51 @@ def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get
 
 @app.post("/api/keys/generate")
 def generate_api_key_endpoint(
+    request: Request,
     tenant: Optional[str] = Query(None, description="Optional tenant ID. If not provided, a unique tenant ID will be generated"),
     length: int = Query(32, ge=16, le=64, description="Length of random string (16-64, default: 32)"),
-    email: Optional[str] = Query(None, description="Optional email for user creation"),
-    name: Optional[str] = Query(None, description="Optional name for user creation"),
     plan: str = Query("free", description="Plan type (default: free)")
 ):
     """
-    Generate a new API key.
+    Generate a new API key for the authenticated user.
     
+    Requires authentication via JWT token.
     Returns a new API key with a unique tenant ID.
-    The key is automatically saved to the database.
+    The key is automatically saved to the database and linked to the user.
     """
     try:
+        from auth import verify_token
+        from database import get_user_by_id
         from api_key_generator import generate_api_key
-        from database import create_user, create_api_key
+        from database import create_api_key
+        
+        # Verify authentication
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        token = auth_header.split(" ")[1]
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        # Get user from token
+        user_id = int(payload.get("sub"))
+        user = get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
         
         # Generate API key
         auto_tenant = tenant is None
         api_key, tenant_id = generate_api_key(tenant=tenant, length=length, auto_tenant=auto_tenant)
         
-        # Create user if email provided
-        user_id = None
-        if email:
-            try:
-                user_id = create_user(email, name)
-                app_log.info(f"User created | email={email} | user_id={user_id}")
-            except Exception as e:
-                error_log.warning(f"Could not create user | email={email} | error={str(e)}")
-        
-        # Save API key to database
+        # Save API key to database linked to user
         try:
             create_api_key(api_key, tenant_id, user_id=user_id, plan=plan)
-            app_log.info(f"API key generated | tenant={tenant_id} | plan={plan}")
+            app_log.info(f"API key generated | tenant={tenant_id} | user_id={user_id} | plan={plan}")
         except Exception as e:
-            error_log.error(f"Could not save API key to database | tenant={tenant_id} | error={str(e)}")
-            # Still return the key even if database save fails
+            error_log.error(f"Could not save API key to database | tenant={tenant_id} | user_id={user_id} | error={str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to save API key to database")
         
         return {
             "api_key": api_key,
@@ -1205,6 +1214,8 @@ def generate_api_key_endpoint(
             "format": f"Bearer {api_key}",
             "message": "API key generated successfully. Save this key securely - it won't be shown again."
         }
+    except HTTPException:
+        raise
     except Exception as e:
         error_log.exception(f"API key generation failed | error={str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")

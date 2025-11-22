@@ -23,8 +23,8 @@ import AdminLoginPage from './pages/AdminLoginPage';
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
 
-  // Allow access if user is authenticated OR has an API key (backward compatibility)
-  if (!isAuthenticated && !hasApiKey()) {
+  // Require authentication - users must sign up/login to access protected routes
+  if (!isAuthenticated) {
     return <Navigate to="/signin" replace />;
   }
 
