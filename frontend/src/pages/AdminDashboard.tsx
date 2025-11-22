@@ -93,43 +93,8 @@ export default function AdminDashboard() {
       setPlanDist(plans);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
-      setError('Unable to load dashboard data. Using sample data for demonstration.');
-
-      // Load sample data for demonstration
-      setSummary({
-        total_users: 1247,
-        active_users: 892,
-        total_requests: 45823,
-        cache_hit_ratio: 76.5,
-        total_revenue: 8450,
-        active_api_keys: 634
-      });
-
-      const dates = Array.from({ length: 30 }, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (29 - i));
-        return d.toISOString().split('T')[0];
-      });
-
-      setGrowthData(dates.map((date, i) => ({
-        date: date.slice(5),
-        new_users: Math.floor(Math.random() * 50) + 20,
-        active_users: 800 + Math.floor(Math.random() * 200),
-        total_users: 1000 + i * 8
-      })));
-
-      setUsageData(dates.map(date => ({
-        date: date.slice(5),
-        requests: Math.floor(Math.random() * 2000) + 1000,
-        cache_hits: Math.floor(Math.random() * 1500) + 700,
-        cache_misses: Math.floor(Math.random() * 500) + 200
-      })));
-
-      setPlanDist([
-        { plan_name: 'Free', user_count: 687, percentage: 55.1 },
-        { plan_name: 'Pro', user_count: 423, percentage: 33.9 },
-        { plan_name: 'Enterprise', user_count: 137, percentage: 11.0 }
-      ]);
+      setError('Unable to load dashboard data. Please check your connection and try again.');
+      // Don't load sample data - show error instead
     } finally {
       setLoading(false);
     }

@@ -18,6 +18,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminTopUsers from './pages/AdminTopUsers';
 import AdminAnalytics from './pages/AdminAnalytics';
 import AdminSettings from './pages/AdminSettings';
+import AdminLoginPage from './pages/AdminLoginPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -25,6 +26,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // Allow access if user is authenticated OR has an API key (backward compatibility)
   if (!isAuthenticated && !hasApiKey()) {
     return <Navigate to="/signin" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useAuth();
+
+  // Check if user is authenticated and is admin
+  if (!isAuthenticated || !user?.is_admin) {
+    return <Navigate to="/admin/login" replace />;
   }
 
   return <>{children}</>;
@@ -52,7 +64,15 @@ function AppRoutes() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/docs" element={<DocsPageWrapper />} />
       </Route>
-      <Route path="/admin" element={<AdminLayout />}>
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
         <Route index element={<AdminDashboard />} />
         <Route path="users" element={<AdminUsers />} />
         <Route path="top-users" element={<AdminTopUsers />} />

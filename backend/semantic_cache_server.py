@@ -973,6 +973,7 @@ def get_tenant_from_key(request: Request) -> str:
     
     # Store API key for usage logging
     _current_api_key["key"] = token
+    _current_api_key["user_id"] = None  # Will be set if key_info is found
     
     # Verify API key in database and track usage
     try:
@@ -981,9 +982,10 @@ def get_tenant_from_key(request: Request) -> str:
         if key_info:
             # Key exists and is active
             update_api_key_usage(token, tenant)
+            _current_api_key["user_id"] = key_info.get('user_id')
             security_log.debug(
                 f"Auth success | tenant={tenant} | ip={client_ip} | "
-                f"plan={key_info.get('plan', 'unknown')}"
+                f"plan={key_info.get('plan', 'unknown')} | user_id={_current_api_key['user_id']}"
             )
         else:
             # Auto-create key in database if it doesn't exist (for backward compatibility)
@@ -1112,10 +1114,11 @@ def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str 
             f"model={model} | prompt_len={len(prompt)}"
         )
         
-        # Log usage to database
+        # Log usage to database with user_id
         try:
             from database import log_usage
             api_key = _current_api_key.get("key", "unknown")
+            user_id = _current_api_key.get("user_id")
             log_usage(
                 api_key=api_key,
                 tenant_id=tenant,
@@ -1124,7 +1127,8 @@ def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str 
                 cache_hits=1 if meta.get('hit') != 'miss' else 0,
                 cache_misses=1 if meta.get('hit') == 'miss' else 0,
                 tokens_used=0,
-                cost_estimate=0
+                cost_estimate=0,
+                user_id=user_id
             )
         except Exception as e:
             error_log.warning(f"Could not log usage to database | tenant={tenant} | error={str(e)}")
@@ -1343,6 +1347,7 @@ def get_current_user(request: Request):
             "id": user['id'],
             "email": user['email'],
             "name": user['name'],
+            "is_admin": user.get('is_admin', False),
             "created_at": user['created_at']
         }
 
@@ -1351,6 +1356,60 @@ def get_current_user(request: Request):
     except Exception as e:
         error_log.exception(f"Get current user failed | error={str(e)}")
         raise HTTPException(status_code=401, detail="Authentication failed")
+
+@app.post("/api/auth/admin/login")
+def admin_login(request: LoginRequest):
+    """
+    Admin login endpoint - checks if user is admin before allowing login.
+    """
+    try:
+        from auth import verify_password, create_access_token
+        from database import get_user_by_email, update_last_login
+
+        # Get user by email
+        user = get_user_by_email(request.email)
+
+        # Generic error message for security
+        if not user or not user.get('password_hash'):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        # Verify password
+        if not verify_password(request.password, user['password_hash']):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        # Check if user is admin
+        if not user.get('is_admin', False):
+            raise HTTPException(status_code=403, detail="Access denied. Admin privileges required.")
+
+        # Update last login
+        update_last_login(user['id'])
+
+        # Create access token with admin flag
+        token_data = {
+            "sub": str(user['id']),
+            "email": user['email'],
+            "is_admin": True
+        }
+        access_token = create_access_token(token_data)
+
+        app_log.info(f"Admin logged in | email={request.email} | user_id={user['id']}")
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "name": user['name'],
+                "is_admin": True
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Admin login failed | email={request.email} | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Admin login failed")
 
 @app.post("/api/auth/logout")
 def logout():
@@ -1373,10 +1432,11 @@ def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_k
             ttl_seconds=body.ttl_seconds,
             temperature=body.temperature,
         )
-        # Log usage to database
+        # Log usage to database with user_id
         try:
             from database import log_usage
             api_key = _current_api_key.get("key", "unknown")
+            user_id = _current_api_key.get("user_id")
             log_usage(
                 api_key=api_key,
                 tenant_id=tenant,
@@ -1385,7 +1445,8 @@ def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_k
                 cache_hits=1 if meta.get('hit') != 'miss' else 0,
                 cache_misses=1 if meta.get('hit') == 'miss' else 0,
                 tokens_used=0,  # Can be calculated from response if needed
-                cost_estimate=0  # Can be calculated based on tokens
+                cost_estimate=0,  # Can be calculated based on tokens
+                user_id=user_id
             )
         except Exception as e:
             # Don't fail if database logging fails

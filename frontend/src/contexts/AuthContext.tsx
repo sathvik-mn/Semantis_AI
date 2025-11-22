@@ -5,6 +5,7 @@ interface User {
   id: number;
   email: string;
   name?: string;
+  is_admin?: boolean;
   created_at?: string;
 }
 
@@ -14,6 +15,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
+  loadUser: () => Promise<User | null>;
   isAuthenticated: boolean;
 }
 
@@ -21,26 +23,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Changed to false - no auto-loading
 
-  // Load user on mount if token exists
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        if (authAPI.isAuthenticated()) {
-          const userData = await authAPI.getCurrentUser();
-          setUser(userData);
-        }
-      } catch (error) {
-        console.error('Failed to load user:', error);
-        authAPI.clearAuthToken();
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadUser();
-  }, []);
+  // Removed auto-loading on mount - user must explicitly login
+  // This ensures a clean state on page load, like a real application
 
   const login = async (email: string, password: string) => {
     try {
@@ -50,6 +36,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       throw new Error(error.response?.data?.detail || 'Login failed');
     }
+  };
+
+  // Load user from token (for admin login and explicit checks)
+  const loadUser = async () => {
+    try {
+      if (authAPI.isAuthenticated()) {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+        return userData;
+      }
+    } catch (error) {
+      console.error('Failed to load user:', error);
+      authAPI.clearAuthToken();
+      setUser(null);
+    }
+    return null;
   };
 
   const signup = async (email: string, password: string, name?: string) => {
@@ -79,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     signup,
     logout,
+    loadUser,
     isAuthenticated: !!user
   };
 

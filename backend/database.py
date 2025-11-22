@@ -43,11 +43,19 @@ def init_database():
                 name TEXT,
                 password_hash TEXT,
                 email_verified BOOLEAN DEFAULT 0,
+                is_admin BOOLEAN DEFAULT 0,
                 last_login_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # Add is_admin column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0')
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
         
         # API keys table
         cursor.execute('''
@@ -73,6 +81,7 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 api_key TEXT NOT NULL,
                 tenant_id TEXT NOT NULL,
+                user_id INTEGER,
                 endpoint TEXT,
                 request_count INTEGER DEFAULT 1,
                 cache_hits INTEGER DEFAULT 0,
@@ -80,15 +89,24 @@ def init_database():
                 tokens_used INTEGER DEFAULT 0,
                 cost_estimate REAL DEFAULT 0,
                 logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (api_key) REFERENCES api_keys (api_key)
+                FOREIGN KEY (api_key) REFERENCES api_keys (api_key),
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
+        
+        # Add user_id column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE usage_logs ADD COLUMN user_id INTEGER')
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
         
         # Create indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_key ON api_keys(api_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_tenant_id ON api_keys(tenant_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON api_keys(user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_api_key ON usage_logs(api_key)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_user_id ON usage_logs(user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_tenant ON usage_logs(tenant_id)')
         
         print("Database initialized successfully")
@@ -229,7 +247,8 @@ def log_usage(
     cache_hits: int = 0,
     cache_misses: int = 0,
     tokens_used: int = 0,
-    cost_estimate: float = 0
+    cost_estimate: float = 0,
+    user_id: Optional[int] = None
 ):
     """
     Log API usage for billing and analytics.
@@ -243,14 +262,22 @@ def log_usage(
         cache_misses: Number of cache misses
         tokens_used: Tokens used
         cost_estimate: Estimated cost
+        user_id: User ID (optional, retrieved from api_key if not provided)
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        
+        # Get user_id from api_key if not provided
+        if user_id is None:
+            key_info = get_api_key_info(api_key)
+            if key_info:
+                user_id = key_info.get('user_id')
+        
         cursor.execute('''
             INSERT INTO usage_logs 
-            (api_key, tenant_id, endpoint, request_count, cache_hits, cache_misses, tokens_used, cost_estimate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (api_key, tenant_id, endpoint, request_count, cache_hits, cache_misses, tokens_used, cost_estimate))
+            (api_key, tenant_id, user_id, endpoint, request_count, cache_hits, cache_misses, tokens_used, cost_estimate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (api_key, tenant_id, user_id, endpoint, request_count, cache_hits, cache_misses, tokens_used, cost_estimate))
 
 def get_usage_stats(tenant_id: str, days: int = 30) -> Dict:
     """
@@ -358,7 +385,7 @@ def update_plan(tenant_id: str, plan: str, expires_at: Optional[str] = None) -> 
 
 # Auth-related functions
 
-def create_user_with_password(email: str, password_hash: str, name: Optional[str] = None) -> int:
+def create_user_with_password(email: str, password_hash: str, name: Optional[str] = None, is_admin: bool = False) -> int:
     """
     Create a new user with password authentication.
 
@@ -366,6 +393,7 @@ def create_user_with_password(email: str, password_hash: str, name: Optional[str
         email: User email
         password_hash: Hashed password
         name: User name (optional)
+        is_admin: Whether user is an admin (default: False)
 
     Returns:
         User ID
@@ -373,10 +401,29 @@ def create_user_with_password(email: str, password_hash: str, name: Optional[str
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)',
-            (email, password_hash, name)
+            'INSERT INTO users (email, password_hash, name, is_admin) VALUES (?, ?, ?, ?)',
+            (email, password_hash, name, 1 if is_admin else 0)
         )
         return cursor.lastrowid
+
+def set_user_admin(user_id: int, is_admin: bool) -> bool:
+    """
+    Set admin status for a user.
+
+    Args:
+        user_id: User ID
+        is_admin: Admin status
+
+    Returns:
+        True if updated successfully
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET is_admin = ? WHERE id = ?',
+            (1 if is_admin else 0, user_id)
+        )
+        return cursor.rowcount > 0
 
 def get_user_by_email(email: str) -> Optional[Dict]:
     """
@@ -391,7 +438,7 @@ def get_user_by_email(email: str) -> Optional[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT id, email, name, password_hash, email_verified, last_login_at, created_at FROM users WHERE email = ?',
+            'SELECT id, email, name, password_hash, email_verified, is_admin, last_login_at, created_at FROM users WHERE email = ?',
             (email,)
         )
         row = cursor.fetchone()
@@ -402,8 +449,9 @@ def get_user_by_email(email: str) -> Optional[Dict]:
                 'name': row[2],
                 'password_hash': row[3],
                 'email_verified': row[4],
-                'last_login_at': row[5],
-                'created_at': row[6]
+                'is_admin': bool(row[5]),
+                'last_login_at': row[6],
+                'created_at': row[7]
             }
         return None
 
@@ -420,7 +468,7 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT id, email, name, email_verified, last_login_at, created_at FROM users WHERE id = ?',
+            'SELECT id, email, name, email_verified, is_admin, last_login_at, created_at FROM users WHERE id = ?',
             (user_id,)
         )
         row = cursor.fetchone()
@@ -430,8 +478,9 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
                 'email': row[1],
                 'name': row[2],
                 'email_verified': row[3],
-                'last_login_at': row[4],
-                'created_at': row[5]
+                'is_admin': bool(row[4]),
+                'last_login_at': row[5],
+                'created_at': row[6]
             }
         return None
 
