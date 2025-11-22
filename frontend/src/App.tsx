@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
+import { SignInPage } from './pages/SignInPage';
 import { SignUpPage } from './pages/SignUpPage';
+import { PricingPage } from './pages/PricingPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
 import { MetricsPage } from './pages/MetricsPage';
 import { LogsPage } from './pages/LogsPage';
@@ -22,7 +24,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   // Allow access if user is authenticated OR has an API key (backward compatibility)
   if (!isAuthenticated && !hasApiKey()) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/signin" replace />;
   }
 
   return <>{children}</>;
@@ -32,8 +34,10 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/signin" element={<SignInPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
+      <Route path="/pricing" element={<PricingPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -41,6 +45,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
+        <Route path="/home" element={<PlaygroundPage />} />
         <Route path="/playground" element={<PlaygroundPage />} />
         <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/logs" element={<LogsPage />} />

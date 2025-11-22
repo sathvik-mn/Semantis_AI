@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Settings, Key, LogOut, ChevronDown, X, Copy, Trash2, Plus, User, Mail, Building2 } from 'lucide-react';
 
 interface AccountMenuProps {
@@ -13,14 +14,20 @@ interface ApiKeyItem {
 }
 
 export function AccountMenu({ onLogout }: AccountMenuProps) {
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
-  const [userInfo, setUserInfo] = useState({
+
+  // Try to get user from localStorage (from sign in page)
+  const storedUser = localStorage.getItem('user');
+  const defaultUserInfo = storedUser ? JSON.parse(storedUser) : {
     email: 'user@example.com',
     name: 'User',
     company: 'My Company'
-  });
+  };
+
+  const [userInfo, setUserInfo] = useState(defaultUserInfo);
   const [editMode, setEditMode] = useState(false);
   const [editedInfo, setEditedInfo] = useState(userInfo);
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([
@@ -54,6 +61,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
   const handleSaveSettings = () => {
     setUserInfo(editedInfo);
+    localStorage.setItem('user', JSON.stringify(editedInfo));
     setEditMode(false);
   };
 
@@ -136,8 +144,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 setIsOpen(false);
               }}
               style={styles.menuItem}
-              onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.menuItemHover)}
-              onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.menuItem)}
             >
               <div style={{...styles.menuIconContainer, ...styles.menuIconContainerBlue}}>
                 <Settings size={18} style={styles.menuIcon} />
@@ -151,11 +157,9 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 setIsOpen(false);
               }}
               style={styles.menuItem}
-              onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.menuItemHover)}
-              onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.menuItem)}
             >
               <div style={{...styles.menuIconContainer, ...styles.menuIconContainerGreen}}>
-                <Key size={18} style={styles.menuIcon} />
+                <Key size={18} style={{...styles.menuIcon, color: '#10b981'}} />
               </div>
               <span style={styles.menuLabel}>API Keys</span>
             </button>
@@ -165,8 +169,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
             <button
               onClick={onLogout}
               style={styles.logoutButton}
-              onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.logoutButtonHover)}
-              onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.logoutButton)}
             >
               <div style={styles.logoutIconContainer}>
                 <LogOut size={18} style={styles.logoutIcon} />
@@ -195,8 +197,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   setEditedInfo(userInfo);
                 }}
                 style={styles.closeButton}
-                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.closeButtonHover)}
-                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.closeButton)}
               >
                 <X size={20} />
               </button>
@@ -279,16 +279,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                       setEditedInfo(userInfo);
                     }}
                     style={styles.cancelButton}
-                    onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.cancelButtonHover)}
-                    onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.cancelButton)}
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveSettings}
                     style={styles.primaryButton}
-                    onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
-                    onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                   >
                     Save Changes
                   </button>
@@ -297,8 +293,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 <button
                   onClick={() => setEditMode(true)}
                   style={styles.primaryButton}
-                  onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
-                  onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                 >
                   Edit Information
                 </button>
@@ -322,8 +316,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               <button
                 onClick={() => setShowApiKeys(false)}
                 style={styles.closeButton}
-                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.closeButtonHover)}
-                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.closeButton)}
               >
                 <X size={20} />
               </button>
@@ -340,8 +332,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 <button
                   onClick={() => setShowNewKeyModal(true)}
                   style={styles.newKeyButton}
-                  onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
-                  onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                 >
                   <Plus size={16} style={{ marginRight: '6px' }} />
                   New Key
@@ -363,8 +353,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                           onClick={() => handleCopyKey(apiKey.key)}
                           style={styles.actionButton}
                           title="Copy API key"
-                          onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.actionButtonHover)}
-                          onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.actionButton)}
                         >
                           {copiedKey === apiKey.key ? (
                             <span style={{fontSize: '11px', fontWeight: 'bold'}}>✓ Copied</span>
@@ -376,8 +364,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                           onClick={() => handleDeleteKey(apiKey.id)}
                           style={{...styles.actionButton, ...styles.deleteButton}}
                           title="Delete API key"
-                          onMouseOver={(e) => Object.assign(e.currentTarget.style, {...styles.actionButton, ...styles.deleteButtonHover})}
-                          onMouseOut={(e) => Object.assign(e.currentTarget.style, {...styles.actionButton, ...styles.deleteButton})}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -405,8 +391,6 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   setNewKeyName('');
                 }}
                 style={styles.closeButton}
-                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.closeButtonHover)}
-                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.closeButton)}
               >
                 <X size={20} />
               </button>
@@ -433,16 +417,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   setNewKeyName('');
                 }}
                 style={styles.cancelButton}
-                onMouseOver={(e) => Object.assign(e.currentTarget.style, styles.cancelButtonHover)}
-                onMouseOut={(e) => Object.assign(e.currentTarget.style, styles.cancelButton)}
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateKey}
                 style={styles.primaryButton}
-                onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
-                onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
               >
                 Create Key
               </button>
@@ -465,10 +445,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 14px',
     background: 'rgba(255, 255, 255, 0.05)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#fff',
     cursor: 'pointer',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s ease',
   },
   triggerButtonActive: {
     background: 'rgba(255, 255, 255, 0.1)',
@@ -494,25 +474,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chevron: {
     color: 'rgba(255, 255, 255, 0.6)',
-    transition: 'transform 0.2s',
+    transition: 'transform 0.2s ease',
   },
   dropdown: {
     position: 'absolute',
     right: 0,
     top: 'calc(100% + 8px)',
     width: '300px',
-    background: 'rgba(0, 0, 0, 0.9)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
+    background: 'rgba(0, 0, 0, 0.95)',
+    backdropFilter: 'blur(40px)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    borderRadius: '16px',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.1)',
     zIndex: 1000,
     overflow: 'hidden',
+    animation: 'dropdownSlideIn 0.2s ease',
   },
   dropdownHeader: {
     padding: '20px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-    background: 'rgba(59, 130, 246, 0.1)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    background: 'rgba(59, 130, 246, 0.06)',
   },
   avatarLarge: {
     width: '52px',
@@ -525,7 +506,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '700',
     fontSize: '22px',
     marginBottom: '12px',
-    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    boxShadow: '0 4px 16px rgba(59, 130, 246, 0.4)',
   },
   avatarLargeText: {
     color: '#fff',
@@ -560,7 +541,6 @@ const styles: Record<string, React.CSSProperties> = {
     height: '6px',
     borderRadius: '50%',
     background: '#10b981',
-    animation: 'pulse 2s infinite',
   },
   statusText: {
     fontSize: '11px',
@@ -578,16 +558,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 12px',
     background: 'transparent',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  menuItemHover: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    color: '#fff',
+    transition: 'all 0.2s ease',
   },
   menuIconContainer: {
     width: '36px',
@@ -596,14 +572,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s ease',
   },
   menuIconContainerBlue: {
-    background: 'rgba(59, 130, 246, 0.1)',
+    background: 'rgba(59, 130, 246, 0.12)',
     border: '1px solid rgba(59, 130, 246, 0.2)',
   },
   menuIconContainerGreen: {
-    background: 'rgba(16, 185, 129, 0.1)',
+    background: 'rgba(16, 185, 129, 0.12)',
     border: '1px solid rgba(16, 185, 129, 0.2)',
   },
   menuIcon: {
@@ -615,7 +591,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   menuFooter: {
     padding: '8px',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
     background: 'rgba(0, 0, 0, 0.3)',
   },
   logoutButton: {
@@ -626,15 +602,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 12px',
     background: 'transparent',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#ef4444',
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  logoutButtonHover: {
-    background: 'rgba(239, 68, 68, 0.1)',
+    transition: 'all 0.2s ease',
   },
   logoutIconContainer: {
     width: '36px',
@@ -643,7 +616,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'rgba(239, 68, 68, 0.1)',
+    background: 'rgba(239, 68, 68, 0.12)',
     border: '1px solid rgba(239, 68, 68, 0.2)',
   },
   logoutIcon: {
@@ -656,34 +629,36 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0, 0, 0, 0.7)',
-    backdropFilter: 'blur(4px)',
+    background: 'rgba(0, 0, 0, 0.75)',
+    backdropFilter: 'blur(8px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2000,
     padding: '20px',
+    animation: 'fadeIn 0.2s ease',
   },
   modal: {
     width: '100%',
     maxWidth: '500px',
     maxHeight: '90vh',
     background: 'rgba(0, 0, 0, 0.95)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '16px',
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+    backdropFilter: 'blur(40px)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    borderRadius: '20px',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6)',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+    animation: 'modalSlideUp 0.3s ease',
   },
   modalHeader: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     padding: '24px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-    background: 'rgba(59, 130, 246, 0.05)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    background: 'rgba(59, 130, 246, 0.06)',
   },
   modalTitle: {
     fontSize: '20px',
@@ -701,14 +676,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px',
     background: 'transparent',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '8px',
     color: 'rgba(255, 255, 255, 0.6)',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  closeButtonHover: {
-    background: 'rgba(255, 255, 255, 0.1)',
-    color: '#fff',
+    transition: 'all 0.2s ease',
   },
   modalBody: {
     padding: '24px',
@@ -723,19 +694,20 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     fontSize: '13px',
     fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: '8px',
   },
   input: {
     width: '100%',
     padding: '12px 14px',
     fontSize: '14px',
-    background: 'rgba(0, 0, 0, 0.3)',
+    background: 'rgba(0, 0, 0, 0.4)',
     border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#fff',
     outline: 'none',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s ease',
+    boxSizing: 'border-box',
   },
   infoBox: {
     display: 'flex',
@@ -744,7 +716,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '14px',
     background: 'rgba(59, 130, 246, 0.1)',
     border: '1px solid rgba(59, 130, 246, 0.2)',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#60a5fa',
     fontSize: '13px',
     lineHeight: '1.5',
@@ -755,7 +727,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'flex-end',
     gap: '12px',
     padding: '20px 24px',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
     background: 'rgba(0, 0, 0, 0.3)',
   },
   cancelButton: {
@@ -764,14 +736,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     background: 'rgba(255, 255, 255, 0.05)',
     border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: 'rgba(255, 255, 255, 0.8)',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  cancelButtonHover: {
-    background: 'rgba(255, 255, 255, 0.1)',
-    color: '#fff',
+    transition: 'all 0.2s ease',
   },
   primaryButton: {
     padding: '10px 20px',
@@ -779,11 +747,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#fff',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 16px rgba(59, 130, 246, 0.4)',
   },
   apiKeysTopBar: {
     display: 'flex',
@@ -800,7 +768,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 14px',
     background: 'rgba(251, 191, 36, 0.1)',
     border: '1px solid rgba(251, 191, 36, 0.2)',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#fbbf24',
     fontSize: '12px',
     lineHeight: '1.4',
@@ -814,11 +782,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#fff',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 16px rgba(59, 130, 246, 0.4)',
     flexShrink: 0,
   },
   apiKeysList: {
@@ -828,10 +796,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   apiKeyCard: {
     padding: '16px',
-    background: 'rgba(255, 255, 255, 0.02)',
+    background: 'rgba(255, 255, 255, 0.03)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '10px',
-    transition: 'all 0.2s',
+    borderRadius: '12px',
+    transition: 'all 0.2s ease',
   },
   apiKeyCardHeader: {
     display: 'flex',
@@ -855,34 +823,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actionButton: {
     padding: '8px 10px',
-    background: 'rgba(59, 130, 246, 0.1)',
+    background: 'rgba(59, 130, 246, 0.12)',
     border: '1px solid rgba(59, 130, 246, 0.2)',
-    borderRadius: '6px',
+    borderRadius: '8px',
     color: '#3b82f6',
     cursor: 'pointer',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s ease',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionButtonHover: {
-    background: 'rgba(59, 130, 246, 0.2)',
-    borderColor: 'rgba(59, 130, 246, 0.4)',
-  },
   deleteButton: {
-    background: 'rgba(239, 68, 68, 0.1)',
+    background: 'rgba(239, 68, 68, 0.12)',
     borderColor: 'rgba(239, 68, 68, 0.2)',
     color: '#ef4444',
   },
-  deleteButtonHover: {
-    background: 'rgba(239, 68, 68, 0.2)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-  },
   apiKeyDisplay: {
     padding: '12px 14px',
-    background: 'rgba(0, 0, 0, 0.4)',
+    background: 'rgba(0, 0, 0, 0.5)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '8px',
+    borderRadius: '10px',
     fontFamily: 'monospace',
     fontSize: '13px',
     color: '#10b981',
