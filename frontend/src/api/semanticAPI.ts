@@ -146,6 +146,111 @@ export interface GenerateApiKeyParams {
   plan?: string;
 }
 
+export interface CurrentApiKeyResponse {
+  api_key?: string;
+  tenant_id?: string;
+  plan?: string;
+  created_at?: string;
+  exists: boolean;
+  message?: string;
+}
+
+export async function getCurrentApiKey(): Promise<CurrentApiKeyResponse> {
+  // Get auth token from localStorage
+  const authToken = localStorage.getItem('auth_token');
+  if (!authToken) {
+    throw new Error('Authentication required. Please log in first.');
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/keys/current`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to get API key' }));
+    throw new Error(error.detail || 'Failed to get API key');
+  }
+
+  return response.json();
+}
+
+export interface OpenAIKeyStatus {
+  key_set: boolean;
+  key_preview?: string;
+  message?: string;
+}
+
+export async function getUserOpenAIKeyStatus(): Promise<OpenAIKeyStatus> {
+  const authToken = localStorage.getItem('auth_token');
+  if (!authToken) {
+    throw new Error('Authentication required. Please log in first.');
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to get OpenAI key status' }));
+    throw new Error(error.detail || 'Failed to get OpenAI key status');
+  }
+
+  return response.json();
+}
+
+export async function setUserOpenAIKey(apiKey: string): Promise<{ message: string; key_set: boolean }> {
+  const authToken = localStorage.getItem('auth_token');
+  if (!authToken) {
+    throw new Error('Authentication required. Please log in first.');
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to set OpenAI key' }));
+    throw new Error(error.detail || 'Failed to set OpenAI key');
+  }
+
+  return response.json();
+}
+
+export async function removeUserOpenAIKey(): Promise<{ message: string; key_set: boolean }> {
+  const authToken = localStorage.getItem('auth_token');
+  if (!authToken) {
+    throw new Error('Authentication required. Please log in first.');
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to remove OpenAI key' }));
+    throw new Error(error.detail || 'Failed to remove OpenAI key');
+  }
+
+  return response.json();
+}
+
 export async function generateApiKey(params: GenerateApiKeyParams = {}): Promise<GenerateApiKeyResponse> {
   const queryParams = new URLSearchParams();
   if (params.tenant) queryParams.append('tenant', params.tenant);

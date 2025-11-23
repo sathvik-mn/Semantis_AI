@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Settings, Key, LogOut, ChevronDown, X, Copy, Trash2, Plus, User, Mail, Building2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { getCurrentApiKey, generateApiKey, setApiKey, getApiKey, getUserOpenAIKeyStatus, setUserOpenAIKey, removeUserOpenAIKey } from '../api/semanticAPI';
 
 interface AccountMenuProps {
   onLogout: () => void;
@@ -15,33 +17,113 @@ interface ApiKeyItem {
 
 export function AccountMenu({ onLogout }: AccountMenuProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
 
-  // Try to get user from localStorage (from sign in page)
-  const storedUser = localStorage.getItem('user');
-  const defaultUserInfo = storedUser ? JSON.parse(storedUser) : {
-    email: 'user@example.com',
-    name: 'User',
+  // Use actual user data from AuthContext
+  const [userInfo, setUserInfo] = useState({
+    email: user?.email || '',
+    name: user?.name || user?.email?.split('@')[0] || 'User',
     company: 'My Company'
-  };
+  });
 
-  const [userInfo, setUserInfo] = useState(defaultUserInfo);
+  // Update userInfo when user changes
+  useEffect(() => {
+    if (user) {
+      setUserInfo({
+        email: user.email || '',
+        name: user.name || user.email?.split('@')[0] || 'User',
+        company: 'My Company'
+      });
+      setEditedInfo({
+        email: user.email || '',
+        name: user.name || user.email?.split('@')[0] || 'User',
+        company: 'My Company'
+      });
+    }
+  }, [user]);
   const [editMode, setEditMode] = useState(false);
   const [editedInfo, setEditedInfo] = useState(userInfo);
-  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([
-    {
-      id: '1',
-      key: 'sc-1234567890abcdef',
-      name: 'Default Key',
-      created_at: new Date().toISOString()
-    }
-  ]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(false);
   const [showNewKeyModal, setShowNewKeyModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [openaiKeyStatus, setOpenaiKeyStatus] = useState<{ key_set: boolean; key_preview?: string } | null>(null);
+  const [openaiKeyInput, setOpenaiKeyInput] = useState('');
+  const [savingOpenAIKey, setSavingOpenAIKey] = useState(false);
+  const [loadingOpenAIStatus, setLoadingOpenAIStatus] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Load API keys from backend
+  useEffect(() => {
+    const loadApiKeys = async () => {
+      if (!user) return;
+      
+      setLoadingKeys(true);
+      try {
+        const apiKeyData = await getCurrentApiKey();
+        const currentKey = getApiKey();
+        
+        if (apiKeyData.exists && apiKeyData.api_key) {
+          setApiKeys([{
+            id: '1',
+            key: apiKeyData.api_key,
+            name: 'Main API Key',
+            created_at: apiKeyData.created_at || new Date().toISOString()
+          }]);
+        } else if (currentKey) {
+          // Fallback to localStorage key
+          setApiKeys([{
+            id: '1',
+            key: currentKey,
+            name: 'API Key',
+            created_at: new Date().toISOString()
+          }]);
+        }
+      } catch (err) {
+        console.error('Failed to load API keys:', err);
+        const currentKey = getApiKey();
+        if (currentKey) {
+          setApiKeys([{
+            id: '1',
+            key: currentKey,
+            name: 'API Key',
+            created_at: new Date().toISOString()
+          }]);
+        }
+      } finally {
+        setLoadingKeys(false);
+      }
+    };
+    
+    if (showApiKeys) {
+      loadApiKeys();
+    }
+  }, [showApiKeys, user]);
+
+  // Load OpenAI key status when settings modal opens
+  useEffect(() => {
+    const loadOpenAIStatus = async () => {
+      if (!user || !showSettings) return;
+      
+      setLoadingOpenAIStatus(true);
+      try {
+        const status = await getUserOpenAIKeyStatus();
+        setOpenaiKeyStatus(status);
+      } catch (err) {
+        console.error('Failed to load OpenAI key status:', err);
+        setOpenaiKeyStatus({ key_set: false });
+      } finally {
+        setLoadingOpenAIStatus(false);
+      }
+    };
+    
+    loadOpenAIStatus();
+  }, [showSettings, user]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -58,6 +140,80 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isOpen]);
+
+  // Handle overlay click to close modals
+  const handleOverlayClick = (event: React.MouseEvent<HTMLDivElement>, modalType: 'settings' | 'apiKeys' | 'newKey') => {
+    if (event.target === event.currentTarget) {
+      if (modalType === 'settings') {
+        setShowSettings(false);
+        setEditMode(false);
+        setEditedInfo(userInfo);
+      } else if (modalType === 'apiKeys') {
+        setShowApiKeys(false);
+      } else if (modalType === 'newKey') {
+        setShowNewKeyModal(false);
+        setNewKeyName('');
+      }
+    }
+  };
+
+  const handleCloseSettings = () => {
+    setShowSettings(false);
+    setEditMode(false);
+    setEditedInfo(userInfo);
+  };
+
+  const handleCloseApiKeys = () => {
+    setShowApiKeys(false);
+  };
+
+  const handleCloseNewKey = () => {
+    setShowNewKeyModal(false);
+    setNewKeyName('');
+  };
+
+  const handleSaveOpenAIKey = async () => {
+    if (!openaiKeyInput.trim()) {
+      alert('Please enter your OpenAI API key');
+      return;
+    }
+
+    if (!openaiKeyInput.trim().startsWith('sk-')) {
+      alert('Invalid OpenAI API key format. Must start with "sk-"');
+      return;
+    }
+
+    setSavingOpenAIKey(true);
+    try {
+      await setUserOpenAIKey(openaiKeyInput.trim());
+      setOpenaiKeyInput('');
+      // Reload status
+      const status = await getUserOpenAIKeyStatus();
+      setOpenaiKeyStatus(status);
+      alert('OpenAI API key saved successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save OpenAI API key');
+    } finally {
+      setSavingOpenAIKey(false);
+    }
+  };
+
+  const handleRemoveOpenAIKey = async () => {
+    if (!confirm('Are you sure you want to remove your OpenAI API key? You will need to add it again to use the service.')) {
+      return;
+    }
+
+    setSavingOpenAIKey(true);
+    try {
+      await removeUserOpenAIKey();
+      setOpenaiKeyStatus({ key_set: false });
+      alert('OpenAI API key removed successfully');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove OpenAI API key');
+    } finally {
+      setSavingOpenAIKey(false);
+    }
+  };
 
   const handleSaveSettings = () => {
     setUserInfo(editedInfo);
@@ -81,22 +237,34 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
     }
   };
 
-  const handleCreateKey = () => {
+  const handleCreateKey = async () => {
     if (!newKeyName.trim()) {
       alert('Please enter a name for the API key');
       return;
     }
 
-    const newKey: ApiKeyItem = {
-      id: Date.now().toString(),
-      key: `sc-${Math.random().toString(36).substring(2, 18)}`,
-      name: newKeyName,
-      created_at: new Date().toISOString()
-    };
+    setGeneratingKey(true);
+    try {
+      const result = await generateApiKey({ plan: 'free' });
+      const newKey: ApiKeyItem = {
+        id: Date.now().toString(),
+        key: result.api_key,
+        name: newKeyName,
+        created_at: result.created_at || new Date().toISOString()
+      };
 
-    setApiKeys([...apiKeys, newKey]);
-    setNewKeyName('');
-    setShowNewKeyModal(false);
+      // Save to localStorage
+      setApiKey(result.api_key);
+      
+      // Update state
+      setApiKeys([newKey, ...apiKeys]);
+      setNewKeyName('');
+      setShowNewKeyModal(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to generate API key');
+    } finally {
+      setGeneratingKey(false);
+    }
   };
 
   return (
@@ -180,8 +348,11 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showSettings && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
+        <div 
+          style={styles.overlay} 
+          onClick={(e) => handleOverlayClick(e, 'settings')}
+        >
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <div>
                 <h2 style={styles.modalTitle}>
@@ -191,11 +362,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 <p style={styles.modalSubtitle}>Manage your profile information</p>
               </div>
               <button
-                onClick={() => {
-                  setShowSettings(false);
-                  setEditMode(false);
-                  setEditedInfo(userInfo);
-                }}
+                onClick={handleCloseSettings}
                 style={styles.closeButton}
               >
                 <X size={20} />
@@ -268,6 +435,80 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                   <span>Click "Edit Information" to update your details</span>
                 </div>
               )}
+
+              <div style={{ ...styles.inputGroup, marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <label style={styles.label}>
+                  <Key size={14} style={{ marginRight: '6px' }} />
+                  OpenAI API Key
+                </label>
+                {loadingOpenAIStatus ? (
+                  <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '14px', padding: '8px 0' }}>Loading...</div>
+                ) : openaiKeyStatus?.key_set ? (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <input
+                        type="text"
+                        value={openaiKeyStatus.key_preview || 'sk-***'}
+                        disabled
+                        style={{
+                          ...styles.input,
+                          opacity: 0.6,
+                          cursor: 'not-allowed',
+                          fontFamily: 'monospace',
+                        }}
+                      />
+                      <button
+                        onClick={handleRemoveOpenAIKey}
+                        disabled={savingOpenAIKey}
+                        style={{
+                          ...styles.cancelButton,
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                        }}
+                      >
+                        {savingOpenAIKey ? 'Removing...' : 'Remove'}
+                      </button>
+                    </div>
+                    <div style={styles.infoBox}>
+                      <svg style={{ width: '14px', height: '14px', flexShrink: 0, marginTop: '2px' }} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <span style={{ fontSize: '12px' }}>Your OpenAI API key is configured. Your queries are private and use your own OpenAI account.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="password"
+                      value={openaiKeyInput}
+                      onChange={(e) => setOpenaiKeyInput(e.target.value)}
+                      placeholder="sk-..."
+                      style={{
+                        ...styles.input,
+                        fontFamily: 'monospace',
+                        marginBottom: '8px',
+                      }}
+                    />
+                    <button
+                      onClick={handleSaveOpenAIKey}
+                      disabled={savingOpenAIKey || !openaiKeyInput.trim()}
+                      style={{
+                        ...styles.primaryButton,
+                        width: '100%',
+                        padding: '10px',
+                      }}
+                    >
+                      {savingOpenAIKey ? 'Saving...' : 'Save OpenAI API Key'}
+                    </button>
+                    <div style={styles.infoBox}>
+                      <svg style={{ width: '14px', height: '14px', flexShrink: 0, marginTop: '2px' }} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <span style={{ fontSize: '12px' }}>Add your OpenAI API key for complete privacy. Your queries will only use your own OpenAI account.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={styles.modalFooter}>
@@ -283,19 +524,30 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                     Cancel
                   </button>
                   <button
-                    onClick={handleSaveSettings}
+                    onClick={() => {
+                      handleSaveSettings();
+                      setEditMode(false);
+                    }}
                     style={styles.primaryButton}
                   >
                     Save Changes
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => setEditMode(true)}
-                  style={styles.primaryButton}
-                >
-                  Edit Information
-                </button>
+                <>
+                  <button
+                    onClick={handleCloseSettings}
+                    style={styles.cancelButton}
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => setEditMode(true)}
+                    style={styles.primaryButton}
+                  >
+                    Edit Information
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -303,8 +555,11 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showApiKeys && (
-        <div style={styles.overlay}>
-          <div style={{...styles.modal, maxWidth: '700px'}}>
+        <div 
+          style={styles.overlay} 
+          onClick={(e) => handleOverlayClick(e, 'apiKeys')}
+        >
+          <div style={{...styles.modal, maxWidth: '700px'}} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <div>
                 <h2 style={styles.modalTitle}>
@@ -314,7 +569,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 <p style={styles.modalSubtitle}>Manage your authentication keys</p>
               </div>
               <button
-                onClick={() => setShowApiKeys(false)}
+                onClick={handleCloseApiKeys}
                 style={styles.closeButton}
               >
                 <X size={20} />
@@ -339,7 +594,16 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               </div>
 
               <div style={styles.apiKeysList}>
-                {apiKeys.map((apiKey) => (
+                {loadingKeys ? (
+                  <div style={styles.loadingText}>Loading API keys...</div>
+                ) : apiKeys.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <Key size={32} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                    <p style={styles.emptyText}>No API keys found</p>
+                    <p style={styles.emptySubtext}>Generate one to start using the API</p>
+                  </div>
+                ) : (
+                  apiKeys.map((apiKey) => (
                   <div key={apiKey.id} style={styles.apiKeyCard}>
                     <div style={styles.apiKeyCardHeader}>
                       <div>
@@ -373,23 +637,33 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                       {apiKey.key}
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
+            </div>
+            
+            <div style={styles.modalFooter}>
+              <button
+                onClick={handleCloseApiKeys}
+                style={styles.primaryButton}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {showNewKeyModal && (
-        <div style={styles.overlay}>
-          <div style={{...styles.modal, maxWidth: '450px'}}>
+        <div 
+          style={styles.overlay} 
+          onClick={(e) => handleOverlayClick(e, 'newKey')}
+        >
+          <div style={{...styles.modal, maxWidth: '450px'}} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Create New API Key</h2>
               <button
-                onClick={() => {
-                  setShowNewKeyModal(false);
-                  setNewKeyName('');
-                }}
+                onClick={handleCloseNewKey}
                 style={styles.closeButton}
               >
                 <X size={20} />
@@ -412,19 +686,18 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
             <div style={styles.modalFooter}>
               <button
-                onClick={() => {
-                  setShowNewKeyModal(false);
-                  setNewKeyName('');
-                }}
+                onClick={handleCloseNewKey}
                 style={styles.cancelButton}
+                disabled={generatingKey}
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateKey}
+                disabled={generatingKey}
                 style={styles.primaryButton}
               >
-                Create Key
+                {generatingKey ? 'Generating...' : 'Create Key'}
               </button>
             </div>
           </div>
@@ -847,5 +1120,29 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     color: '#10b981',
     wordBreak: 'break-all',
+  },
+  loadingText: {
+    textAlign: 'center',
+    padding: '40px',
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: '14px',
+  },
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '60px 20px',
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: '8px',
+  },
+  emptySubtext: {
+    fontSize: '13px',
+    color: 'rgba(255, 255, 255, 0.5)',
   },
 };

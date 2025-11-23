@@ -21,7 +21,22 @@ import AdminSettings from './pages/AdminSettings';
 import AdminLoginPage from './pages/AdminLoginPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
+
+  // Wait for auth check to complete before redirecting
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        color: '#fff'
+      }}>
+        Loading...
+      </div>
+    );
+  }
 
   // Require authentication - users must sign up/login to access protected routes
   if (!isAuthenticated) {
@@ -32,7 +47,22 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
+
+  // Wait for auth check to complete before redirecting
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        color: '#fff'
+      }}>
+        Loading...
+      </div>
+    );
+  }
 
   // Check if user is authenticated and is admin
   if (!isAuthenticated || !user?.is_admin) {

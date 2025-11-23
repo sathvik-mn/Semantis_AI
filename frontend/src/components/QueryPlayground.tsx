@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useSemanticCache } from '../hooks/useSemanticCache';
 import { ChatResponse } from '../api/semanticAPI';
-import { setApiKey, hasApiKey } from '../api/semanticAPI';
-import { Key, ExternalLink } from 'lucide-react';
+import { setApiKey, hasApiKey, getUserOpenAIKeyStatus } from '../api/semanticAPI';
+import { Key, ExternalLink, AlertCircle } from 'lucide-react';
 
 interface QueryPlaygroundProps {
   onQueryComplete?: () => void;
@@ -16,6 +16,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey());
+  const [openaiKeySet, setOpenaiKeySet] = useState<boolean | null>(null);
   const { sendQuery, isLoading, error } = useSemanticCache();
 
   useEffect(() => {
@@ -24,6 +25,18 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
     if (storedKey) {
       setShowApiKeyInput(false);
     }
+
+    // Check OpenAI key status
+    const checkOpenAIKey = async () => {
+      try {
+        const status = await getUserOpenAIKeyStatus();
+        setOpenaiKeySet(status.key_set);
+      } catch (err) {
+        console.error('Failed to check OpenAI key status:', err);
+        setOpenaiKeySet(false);
+      }
+    };
+    checkOpenAIKey();
   }, []);
 
   const handleApiKeySubmit = (e: React.FormEvent) => {
@@ -40,6 +53,12 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
 
     if (!prompt.trim()) return;
 
+    // Check OpenAI key before submitting
+    if (openaiKeySet === false) {
+      alert('Please add your OpenAI API key in Account Settings first.');
+      return;
+    }
+
     try {
       const result = await sendQuery({
         model,
@@ -49,8 +68,12 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
 
       setResponse(result);
       if (onQueryComplete) onQueryComplete();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Query failed:', err);
+      // Show user-friendly error message
+      if (err.message && err.message.includes('OpenAI API key')) {
+        alert(err.message);
+      }
     }
   };
 
@@ -105,7 +128,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
           </div>
         </div>
 
-        <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey()} style={styles.button}>
+        <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey() || openaiKeySet === false} style={styles.button}>
           {isLoading ? 'Processing...' : 'Run Query'}
         </button>
 

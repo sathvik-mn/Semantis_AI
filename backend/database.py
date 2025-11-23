@@ -57,6 +57,13 @@ def init_database():
             # Column already exists, ignore
             pass
         
+        # Add openai_api_key_encrypted column if it doesn't exist (for BYOK)
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN openai_api_key_encrypted TEXT')
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
+        
         # API keys table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_keys (
@@ -166,9 +173,13 @@ def create_api_key(
             return True
         except sqlite3.IntegrityError:
             # Key already exists, update it
+            # If user_id is provided and current user_id is NULL, update it
             cursor.execute('''
                 UPDATE api_keys
-                SET tenant_id = ?, user_id = ?, plan = ?, plan_expires_at = ?,
+                SET tenant_id = ?,
+                    user_id = COALESCE(?, user_id),
+                    plan = ?,
+                    plan_expires_at = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE api_key = ?
             ''', (tenant_id, user_id, plan, plan_expires_at, api_key))
@@ -468,7 +479,7 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT id, email, name, email_verified, is_admin, last_login_at, created_at FROM users WHERE id = ?',
+            'SELECT id, email, name, email_verified, is_admin, last_login_at, created_at, openai_api_key_encrypted FROM users WHERE id = ?',
             (user_id,)
         )
         row = cursor.fetchone()
@@ -480,7 +491,8 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
                 'email_verified': row[3],
                 'is_admin': bool(row[4]),
                 'last_login_at': row[5],
-                'created_at': row[6]
+                'created_at': row[6],
+                'openai_api_key_encrypted': row[7] if len(row) > 7 else None
             }
         return None
 
@@ -498,6 +510,62 @@ def update_last_login(user_id: int) -> bool:
         cursor = conn.cursor()
         cursor.execute(
             'UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (user_id,)
+        )
+        return cursor.rowcount > 0
+
+def set_user_openai_key(user_id: int, encrypted_key: str) -> bool:
+    """
+    Store encrypted OpenAI API key for a user.
+    
+    Args:
+        user_id: User ID
+        encrypted_key: Encrypted OpenAI API key
+    
+    Returns:
+        True if updated successfully
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET openai_api_key_encrypted = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (encrypted_key, user_id)
+        )
+        return cursor.rowcount > 0
+
+def get_user_openai_key_encrypted(user_id: int) -> Optional[str]:
+    """
+    Get encrypted OpenAI API key for a user.
+    
+    Args:
+        user_id: User ID
+    
+    Returns:
+        Encrypted key string or None if not set
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT openai_api_key_encrypted FROM users WHERE id = ?',
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else None
+
+def clear_user_openai_key(user_id: int) -> bool:
+    """
+    Remove OpenAI API key for a user.
+    
+    Args:
+        user_id: User ID
+    
+    Returns:
+        True if removed successfully
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET openai_api_key_encrypted = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
             (user_id,)
         )
         return cursor.rowcount > 0

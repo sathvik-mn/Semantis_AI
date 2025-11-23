@@ -18,6 +18,7 @@ from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from collections import OrderedDict
+import threading
 
 import numpy as np
 import faiss
@@ -99,32 +100,97 @@ def domain_hint(text: str) -> str:
 # -----------------------------
 # Embeddings & LLM
 # -----------------------------
-def get_embedding(text: str) -> np.ndarray:
-    """Return L2-normalized embedding vector."""
-    start_time = time.time()
+def _get_user_openai_key(user_id: Optional[int]) -> Optional[str]:
+    """
+    Get user's OpenAI API key if available.
+    
+    Args:
+        user_id: User ID (optional)
+    
+    Returns:
+        Decrypted OpenAI API key or None if not set
+    """
+    if not user_id:
+        return None
+    
     try:
+        from database import get_user_openai_key_encrypted
+        from encryption import decrypt_api_key
+        
+        encrypted_key = get_user_openai_key_encrypted(user_id)
+        if encrypted_key:
+            return decrypt_api_key(encrypted_key)
+    except Exception as e:
+        error_log.warning(f"Failed to get user OpenAI key | user_id={user_id} | error={str(e)}")
+    
+    return None
+
+def get_embedding(text: str, user_id: Optional[int] = None) -> np.ndarray:
+    """
+    Return L2-normalized embedding vector.
+    
+    Args:
+        text: Text to embed
+        user_id: Optional user ID to use user's OpenAI key
+    """
+    start_time = time.time()
+    
+    # Get user's OpenAI key if available
+    user_api_key = _get_user_openai_key(user_id)
+    if not user_api_key:
+        raise ValueError(
+            "OpenAI API key not configured. Please add your OpenAI API key in Settings. "
+            "Your queries are private and will only use your own OpenAI account."
+        )
+    
+    # Use user's API key temporarily
+    original_key = openai.api_key
+    try:
+        openai.api_key = user_api_key
         resp = openai.embeddings.create(model=EMBED_MODEL, input=text)
         v = np.array(resp.data[0].embedding, dtype="float32")
         v /= (np.linalg.norm(v) + 1e-12)
         embedding_time = round((time.time() - start_time) * 1000, 2)
         performance_log.debug(
-            f"Embedding generated | model={EMBED_MODEL} | "
+            f"Embedding generated | model={EMBED_MODEL} | user_id={user_id} | "
             f"text_len={len(text)} | time={embedding_time}ms"
         )
         return v
     except Exception as e:
         embedding_time = round((time.time() - start_time) * 1000, 2)
         error_log.exception(
-            f"Embedding failed | model={EMBED_MODEL} | "
+            f"Embedding failed | model={EMBED_MODEL} | user_id={user_id} | "
             f"text_len={len(text)} | time={embedding_time}ms | error={str(e)}"
         )
         raise
+    finally:
+        # Restore original key
+        openai.api_key = original_key
 
-def call_llm(messages: List[dict], temperature: float = 0.2) -> str:
-    """Minimal OpenAI chat call wrapper."""
+def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[int] = None) -> str:
+    """
+    Minimal OpenAI chat call wrapper.
+    
+    Args:
+        messages: Chat messages
+        temperature: Temperature for generation
+        user_id: Optional user ID to use user's OpenAI key
+    """
     start_time = time.time()
     prompt_tokens = sum(len(m.get("content", "").split()) for m in messages)  # Rough estimate
+    
+    # Get user's OpenAI key if available
+    user_api_key = _get_user_openai_key(user_id)
+    if not user_api_key:
+        raise ValueError(
+            "OpenAI API key not configured. Please add your OpenAI API key in Settings. "
+            "Your queries are private and will only use your own OpenAI account."
+        )
+    
+    # Use user's API key temporarily
+    original_key = openai.api_key
     try:
+        openai.api_key = user_api_key
         resp = openai.chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
@@ -135,15 +201,15 @@ def call_llm(messages: List[dict], temperature: float = 0.2) -> str:
         completion_tokens = len(response_text.split())  # Rough estimate
         total_tokens = prompt_tokens + completion_tokens
         
-        # Log LLM call
+        # Log LLM call (without exposing API key)
         app_log.info(
-            f"LLM call | model={CHAT_MODEL} | temp={temperature} | "
+            f"LLM call | model={CHAT_MODEL} | user_id={user_id} | temp={temperature} | "
             f"prompt_tokens~={prompt_tokens} | completion_tokens~={completion_tokens} | "
             f"total_tokens~={total_tokens} | time={llm_time}ms"
         )
         
         performance_log.debug(
-            f"LLM performance | model={CHAT_MODEL} | time={llm_time}ms | "
+            f"LLM performance | model={CHAT_MODEL} | user_id={user_id} | time={llm_time}ms | "
             f"tokens~={total_tokens}"
         )
         
@@ -151,10 +217,13 @@ def call_llm(messages: List[dict], temperature: float = 0.2) -> str:
     except Exception as e:
         llm_time = round((time.time() - start_time) * 1000, 2)
         error_log.exception(
-            f"LLM call failed | model={CHAT_MODEL} | temp={temperature} | "
+            f"LLM call failed | model={CHAT_MODEL} | user_id={user_id} | temp={temperature} | "
             f"time={llm_time}ms | error={str(e)}"
         )
         raise
+    finally:
+        # Restore original key
+        openai.api_key = original_key
 
 # -----------------------------
 # Cache data models
@@ -213,6 +282,8 @@ class SemanticCacheService:
         # Embedding cache with LRU eviction
         self._embedding_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self._embedding_cache_max_size = 1000
+        # Thread lock for async cache operations
+        self._cache_lock = threading.Lock()
         # Load cache from disk if available
         self._load_cache()
     
@@ -345,10 +416,11 @@ class SemanticCacheService:
         return list(set(variations))  # Remove duplicates
     
     def _get_cached_embedding(self, text: str) -> Optional[np.ndarray]:
-        """Get cached embedding or None."""
+        """Get cached embedding or None (optimized lookup)."""
         text_key = text.lower().strip()
+        # Fast path: direct lookup (O(1) average case)
         if text_key in self._embedding_cache:
-            # Move to end (LRU)
+            # Move to end (LRU) - O(1) operation
             self._embedding_cache.move_to_end(text_key)
             return self._embedding_cache[text_key]
         return None
@@ -364,7 +436,7 @@ class SemanticCacheService:
             if len(self._embedding_cache) > self._embedding_cache_max_size:
                 self._embedding_cache.popitem(last=False)
     
-    def _get_context_aware_embedding(self, messages: List[dict], prompt_norm: str) -> Tuple[np.ndarray, str]:
+    def _get_context_aware_embedding(self, messages: List[dict], prompt_norm: str, user_id: Optional[int] = None) -> Tuple[np.ndarray, str]:
         """Generate context-aware embedding considering conversation history."""
         user_messages = [m["content"] for m in messages if m.get("role") == "user"]
         
@@ -377,7 +449,7 @@ class SemanticCacheService:
             return cached_emb, primary_text
         
         # Generate embedding
-        primary_emb = get_embedding(primary_text)
+        primary_emb = get_embedding(primary_text, user_id=user_id)
         self._cache_embedding(primary_text, primary_emb)
         
         # Context: Last 2-3 messages for context (if multiple messages)
@@ -387,7 +459,7 @@ class SemanticCacheService:
             if cached_context is not None:
                 context_emb = cached_context
             else:
-                context_emb = get_embedding(context_text)
+                context_emb = get_embedding(context_text, user_id=user_id)
                 self._cache_embedding(context_text, context_emb)
             
             # Weighted combination: 70% primary, 30% context
@@ -553,6 +625,7 @@ class SemanticCacheService:
         model: str,
         ttl_seconds: int = 7 * 24 * 3600,
         temperature: float = 0.2,
+        user_id: Optional[int] = None,
     ) -> Tuple[str, dict]:
 
         T = self.tenant(tenant_id)
@@ -585,14 +658,23 @@ class SemanticCacheService:
                 return entry.response_text, meta
 
         # 2) semantic - enhanced matching with context-aware embeddings, hybrid scoring, and reranking
+        # Store embedding for reuse in case of miss (avoid regenerating)
+        query_emb = None
+        primary_text = prompt_norm
+        
+        # Fast path: skip semantic search if cache is empty (saves embedding generation time)
+        # Only generate embedding if we have entries to search
         if T.index is not None and len(T.rows) > 0:
             user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
             
             # Use context-aware embedding (considers conversation history)
-            emb, primary_text = self._get_context_aware_embedding(messages, prompt_norm)
+            emb, primary_text = self._get_context_aware_embedding(messages, prompt_norm, user_id=user_id)
+            query_emb = emb  # Store for reuse
             
-            # Search more candidates initially (top 30 for better reranking and more opportunities)
-            top_matches = self._faiss_search_top_k(T, emb, k=min(30, len(T.rows)))
+            # Search candidates (adaptive based on cache size for optimal performance)
+            # Smaller cache: check more candidates, larger cache: check fewer (FAISS is fast)
+            search_k = min(20 if len(T.rows) < 50 else 15 if len(T.rows) < 200 else 10, len(T.rows))
+            top_matches = self._faiss_search_top_k(T, emb, k=search_k)
             
             # Calculate hybrid scores for all candidates
             candidates = []
@@ -715,47 +797,104 @@ class SemanticCacheService:
                     T.events = T.events[-1000:]
                 return entry.response_text, meta
 
-        # 3) miss → call LLM & insert
+        # 3) miss → call LLM & insert (optimized for low latency)
         T.misses += 1
-        response_text = call_llm(messages, temperature=temperature)
-        user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
         
-        # Use context-aware embedding for storing (consistent with query)
-        emb, _ = self._get_context_aware_embedding(messages, prompt_norm)
-        entry = CacheEntry(
-            prompt_norm=prompt_norm,
-            response_text=response_text,
-            embedding=emb,
-            model=model,
-            ttl_seconds=ttl_seconds,
-            domain=domain_hint(user_text),
-            strategy="miss",
-        )
-        T.exact[prompt_norm] = entry
-        T.rows.append(entry)
-        self._faiss_add(T, emb)
-
+        # Call LLM (this is the main latency, but necessary)
+        llm_start = time.time()
+        response_text = call_llm(messages, temperature=temperature, user_id=user_id)
+        llm_time = round((time.time() - llm_start) * 1000, 2)
+        
+        # Calculate latency BEFORE cache storage (don't include storage time)
         latency = round((time.time() - t0) * 1000, 2)
-        T.latencies_ms.append(latency)
-        semantic_log.info(f"{tenant_id} | miss | sim=0.000 | key={prompt_norm[:80]}")
+        T.latencies_ms.append(latency)  # Keep synchronous for accurate metrics
+        
+        # Log timing breakdown for debugging
+        semantic_log.debug(f"{tenant_id} | miss-timing | total={latency}ms | llm={llm_time}ms | overhead={latency-llm_time:.2f}ms")
+        
+        # Prepare metadata for immediate return
         meta = {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "hybrid"}
-        # Store event
-        T.events.append(CacheEvent(
-            timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
-            tenant_id=tenant_id,
-            prompt_hash=prompt_hash,
-            decision="miss",
-            similarity=0.0,
-            latency_ms=latency
-        ))
-        # Keep only last 1000 events
-        if len(T.events) > 1000:
-            T.events = T.events[-1000:]
         
-        # Periodically save cache to disk (every 10 new entries)
-        if len(T.rows) % 10 == 0:
-            self._save_cache()
+        # Store event asynchronously (non-blocking, lightweight but can be async)
+        def store_event():
+            try:
+                with self._cache_lock:
+                    T.events.append(CacheEvent(
+                        timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        tenant_id=tenant_id,
+                        prompt_hash=prompt_hash,
+                        decision="miss",
+                        similarity=0.0,
+                        latency_ms=latency
+                    ))
+                    # Keep only last 1000 events
+                    if len(T.events) > 1000:
+                        T.events = T.events[-1000:]
+            except Exception as e:
+                error_log.warning(f"Async event storage failed | tenant={tenant_id} | error={str(e)}")
         
+        # Store event in background (non-blocking)
+        threading.Thread(target=store_event, daemon=True).start()
+        
+        # Store cache entry asynchronously (non-blocking)
+        # Reuse embedding if we already generated it during semantic search
+        def store_cache_entry():
+            cache_storage_start = time.time()
+            try:
+                user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
+                
+                # Reuse embedding if available, otherwise generate (should be cached)
+                emb_start = time.time()
+                if query_emb is not None:
+                    emb = query_emb
+                    emb_time = 0
+                else:
+                    emb, _ = self._get_context_aware_embedding(messages, prompt_norm, user_id=user_id)
+                    emb_time = round((time.time() - emb_start) * 1000, 2)
+                
+                entry = CacheEntry(
+                    prompt_norm=prompt_norm,
+                    response_text=response_text,
+                    embedding=emb,
+                    model=model,
+                    ttl_seconds=ttl_seconds,
+                    domain=domain_hint(user_text),
+                    strategy="miss",
+                )
+                
+                # Thread-safe cache storage (fast operations)
+                lock_start = time.time()
+                with self._cache_lock:
+                    T.exact[prompt_norm] = entry
+                    T.rows.append(entry)
+                    self._faiss_add(T, emb)
+                    should_save = len(T.rows) % 10 == 0
+                lock_time = round((time.time() - lock_start) * 1000, 2)
+                
+                # Save cache to disk asynchronously (outside lock to avoid blocking)
+                if should_save:
+                    # Save in separate thread to avoid any blocking
+                    threading.Thread(target=self._save_cache, daemon=True).start()
+                
+                cache_storage_time = round((time.time() - cache_storage_start) * 1000, 2)
+                semantic_log.debug(
+                    f"{tenant_id} | async-cache-storage | total={cache_storage_time}ms | "
+                    f"emb={emb_time}ms | lock={lock_time}ms"
+                )
+            except Exception as e:
+                error_log.warning(f"Async cache storage failed | tenant={tenant_id} | error={str(e)}")
+        
+        # Store cache in background thread (non-blocking)
+        threading.Thread(target=store_cache_entry, daemon=True).start()
+        
+        semantic_log.info(f"{tenant_id} | miss | sim=0.000 | latency={latency}ms | key={prompt_norm[:80]}")
+        
+        # Log time right before return to verify immediate return
+        return_time = time.time()
+        return_latency = round((return_time - t0) * 1000, 2)
+        semantic_log.debug(f"{tenant_id} | miss-return | latency={return_latency}ms | response_len={len(response_text)}")
+        
+        # Return immediately - cache storage happens in background
         return response_text, meta
 
     def metrics(self, tenant_id: str) -> dict:
@@ -988,15 +1127,14 @@ def get_tenant_from_key(request: Request) -> str:
                 f"plan={key_info.get('plan', 'unknown')} | user_id={_current_api_key['user_id']}"
             )
         else:
-            # Auto-create key in database if it doesn't exist (for backward compatibility)
-            create_api_key(token, tenant, plan='free')
-            update_api_key_usage(token, tenant)
-            app_log.info(
-                f"API key auto-created | tenant={tenant} | ip={client_ip} | plan=free"
+            # Don't auto-create keys anymore - users must generate them through the API
+            # This ensures proper user_id linking and isolation
+            security_log.warning(
+                f"API key not found | tenant={tenant} | ip={client_ip} | "
+                f"key_prefix={token[:20]}"
             )
-            security_log.info(
-                f"New API key | tenant={tenant} | ip={client_ip}"
-            )
+            # Still allow the request to proceed for backward compatibility,
+            # but log a warning that the key should be generated properly
     except Exception as e:
         # Don't fail if database is not available, but log it
         error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
@@ -1104,36 +1242,60 @@ def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str 
     prompt_norm = SemanticCacheService.norm_text(prompt)
     prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()[:8]
     
+    endpoint_start = time.time()
     try:
-        ans, meta = svc.query(tenant, prompt_norm, messages, model)
+        # Get user_id from current API key context
+        user_id = _current_api_key.get("user_id")
+        ans, meta = svc.query(tenant, prompt_norm, messages, model, user_id=user_id)
+        query_time = round((time.time() - endpoint_start) * 1000, 2)
         
-        # Enhanced logging
+        # Get metrics (fast - just reading from memory)
+        metrics_start = time.time()
+        metrics = svc.metrics(tenant)
+        metrics_time = round((time.time() - metrics_start) * 1000, 2)
+        
+        # Enhanced logging (fast - just file write)
+        log_start = time.time()
         access_log.info(
             f"{tenant} | /query | {meta['hit']} | sim={meta['similarity']:.3f} | "
             f"latency={meta['latency_ms']}ms | prompt_hash={prompt_hash} | "
             f"model={model} | prompt_len={len(prompt)}"
         )
+        log_time = round((time.time() - log_start) * 1000, 2)
         
-        # Log usage to database with user_id
-        try:
-            from database import log_usage
-            api_key = _current_api_key.get("key", "unknown")
-            user_id = _current_api_key.get("user_id")
-            log_usage(
-                api_key=api_key,
-                tenant_id=tenant,
-                endpoint="/query",
-                request_count=1,
-                cache_hits=1 if meta.get('hit') != 'miss' else 0,
-                cache_misses=1 if meta.get('hit') == 'miss' else 0,
-                tokens_used=0,
-                cost_estimate=0,
-                user_id=user_id
-            )
-        except Exception as e:
-            error_log.warning(f"Could not log usage to database | tenant={tenant} | error={str(e)}")
+        # Log usage to database asynchronously (non-blocking - database can be slow)
+        def log_usage_async():
+            try:
+                from database import log_usage
+                api_key = _current_api_key.get("key", "unknown")
+                user_id = _current_api_key.get("user_id")
+                log_usage(
+                    api_key=api_key,
+                    tenant_id=tenant,
+                    endpoint="/query",
+                    request_count=1,
+                    cache_hits=1 if meta.get('hit') != 'miss' else 0,
+                    cache_misses=1 if meta.get('hit') == 'miss' else 0,
+                    tokens_used=0,
+                    cost_estimate=0,
+                    user_id=user_id
+                )
+            except Exception as e:
+                error_log.warning(f"Could not log usage to database | tenant={tenant} | error={str(e)}")
         
-        return {"answer": ans, "meta": meta, "metrics": svc.metrics(tenant)}
+        # Run database logging in background thread (non-blocking)
+        threading.Thread(target=log_usage_async, daemon=True).start()
+        
+        # Log timing breakdown
+        before_return = time.time()
+        endpoint_total = round((before_return - endpoint_start) * 1000, 2)
+        access_log.debug(
+            f"{tenant} | /query-timing | query={query_time}ms | metrics={metrics_time}ms | "
+            f"log={log_time}ms | total={endpoint_total}ms | response_len={len(ans)}"
+        )
+        
+        # Return immediately with metrics (database logging happens async)
+        return {"answer": ans, "meta": meta, "metrics": metrics}
     except Exception as e:
         error_log.exception(
             f"{tenant} | /query | error: {e} | prompt_hash={prompt_hash} | "
@@ -1157,6 +1319,56 @@ def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get
         }
         for e in reversed(events)  # Most recent first
     ]
+
+@app.get("/api/keys/current")
+def get_current_api_key(request: Request):
+    """
+    Get the current user's API key if it exists.
+    
+    Requires authentication via JWT token.
+    Returns the user's API key or None if not found.
+    """
+    try:
+        from auth import verify_token
+        from database import get_user_by_id, list_api_keys
+        
+        # Verify authentication
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        token = auth_header.split(" ")[1]
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        # Get user from token
+        user_id = int(payload.get("sub"))
+        user = get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Get user's API keys
+        api_keys = list_api_keys(user_id=user_id)
+        if api_keys:
+            # Return the most recent active key
+            active_keys = [k for k in api_keys if k.get('is_active', 1)]
+            if active_keys:
+                key = active_keys[0]
+                return {
+                    "api_key": key.get('api_key'),
+                    "tenant_id": key.get('tenant_id'),
+                    "plan": key.get('plan', 'free'),
+                    "created_at": key.get('created_at'),
+                    "exists": True
+                }
+        
+        return {"exists": False, "message": "No API key found. Generate one in Settings."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Get API key failed | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get API key")
 
 @app.post("/api/keys/generate")
 def generate_api_key_endpoint(
@@ -1194,17 +1406,64 @@ def generate_api_key_endpoint(
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         
-        # Generate API key
-        auto_tenant = tenant is None
-        api_key, tenant_id = generate_api_key(tenant=tenant, length=length, auto_tenant=auto_tenant)
+        # Check if user already has an API key - reuse tenant_id for consistency
+        from database import list_api_keys
+        existing_keys = list_api_keys(user_id=user_id)
+        
+        if existing_keys and tenant is None:
+            # User already has an API key - reuse the tenant_id
+            existing_key = existing_keys[0]  # Get most recent
+            tenant_id = existing_key.get('tenant_id')
+            api_key = existing_key.get('api_key')
+            app_log.info(f"Reusing existing API key | tenant={tenant_id} | user_id={user_id}")
+            
+            return {
+                "api_key": api_key,
+                "tenant_id": tenant_id,
+                "plan": existing_key.get('plan', plan),
+                "created_at": existing_key.get('created_at', time.strftime("%Y-%m-%dT%H:%M:%S")),
+                "format": f"Bearer {api_key}",
+                "message": "Using existing API key. Generate a new one by specifying a different tenant ID."
+            }
+        
+        # Generate tenant_id based on user_id to ensure uniqueness and consistency
+        # This ensures each user always gets the same tenant_id
+        if tenant is None:
+            # Use user_id-based tenant_id: usr_{user_id}
+            tenant = f"usr_{user_id}"
+        
+        # Generate API key with user-specific tenant_id
+        api_key, tenant_id = generate_api_key(tenant=tenant, length=length, auto_tenant=False)
         
         # Save API key to database linked to user
         try:
-            create_api_key(api_key, tenant_id, user_id=user_id, plan=plan)
-            app_log.info(f"API key generated | tenant={tenant_id} | user_id={user_id} | plan={plan}")
+            result = create_api_key(api_key, tenant_id, user_id=user_id, plan=plan)
+            if not result:
+                error_log.error(f"create_api_key returned False | tenant={tenant_id} | user_id={user_id}")
+                raise HTTPException(status_code=500, detail="Failed to save API key to database")
+            
+            # Verify the key was saved
+            from database import get_api_key_info
+            saved_key = get_api_key_info(api_key)
+            if not saved_key:
+                error_log.error(f"API key not found after creation | tenant={tenant_id} | user_id={user_id}")
+                raise HTTPException(status_code=500, detail="API key was not saved properly")
+            
+            if saved_key.get('user_id') != user_id:
+                error_log.warning(f"API key user_id mismatch | expected={user_id} | got={saved_key.get('user_id')}")
+                # Try to update it
+                from database import get_db_connection
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('UPDATE api_keys SET user_id = ? WHERE api_key = ?', (user_id, api_key))
+                    conn.commit()
+            
+            app_log.info(f"API key generated and saved | tenant={tenant_id} | user_id={user_id} | plan={plan} | key_id={saved_key.get('id')}")
+        except HTTPException:
+            raise
         except Exception as e:
-            error_log.error(f"Could not save API key to database | tenant={tenant_id} | user_id={user_id} | error={str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to save API key to database")
+            error_log.exception(f"Could not save API key to database | tenant={tenant_id} | user_id={user_id} | error={str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to save API key to database: {str(e)}")
         
         return {
             "api_key": api_key,
@@ -1292,10 +1551,13 @@ def login(request: LoginRequest):
 
         # Generic error message for security (don't reveal if email exists)
         if not user or not user.get('password_hash'):
+            error_log.warning(f"Login failed | email={request.email} | reason=user_not_found_or_no_password")
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         # Verify password
-        if not verify_password(request.password, user['password_hash']):
+        password_valid = verify_password(request.password, user['password_hash'])
+        if not password_valid:
+            error_log.warning(f"Login failed | email={request.email} | user_id={user['id']} | reason=invalid_password")
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         # Update last login
@@ -1368,6 +1630,152 @@ def get_current_user(request: Request):
         error_log.exception(f"Get current user failed | error={str(e)}")
         raise HTTPException(status_code=401, detail="Authentication failed")
 
+class OpenAIKeyRequest(BaseModel):
+    api_key: str
+
+@app.post("/api/users/openai-key")
+def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Request):
+    """
+    Set user's OpenAI API key.
+    
+    Requires authentication via JWT token.
+    """
+    try:
+        from auth import verify_token
+        from database import get_user_by_id, set_user_openai_key
+        from encryption import encrypt_api_key
+        
+        # Verify authentication
+        auth_header = auth_request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        token = auth_header.split(" ")[1]
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        # Get user from token
+        user_id = int(payload.get("sub"))
+        user = get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Validate and encrypt API key
+        try:
+            encrypted_key = encrypt_api_key(request.api_key)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Store encrypted key
+        success = set_user_openai_key(user_id, encrypted_key)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save OpenAI API key")
+        
+        app_log.info(f"OpenAI API key set | user_id={user_id}")
+        
+        return {
+            "message": "OpenAI API key saved successfully",
+            "key_set": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Set OpenAI key failed | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to set OpenAI API key")
+
+@app.get("/api/users/openai-key")
+def get_user_openai_key_status(auth_request: Request):
+    """
+    Check if user has OpenAI API key set.
+    
+    Requires authentication via JWT token.
+    Returns status (not the actual key for security).
+    """
+    try:
+        from auth import verify_token
+        from database import get_user_by_id, get_user_openai_key_encrypted
+        
+        # Verify authentication
+        auth_header = auth_request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        token = auth_header.split(" ")[1]
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        # Get user from token
+        user_id = int(payload.get("sub"))
+        user = get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Check if key exists
+        encrypted_key = get_user_openai_key_encrypted(user_id)
+        
+        if encrypted_key:
+            # Return masked key preview (first 7 chars + ...)
+            return {
+                "key_set": True,
+                "key_preview": "sk-..." + encrypted_key[-4:] if len(encrypted_key) > 4 else "sk-***"
+            }
+        else:
+            return {
+                "key_set": False,
+                "message": "No OpenAI API key configured"
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Get OpenAI key status failed | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get OpenAI API key status")
+
+@app.delete("/api/users/openai-key")
+def remove_user_openai_key(auth_request: Request):
+    """
+    Remove user's OpenAI API key.
+    
+    Requires authentication via JWT token.
+    """
+    try:
+        from auth import verify_token
+        from database import get_user_by_id, clear_user_openai_key
+        
+        # Verify authentication
+        auth_header = auth_request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        token = auth_header.split(" ")[1]
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        # Get user from token
+        user_id = int(payload.get("sub"))
+        user = get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Remove key
+        success = clear_user_openai_key(user_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to remove OpenAI API key")
+        
+        app_log.info(f"OpenAI API key removed | user_id={user_id}")
+        
+        return {
+            "message": "OpenAI API key removed successfully",
+            "key_set": False
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Remove OpenAI key failed | error={str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to remove OpenAI API key")
+
 @app.post("/api/auth/admin/login")
 def admin_login(request: LoginRequest):
     """
@@ -1385,11 +1793,14 @@ def admin_login(request: LoginRequest):
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         # Verify password
-        if not verify_password(request.password, user['password_hash']):
+        password_valid = verify_password(request.password, user['password_hash'])
+        if not password_valid:
+            error_log.warning(f"Admin login failed | email={request.email} | user_id={user['id']} | reason=invalid_password")
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         # Check if user is admin
         if not user.get('is_admin', False):
+            error_log.warning(f"Admin login failed | email={request.email} | user_id={user['id']} | reason=not_admin")
             raise HTTPException(status_code=403, detail="Access denied. Admin privileges required.")
 
         # Update last login
@@ -1435,6 +1846,8 @@ def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_k
         " ".join([m.content for m in body.messages if m.role == "user"]) or ""
     )
     try:
+        # Get user_id from current API key context
+        user_id = _current_api_key.get("user_id")
         ans, meta = svc.query(
             tenant,
             prompt_norm,
@@ -1442,6 +1855,7 @@ def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_k
             body.model,
             ttl_seconds=body.ttl_seconds,
             temperature=body.temperature,
+            user_id=user_id,
         )
         # Log usage to database with user_id
         try:

@@ -1,14 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, AlertCircle, ArrowLeft, Chrome } from 'lucide-react';
 import { Prism } from '../components/Prism';
+import { useAuth } from '../contexts/AuthContext';
 
 export function SignInPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/playground', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,17 +30,15 @@ export function SignInPage() {
 
     setLoading(true);
 
-    // Mock login - simulate API call
-    setTimeout(() => {
-      // Store user info in localStorage for now
-      localStorage.setItem('user', JSON.stringify({
-        name: email.split('@')[0],
-        email: email
-      }));
-
-      navigate('/home');
+    try {
+      await login(email, password);
+      // Login successful - navigate to playground
+      navigate('/playground');
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const handleGoogleSignIn = () => {

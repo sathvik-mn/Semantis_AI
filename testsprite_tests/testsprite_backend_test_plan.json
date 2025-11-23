@@ -2,21 +2,21 @@
   {
     "id": "TC001",
     "title": "health endpoint returns service status",
-    "description": "Verify that the /health GET endpoint returns the service health status with fields status, service, and version, and responds with HTTP 200."
+    "description": "Verify that the /health GET endpoint returns a 200 status with a JSON body containing the service status, service name, and version."
   },
   {
     "id": "TC002",
     "title": "metrics endpoint returns cache_performance_metrics",
-    "description": "Verify that the /metrics GET endpoint returns cache performance metrics for the tenant including requests, hits, semantic_hits, misses, hit_ratio, sim_threshold, entries, p50_latency_ms, and p95_latency_ms, and requires valid Bearer API key authentication."
+    "description": "Verify that the /metrics GET endpoint returns cache performance metrics for the authenticated tenant, including requests, hits, semantic hits, misses, hit ratio, similarity threshold, entries, and latency percentiles."
   },
   {
     "id": "TC003",
-    "title": "simple_query_endpoint_returns_semantic_cache_response",
-    "description": "Verify that the /query GET endpoint returns a response with answer, meta (including hit type, similarity, latency, strategy), and metrics fields, supports prompt and optional model parameters, and requires valid Bearer API key authentication."
+    "title": "simple_query_endpoint_returns_cached_or_fresh_answer",
+    "description": "Verify that the /query GET endpoint returns a cached answer if available (exact or semantic hit) or a fresh answer if a cache miss occurs, including meta information about hit type, similarity, latency, and strategy."
   },
   {
     "id": "TC004",
-    "title": "chat_completions_endpoint_returns_openai_compatible_response",
-    "description": "Verify that the /v1/chat/completions POST endpoint returns an OpenAI-compatible chat completion response with id, object, created, model, choices, usage, and meta fields, supports messages, model, temperature, and ttl_seconds in the request body, and requires valid Bearer API key authentication."
+    "title": "chat_completions_endpoint_returns_cached_or_fresh_response",
+    "description": "Verify that the /v1/chat/completions POST endpoint returns a cached chat completion response if available (exact or semantic hit) or queries the upstream LLM and caches the response on a miss, including meta information about cache hit status."
   }
 ]

@@ -4,261 +4,275 @@
 
 ## 1️⃣ Document Metadata
 - **Project Name:** Semantis_AI
-- **Date:** 2025-01-13
+- **Date:** 2025-01-27
 - **Prepared by:** TestSprite AI Team
-- **Test Execution:** Automated via TestSprite MCP
+- **Test Type:** Backend API Testing
 - **Total Tests:** 4
-- **Passed:** 4
-- **Failed:** 0
-- **Pass Rate:** 100.00%
+- **Pass Rate:** 50% (2/4 passed)
 
 ---
 
 ## 2️⃣ Requirement Validation Summary
 
-### Requirement 1: Core API Health & Monitoring
+### Requirement Group 1: Core Service Health & Monitoring
 
-This requirement covers the basic health and monitoring capabilities of the semantic cache API, ensuring the service is operational and can provide performance metrics.
-
-#### Test TC001: Health Endpoint
+#### Test TC001
 - **Test Name:** health endpoint returns service status
 - **Test Code:** [TC001_health_endpoint_returns_service_status.py](./TC001_health_endpoint_returns_service_status.py)
-- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/45257fcb-9b18-42cc-a6f9-fb78a22fe920/e04935d4-3e97-4ac8-83e9-f790dd9f035d
-- **Status:** ✅ Passed
+- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/df97ae5d-a8d7-41e0-b8f4-8a0bd97f65c1/e43a7a28-38cb-46e1-ba26-17eec71bed09
+- **Status:** ✅ **Passed**
 - **Analysis / Findings:** 
   - The `/health` endpoint successfully returns HTTP 200 status code
-  - Response includes all required fields: `status`, `service`, and `version`
-  - All fields are properly typed as strings
-  - The endpoint is publicly accessible (no authentication required)
-  - Service status indicates the semantic cache API is operational and healthy
-  - This endpoint is critical for monitoring and health checks in production environments
+  - Response contains all required fields: `status`, `service`, and `version`
+  - All fields are correctly typed as strings
+  - Service is operational and responding correctly
+  - **Recommendation:** No action needed. Health check is working as expected.
 
-#### Test TC002: Metrics Endpoint
+---
+
+#### Test TC002
 - **Test Name:** metrics endpoint returns cache_performance_metrics
 - **Test Code:** [TC002_metrics_endpoint_returns_cache_performance_metrics.py](./TC002_metrics_endpoint_returns_cache_performance_metrics.py)
-- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/45257fcb-9b18-42cc-a6f9-fb78a22fe920/30f3e8c4-faaa-4706-aafb-aff35b8c021a
-- **Status:** ✅ Passed
+- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/df97ae5d-a8d7-41e0-b8f4-8a0bd97f65c1/387037ea-a1ea-4996-847c-419f24a14e56
+- **Status:** ✅ **Passed**
 - **Analysis / Findings:**
-  - The `/metrics` endpoint successfully returns HTTP 200 status code with valid Bearer authentication
-  - All required cache performance metrics are present in the response:
-    - `tenant`: Tenant identifier (string)
-    - `requests`: Total request count (integer)
-    - `hits`: Exact cache hits (integer)
-    - `semantic_hits`: Semantic cache hits (integer)
-    - `misses`: Cache misses (integer)
-    - `hit_ratio`: Overall cache hit ratio (number)
-    - `sim_threshold`: Similarity threshold used (number)
-    - `entries`: Total cache entries (integer)
-    - `p50_latency_ms`: 50th percentile latency (number)
-    - `p95_latency_ms`: 95th percentile latency (number)
-  - All fields are properly typed according to their specifications
-  - Authentication is working correctly with Bearer token format
-  - Metrics provide comprehensive insights into cache performance and can be used for monitoring and optimization
+  - The `/metrics` endpoint successfully returns HTTP 200 status code
+  - Response contains all required cache performance metrics fields
+  - All metrics are correctly typed and within valid ranges:
+    - `tenant`: string (correctly extracted from API key)
+    - `requests`, `hits`, `semantic_hits`, `misses`, `entries`: non-negative integers
+    - `hit_ratio`, `sim_threshold`: floats between 0.0 and 1.0
+    - `p50_latency_ms`, `p95_latency_ms`: non-negative numbers
+  - Bearer token authentication is working correctly
+  - **Recommendation:** No action needed. Metrics endpoint is functioning properly.
 
 ---
 
-### Requirement 2: Semantic Cache Query Functionality
+### Requirement Group 2: Semantic Cache Query Operations
 
-This requirement covers the core semantic cache query functionality, allowing users to query the cache with natural language prompts and receive cached or newly generated responses.
-
-#### Test TC003: Simple Query Endpoint
-- **Test Name:** simple_query_endpoint_returns_semantic_cache_response
-- **Test Code:** [TC003_simple_query_endpoint_returns_semantic_cache_response.py](./TC003_simple_query_endpoint_returns_semantic_cache_response.py)
-- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/45257fcb-9b18-42cc-a6f9-fb78a22fe920/49dfc098-d7d2-44b0-9580-66be5665c6a4
-- **Status:** ✅ Passed
+#### Test TC003
+- **Test Name:** simple_query_endpoint_returns_cached_or_fresh_answer
+- **Test Code:** [TC003_simple_query_endpoint_returns_cached_or_fresh_answer.py](./TC003_simple_query_endpoint_returns_cached_or_fresh_answer.py)
+- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/df97ae5d-a8d7-41e0-b8f4-8a0bd97f65c1/657c02d4-5f83-49b2-a8c8-71e13a008e0b
+- **Status:** ❌ **Failed**
+- **Test Error:** 
+  ```
+  AssertionError: Expected 200, got 500
+  ```
 - **Analysis / Findings:**
-  - The `/query` GET endpoint successfully returns HTTP 200 status code with valid Bearer authentication
-  - Response includes all required fields:
-    - `answer`: The response text (string)
-    - `meta`: Metadata object containing:
-      - `hit`: Cache hit type ("exact", "semantic", or "miss")
-      - `similarity`: Similarity score (number, 0.0-1.0)
-      - `latency_ms`: Response latency in milliseconds (number)
-      - `strategy`: Caching strategy used (string)
-    - `metrics`: Performance metrics object (dict)
-  - All field types are validated and correct
-  - The endpoint accepts `prompt` (required) and `model` (optional) query parameters
-  - Authentication is working correctly with Bearer token format
-  - The semantic cache is functioning properly, able to handle queries and return appropriate responses
-  - Cache hit types are correctly identified (exact, semantic, or miss)
-  - This endpoint provides a simple, user-friendly interface for querying the semantic cache
+  - The `/query` endpoint returned HTTP 500 (Internal Server Error) instead of expected 200
+  - **Root Cause Analysis:**
+    1. **Most Likely Cause:** Missing or invalid OpenAI API key configuration (BYOK requirement)
+       - The endpoint requires a user's OpenAI API key to be set via `/api/users/openai-key`
+       - Without a valid OpenAI key, the LLM call fails, causing a 500 error
+    2. **Secondary Causes:**
+       - Backend server may not be running or accessible
+       - Database connection issues
+       - OpenAI API service unavailable or rate-limited
+  - **Impact:** Critical - Core functionality (query caching) is not working
+  - **Recommendation:**
+    1. **Immediate Action:** Ensure backend server is running on port 8000
+    2. **Configuration:** Set up a test OpenAI API key via the BYOK system:
+       - Create a test user account
+       - Generate an API key for the user
+       - Set the user's OpenAI API key via `/api/users/openai-key` endpoint
+    3. **Error Handling:** Improve error messages to return 400/401 instead of 500 when OpenAI key is missing
+    4. **Testing:** Update test setup to include OpenAI key configuration step
 
 ---
 
-### Requirement 3: OpenAI-Compatible API
-
-This requirement ensures the API is compatible with OpenAI's chat completions API format, allowing seamless integration with existing OpenAI-based applications.
-
-#### Test TC004: Chat Completions Endpoint
-- **Test Name:** chat_completions_endpoint_returns_openai_compatible_response
-- **Test Code:** [TC004_chat_completions_endpoint_returns_openai_compatible_response.py](./TC004_chat_completions_endpoint_returns_openai_compatible_response.py)
-- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/45257fcb-9b18-42cc-a6f9-fb78a22fe920/ff4c8631-aee8-4e80-b09c-648e47e4eabd
-- **Status:** ✅ Passed
+#### Test TC004
+- **Test Name:** chat_completions_endpoint_returns_cached_or_fresh_response
+- **Test Code:** [TC004_chat_completions_endpoint_returns_cached_or_fresh_response.py](./TC004_chat_completions_endpoint_returns_cached_or_fresh_response.py)
+- **Test Visualization and Result:** https://www.testsprite.com/dashboard/mcp/tests/df97ae5d-a8d7-41e0-b8f4-8a0bd97f65c1/b2a28211-ed85-4a93-8f31-86652f1bcb44
+- **Status:** ❌ **Failed**
+- **Test Error:**
+  ```
+  AssertionError: Expected 200 OK but got 500
+  ```
 - **Analysis / Findings:**
-  - The `/v1/chat/completions` POST endpoint successfully returns HTTP 200 status code with valid Bearer authentication
-  - Response includes all required OpenAI-compatible fields:
-    - `id`: Response identifier (string)
-    - `object`: Object type (string)
-    - `created`: Timestamp (integer)
-    - `model`: Model name (string)
-    - `choices`: Array of completion choices (list, non-empty)
-    - `usage`: Token usage statistics (dict)
-    - `meta`: Additional metadata (dict)
-  - All field types are validated and match OpenAI's API specification
-  - The endpoint accepts request body with:
-    - `model`: Model name (string)
-    - `messages`: Array of chat messages (list)
-    - `temperature`: Temperature parameter (number, optional)
-    - `ttl_seconds`: Time-to-live for cache (integer, optional)
-  - Response model matches the request model parameter
-  - Authentication is working correctly with Bearer token format
-  - The API maintains full compatibility with OpenAI's chat completions format
-  - This enables drop-in replacement for OpenAI API calls in existing applications
-  - The semantic cache transparently handles caching while maintaining API compatibility
+  - The `/v1/chat/completions` endpoint returned HTTP 500 (Internal Server Error) instead of expected 200
+  - **Root Cause Analysis:**
+    1. **Most Likely Cause:** Same as TC003 - Missing or invalid OpenAI API key (BYOK requirement)
+       - This endpoint also requires a user's OpenAI API key to be configured
+       - The endpoint attempts to call OpenAI API but fails without a valid key
+    2. **Additional Considerations:**
+       - Endpoint requires proper Bearer token authentication
+       - Request body validation may be failing
+       - OpenAI API integration may have issues
+  - **Impact:** Critical - OpenAI-compatible API endpoint is not functional
+  - **Recommendation:**
+    1. **Immediate Action:** Same as TC003 - Configure OpenAI API key for test user
+    2. **Error Handling:** Return appropriate HTTP status codes:
+       - 400 Bad Request: Missing or invalid request body
+       - 401 Unauthorized: Missing or invalid API key
+       - 402 Payment Required: OpenAI API key invalid or quota exceeded
+       - 500 Internal Server Error: Only for unexpected server errors
+    3. **Testing:** Add pre-test setup to configure OpenAI key before testing cache operations
+    4. **Documentation:** Update API documentation to clearly state BYOK requirement
 
 ---
 
 ## 3️⃣ Coverage & Matching Metrics
 
-- **100.00%** of tests passed (4/4)
-- **0.00%** of tests failed (0/4)
-- **Total Test Execution Time:** All tests completed successfully
+- **50.00%** of tests passed (2 out of 4 tests)
 
-| Requirement | Total Tests | ✅ Passed | ❌ Failed | Pass Rate |
-|-------------|-------------|-----------|-----------|-----------|
-| Core API Health & Monitoring | 2 | 2 | 0 | 100.00% |
-| Semantic Cache Query Functionality | 1 | 1 | 0 | 100.00% |
-| OpenAI-Compatible API | 1 | 1 | 0 | 100.00% |
-| **Total** | **4** | **4** | **0** | **100.00%** |
+| Requirement Group | Total Tests | ✅ Passed | ❌ Failed | Pass Rate |
+|-------------------|-------------|-----------|-----------|-----------|
+| Core Service Health & Monitoring | 2 | 2 | 0 | 100% |
+| Semantic Cache Query Operations | 2 | 0 | 2 | 0% |
+| **Total** | **4** | **2** | **2** | **50%** |
 
-### Test Coverage Summary
+### Test Coverage Analysis
 
-#### API Endpoints Tested
-1. ✅ `GET /health` - Health check endpoint
-2. ✅ `GET /metrics` - Cache performance metrics
-3. ✅ `GET /query` - Simple semantic cache query
-4. ✅ `POST /v1/chat/completions` - OpenAI-compatible chat completions
+**✅ Well-Tested Areas:**
+- Health check endpoint (`/health`) - ✅ 100% passing
+- Metrics endpoint (`/metrics`) - ✅ 100% passing
+- Bearer token authentication - ✅ Working correctly
+- API response structure validation - ✅ Working correctly
 
-#### Functional Areas Covered
-- ✅ Service health and status monitoring
-- ✅ Cache performance metrics and statistics
-- ✅ Semantic cache query functionality
-- ✅ OpenAI API compatibility
-- ✅ Authentication and authorization (Bearer token)
-- ✅ Response format validation
-- ✅ Data type validation
-- ✅ Error handling and status codes
+**❌ Areas Needing Attention:**
+- Query endpoint (`/query`) - ❌ Failing due to missing OpenAI key configuration
+- Chat completions endpoint (`/v1/chat/completions`) - ❌ Failing due to missing OpenAI key configuration
+- BYOK (Bring-Your-Own-Key) setup workflow - ❌ Not tested
+- Error handling for missing OpenAI keys - ❌ Needs improvement
 
 ---
 
 ## 4️⃣ Key Gaps / Risks
 
-### ✅ Strengths Identified
+### 🔴 Critical Issues
 
-1. **High Test Coverage**: All core API endpoints are tested and passing
-2. **Authentication Working**: Bearer token authentication is functioning correctly
-3. **API Compatibility**: OpenAI-compatible endpoint maintains full compatibility
-4. **Response Validation**: All response fields and types are validated
-5. **Cache Functionality**: Semantic cache is operational and handling queries correctly
+1. **Missing OpenAI API Key Configuration (BYOK)**
+   - **Severity:** Critical
+   - **Impact:** Core cache query functionality is non-functional
+   - **Root Cause:** Tests are not setting up OpenAI API keys before testing cache operations
+   - **Recommendation:**
+     - Add pre-test setup to create test user and configure OpenAI key
+     - Implement better error handling (return 400/401 instead of 500)
+     - Add clear error messages indicating OpenAI key is required
 
-### ⚠️ Potential Areas for Improvement
+2. **Insufficient Error Handling**
+   - **Severity:** High
+   - **Impact:** 500 errors instead of appropriate HTTP status codes
+   - **Recommendation:**
+     - Return 400 Bad Request for missing/invalid request parameters
+     - Return 401 Unauthorized for missing/invalid authentication
+     - Return 402 Payment Required for OpenAI API key issues
+     - Return 500 only for unexpected server errors
 
-1. **Admin API Endpoints**: The test suite does not currently cover admin API endpoints (`/admin/*`). Consider adding tests for:
-   - `/admin/analytics/summary`
-   - `/admin/analytics/user-growth`
-   - `/admin/analytics/plan-distribution`
-   - `/admin/analytics/usage-trends`
-   - `/admin/analytics/top-users`
-   - `/admin/users`
-   - `/admin/users/{tenant_id}/details`
-   - `/admin/users/{tenant_id}/update-plan`
-   - `/admin/users/{tenant_id}/deactivate`
-   - `/admin/system/stats`
+### 🟡 Medium Priority Issues
 
-2. **Events Endpoint**: The `/events` endpoint is not currently tested. Consider adding a test to verify:
-   - Event retrieval with limit parameter
-   - Event format and structure
-   - Event filtering and pagination
+3. **Test Setup Complexity**
+   - **Severity:** Medium
+   - **Impact:** Tests require complex setup (user creation, API key generation, OpenAI key configuration)
+   - **Recommendation:**
+     - Create test fixtures/helpers for common setup tasks
+     - Document test setup requirements clearly
+     - Consider adding test mode that bypasses OpenAI calls
 
-3. **Error Handling**: Consider adding tests for:
-   - Invalid API keys (401 Unauthorized)
-   - Missing required parameters (422 Validation Error)
-   - Invalid request formats
-   - Rate limiting (if implemented)
-   - Service errors (500 Internal Server Error)
+4. **Missing Test Coverage**
+   - **Severity:** Medium
+   - **Impact:** Not all endpoints are tested
+   - **Missing Tests:**
+     - Authentication endpoints (`/api/auth/signup`, `/api/auth/login`)
+     - API key management (`/api/keys/generate`, `/api/keys/current`)
+     - OpenAI key management (`/api/users/openai-key`)
+     - Admin endpoints (`/admin/*`)
+     - Events endpoint (`/events`)
+   - **Recommendation:**
+     - Add comprehensive test coverage for all endpoints
+     - Test authentication flows end-to-end
+     - Test admin functionality
 
-4. **Cache Behavior**: Consider adding tests for:
-   - Exact cache hits (multiple identical queries)
-   - Semantic cache hits (similar queries)
-   - Cache misses (new queries)
-   - Cache expiration (TTL)
-   - Cache persistence (server restart)
+### 🟢 Low Priority Issues
 
-5. **Performance Testing**: Consider adding:
-   - Load testing for high concurrent requests
-   - Latency benchmarking
-   - Cache hit ratio optimization
-   - Memory usage monitoring
-
-6. **Integration Testing**: Consider adding:
-   - End-to-end user workflows
-   - Multi-tenant isolation testing
-   - Database persistence testing
-   - Logging and monitoring integration
-
-### 🔒 Security Considerations
-
-1. **Authentication**: Bearer token authentication is working correctly
-2. **Authorization**: Admin endpoints require admin API key (not tested)
-3. **Input Validation**: Request parameters are validated (could add more edge cases)
-4. **Data Privacy**: Multi-tenant isolation should be verified
-
-### 📊 Recommendations
-
-1. **Expand Test Coverage**: Add tests for admin API endpoints and events endpoint
-2. **Error Scenarios**: Add comprehensive error handling tests
-3. **Cache Testing**: Add tests for cache behavior and persistence
-4. **Performance Testing**: Add load and performance tests
-5. **Integration Testing**: Add end-to-end integration tests
-6. **Security Testing**: Add security-focused tests for authentication and authorization
+5. **Test Documentation**
+   - **Severity:** Low
+   - **Impact:** Tests may be difficult to understand and maintain
+   - **Recommendation:**
+     - Add inline comments explaining test logic
+     - Document test data requirements
+     - Create test execution guide
 
 ---
 
-## 5️⃣ Conclusion
+## 5️⃣ Recommendations & Next Steps
 
-### Overall Assessment
+### Immediate Actions (Priority 1)
 
-The Semantis AI semantic cache API is **fully functional** and **production-ready** based on the test results. All core API endpoints are working correctly, authentication is functioning properly, and the API maintains full compatibility with OpenAI's chat completions format.
+1. **Fix Test Setup for BYOK**
+   - Update test scripts to:
+     - Create a test user account
+     - Generate an API key for the user
+     - Configure OpenAI API key for the user
+     - Use the generated API key for subsequent tests
 
-### Test Results Summary
+2. **Improve Error Handling**
+   - Update backend to return appropriate HTTP status codes:
+     - 400 for missing/invalid request parameters
+     - 401 for authentication failures
+     - 402 for OpenAI API key issues
+     - 500 only for unexpected errors
 
-- ✅ **4/4 tests passed (100% pass rate)**
-- ✅ All core API endpoints are operational
-- ✅ Authentication and authorization are working correctly
-- ✅ Response formats match specifications
-- ✅ Data types are validated correctly
-- ✅ OpenAI compatibility is maintained
+3. **Add Error Message Clarity**
+   - Return clear error messages indicating:
+     - "OpenAI API key not configured. Please set your OpenAI API key via /api/users/openai-key"
+     - "Invalid OpenAI API key format"
+     - "OpenAI API quota exceeded"
 
-### Next Steps
+### Short-term Actions (Priority 2)
 
-1. **Expand Test Coverage**: Add tests for admin API endpoints and events endpoint
-2. **Error Handling**: Add comprehensive error scenario tests
-3. **Performance Testing**: Add load and performance tests
-4. **Integration Testing**: Add end-to-end integration tests
-5. **Security Testing**: Add security-focused tests
-6. **Documentation**: Update API documentation with test results
+4. **Expand Test Coverage**
+   - Add tests for authentication endpoints
+   - Add tests for API key management
+   - Add tests for OpenAI key management
+   - Add tests for admin endpoints
+   - Add tests for error scenarios
 
-### Status: ✅ **PASSING**
+5. **Create Test Utilities**
+   - Build test helpers for:
+     - User creation and authentication
+     - API key generation
+     - OpenAI key configuration
+     - Test data cleanup
 
-All tests have passed successfully. The API is ready for production use with the current test coverage. Consider expanding test coverage for admin endpoints and additional scenarios as outlined in the recommendations above.
+### Long-term Actions (Priority 3)
+
+6. **Test Automation**
+   - Set up CI/CD pipeline for automated testing
+   - Add test reporting and notifications
+   - Implement test result tracking
+
+7. **Performance Testing**
+   - Add load testing for cache operations
+   - Test cache hit/miss scenarios
+   - Measure latency improvements
 
 ---
 
-**Report Generated:** 2025-01-13  
-**Test Execution:** Automated via TestSprite MCP  
-**Test Environment:** Local development (http://localhost:8000)  
-**Test Framework:** TestSprite AI Testing Framework
+## 6️⃣ Conclusion
 
+The TestSprite testing has revealed that **50% of core functionality tests are passing**. The health check and metrics endpoints are working correctly, demonstrating that:
 
+✅ **Working Correctly:**
+- Backend server is operational
+- Bearer token authentication is functional
+- Metrics collection is working
+- API response structure is correct
 
+❌ **Needs Attention:**
+- Query endpoints require OpenAI API key configuration (BYOK)
+- Error handling needs improvement (500 → appropriate status codes)
+- Test setup needs to include BYOK configuration
+
+**Overall Assessment:** The backend infrastructure is solid, but the BYOK (Bring-Your-Own-Key) requirement needs to be properly handled in tests. Once OpenAI keys are configured, the query endpoints should function correctly.
+
+**Next Steps:** Update test setup to configure OpenAI keys before testing cache operations, and improve error handling to return appropriate HTTP status codes.
+
+---
+
+**Report Generated:** 2025-01-27  
+**Test Execution Date:** 2025-11-23  
+**Test Environment:** Local Development (localhost:8000)
 

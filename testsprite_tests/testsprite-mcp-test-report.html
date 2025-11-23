@@ -145,7 +145,7 @@ body {
 }
 
 .logo-image {
-  width: auto;
+  width: 120px;
 }
 
 .logo-link {
@@ -1046,19 +1046,7 @@ body {
       <div class="header-content">
     <div class="logo-section">
           <a href="https://www.testsprite.com/" target="_blank" class="logo-link">
-            <svg class="logo-image" width="28" height="28" viewBox="0 0 65 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <g clip-path="url(#clip0_header_logo_unified)">
-            <path d="M31.0707 28.7334L16.7289 37.0965C15.8796 37.5918 15.4377 38.4402 15.4049 39.3031L9.70328 35.7937C9.28784 35.5376 9.03518 35.0843 9.03501 34.5962V34.4861C9.88591 32.915 11.1735 31.5302 12.8979 30.5248L23.5198 24.3307L31.0707 28.7334Z" fill="var(--logo-text-color)"/>
-            <path d="M49.0398 9.45185C55.8938 5.45593 64.4987 10.3998 64.499 18.3336L64.5 34.5962C64.5 35.1628 64.4526 35.7228 64.3619 36.2717C64.3178 36.1941 64.2715 36.117 64.2228 36.0409C62.7131 33.6826 59.5772 32.9943 57.2185 34.5035L57.0891 34.5856C57.0261 34.4473 56.9617 34.3094 56.893 34.1732V18.3345C56.893 16.2705 54.6549 14.9843 52.8718 16.0236L41.1393 22.8637L33.5874 18.461L49.0398 9.45185Z" fill="var(--logo-text-color)"/>
-            <path d="M0.5 18.9668C0.500006 11.0956 8.9838 6.14327 15.8375 10.0136L52.6246 30.79C54.4319 31.8107 55.7701 33.2437 56.64 34.874L50.1465 39.0295C49.9702 38.3812 49.5497 37.7892 48.8834 37.4129L12.0973 16.6374C10.3142 15.6304 8.10695 16.9189 8.10695 18.9668V34.7128C8.10702 35.6415 8.58889 36.5041 9.37977 36.9909L15.0659 40.4906C13.5819 40.6738 12.1933 41.5086 11.3547 42.8847C10.6142 44.0998 10.4463 45.5026 10.7733 46.7804L5.39232 43.4689C2.35223 41.5976 0.500048 38.2826 0.5 34.7128V18.9668Z" fill="var(--logo-text-color)"/>
-            <path d="M15.8071 45.4361L27.4135 52.5087C30.882 54.6224 35.252 54.5743 38.6732 52.3847L60.0742 38.688" stroke="#19C379" stroke-width="7.4877" stroke-linecap="round"/>
-            </g>
-            <defs>
-            <clipPath id="clip0_header_logo_unified">
-            <rect x="0.5" width="64" height="64" rx="12" fill="white"/>
-            </clipPath>
-            </defs>
-            </svg>
+            <img class="logo-image" src="img/logo.svg" alt="TestSprite Logo" width="28" height="28" />
           </a>
           <div class="logo-divider"></div>
           <span class="logo-text">
@@ -1112,7 +1100,7 @@ body {
         </div>
         <div class="metadata-row">
           <div class="metadata-label text-body-medium">Date</div>
-          <div class="metadata-value text-body">11/13/2025</div>
+          <div class="metadata-value text-body">11/23/2025</div>
         </div>
         <div class="metadata-row">
           <div class="metadata-label text-body-medium">Prepared by</div>
@@ -1136,123 +1124,205 @@ body {
             <li><span class="coverage-highlight">0/0</span> of tests passed</li>
             <li><span class="coverage-highlight">Key gaps / risks:</span>
             
-              <h3>✅ Strengths Identified</h3>
-<ol>
-<li><strong>High Test Coverage</strong>: All core API endpoints are tested and passing</li>
-<li><strong>Authentication Working</strong>: Bearer token authentication is functioning correctly</li>
-<li><strong>API Compatibility</strong>: OpenAI-compatible endpoint maintains full compatibility</li>
-<li><strong>Response Validation</strong>: All response fields and types are validated</li>
-<li><strong>Cache Functionality</strong>: Semantic cache is operational and handling queries correctly</li>
-</ol>
-<h3>⚠️ Potential Areas for Improvement</h3>
+              <h3>🔴 Critical Issues</h3>
 <ol>
 <li>
-<p><strong>Admin API Endpoints</strong>: The test suite does not currently cover admin API endpoints (<code>/admin/*</code>). Consider adding tests for:</p>
+<p><strong>Missing OpenAI API Key Configuration (BYOK)</strong></p>
 <ul>
-<li><code>/admin/analytics/summary</code></li>
-<li><code>/admin/analytics/user-growth</code></li>
-<li><code>/admin/analytics/plan-distribution</code></li>
-<li><code>/admin/analytics/usage-trends</code></li>
-<li><code>/admin/analytics/top-users</code></li>
-<li><code>/admin/users</code></li>
-<li><code>/admin/users/{tenant_id}/details</code></li>
-<li><code>/admin/users/{tenant_id}/update-plan</code></li>
-<li><code>/admin/users/{tenant_id}/deactivate</code></li>
-<li><code>/admin/system/stats</code></li>
+<li><strong>Severity:</strong> Critical</li>
+<li><strong>Impact:</strong> Core cache query functionality is non-functional</li>
+<li><strong>Root Cause:</strong> Tests are not setting up OpenAI API keys before testing cache operations</li>
+<li><strong>Recommendation:</strong>
+<ul>
+<li>Add pre-test setup to create test user and configure OpenAI key</li>
+<li>Implement better error handling (return 400/401 instead of 500)</li>
+<li>Add clear error messages indicating OpenAI key is required</li>
+</ul>
+</li>
 </ul>
 </li>
 <li>
-<p><strong>Events Endpoint</strong>: The <code>/events</code> endpoint is not currently tested. Consider adding a test to verify:</p>
+<p><strong>Insufficient Error Handling</strong></p>
 <ul>
-<li>Event retrieval with limit parameter</li>
-<li>Event format and structure</li>
-<li>Event filtering and pagination</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Impact:</strong> 500 errors instead of appropriate HTTP status codes</li>
+<li><strong>Recommendation:</strong>
+<ul>
+<li>Return 400 Bad Request for missing/invalid request parameters</li>
+<li>Return 401 Unauthorized for missing/invalid authentication</li>
+<li>Return 402 Payment Required for OpenAI API key issues</li>
+<li>Return 500 only for unexpected server errors</li>
 </ul>
 </li>
-<li>
-<p><strong>Error Handling</strong>: Consider adding tests for:</p>
-<ul>
-<li>Invalid API keys (401 Unauthorized)</li>
-<li>Missing required parameters (422 Validation Error)</li>
-<li>Invalid request formats</li>
-<li>Rate limiting (if implemented)</li>
-<li>Service errors (500 Internal Server Error)</li>
-</ul>
-</li>
-<li>
-<p><strong>Cache Behavior</strong>: Consider adding tests for:</p>
-<ul>
-<li>Exact cache hits (multiple identical queries)</li>
-<li>Semantic cache hits (similar queries)</li>
-<li>Cache misses (new queries)</li>
-<li>Cache expiration (TTL)</li>
-<li>Cache persistence (server restart)</li>
-</ul>
-</li>
-<li>
-<p><strong>Performance Testing</strong>: Consider adding:</p>
-<ul>
-<li>Load testing for high concurrent requests</li>
-<li>Latency benchmarking</li>
-<li>Cache hit ratio optimization</li>
-<li>Memory usage monitoring</li>
-</ul>
-</li>
-<li>
-<p><strong>Integration Testing</strong>: Consider adding:</p>
-<ul>
-<li>End-to-end user workflows</li>
-<li>Multi-tenant isolation testing</li>
-<li>Database persistence testing</li>
-<li>Logging and monitoring integration</li>
 </ul>
 </li>
 </ol>
-<h3>🔒 Security Considerations</h3>
-<ol>
-<li><strong>Authentication</strong>: Bearer token authentication is working correctly</li>
-<li><strong>Authorization</strong>: Admin endpoints require admin API key (not tested)</li>
-<li><strong>Input Validation</strong>: Request parameters are validated (could add more edge cases)</li>
-<li><strong>Data Privacy</strong>: Multi-tenant isolation should be verified</li>
+<h3>🟡 Medium Priority Issues</h3>
+<ol start="3">
+<li>
+<p><strong>Test Setup Complexity</strong></p>
+<ul>
+<li><strong>Severity:</strong> Medium</li>
+<li><strong>Impact:</strong> Tests require complex setup (user creation, API key generation, OpenAI key configuration)</li>
+<li><strong>Recommendation:</strong>
+<ul>
+<li>Create test fixtures/helpers for common setup tasks</li>
+<li>Document test setup requirements clearly</li>
+<li>Consider adding test mode that bypasses OpenAI calls</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Missing Test Coverage</strong></p>
+<ul>
+<li><strong>Severity:</strong> Medium</li>
+<li><strong>Impact:</strong> Not all endpoints are tested</li>
+<li><strong>Missing Tests:</strong>
+<ul>
+<li>Authentication endpoints (<code>/api/auth/signup</code>, <code>/api/auth/login</code>)</li>
+<li>API key management (<code>/api/keys/generate</code>, <code>/api/keys/current</code>)</li>
+<li>OpenAI key management (<code>/api/users/openai-key</code>)</li>
+<li>Admin endpoints (<code>/admin/*</code>)</li>
+<li>Events endpoint (<code>/events</code>)</li>
+</ul>
+</li>
+<li><strong>Recommendation:</strong>
+<ul>
+<li>Add comprehensive test coverage for all endpoints</li>
+<li>Test authentication flows end-to-end</li>
+<li>Test admin functionality</li>
+</ul>
+</li>
+</ul>
+</li>
 </ol>
-<h3>📊 Recommendations</h3>
-<ol>
-<li><strong>Expand Test Coverage</strong>: Add tests for admin API endpoints and events endpoint</li>
-<li><strong>Error Scenarios</strong>: Add comprehensive error handling tests</li>
-<li><strong>Cache Testing</strong>: Add tests for cache behavior and persistence</li>
-<li><strong>Performance Testing</strong>: Add load and performance tests</li>
-<li><strong>Integration Testing</strong>: Add end-to-end integration tests</li>
-<li><strong>Security Testing</strong>: Add security-focused tests for authentication and authorization</li>
+<h3>🟢 Low Priority Issues</h3>
+<ol start="5">
+<li><strong>Test Documentation</strong>
+<ul>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Impact:</strong> Tests may be difficult to understand and maintain</li>
+<li><strong>Recommendation:</strong>
+<ul>
+<li>Add inline comments explaining test logic</li>
+<li>Document test data requirements</li>
+<li>Create test execution guide</li>
+</ul>
+</li>
+</ul>
+</li>
 </ol>
 <hr>
-<h2>5️⃣ Conclusion</h2>
-<h3>Overall Assessment</h3>
-<p>The Semantis AI semantic cache API is <strong>fully functional</strong> and <strong>production-ready</strong> based on the test results. All core API endpoints are working correctly, authentication is functioning properly, and the API maintains full compatibility with OpenAI's chat completions format.</p>
-<h3>Test Results Summary</h3>
-<ul>
-<li>✅ <strong>4/4 tests passed (100% pass rate)</strong></li>
-<li>✅ All core API endpoints are operational</li>
-<li>✅ Authentication and authorization are working correctly</li>
-<li>✅ Response formats match specifications</li>
-<li>✅ Data types are validated correctly</li>
-<li>✅ OpenAI compatibility is maintained</li>
-</ul>
-<h3>Next Steps</h3>
+<h2>5️⃣ Recommendations &amp; Next Steps</h2>
+<h3>Immediate Actions (Priority 1)</h3>
 <ol>
-<li><strong>Expand Test Coverage</strong>: Add tests for admin API endpoints and events endpoint</li>
-<li><strong>Error Handling</strong>: Add comprehensive error scenario tests</li>
-<li><strong>Performance Testing</strong>: Add load and performance tests</li>
-<li><strong>Integration Testing</strong>: Add end-to-end integration tests</li>
-<li><strong>Security Testing</strong>: Add security-focused tests</li>
-<li><strong>Documentation</strong>: Update API documentation with test results</li>
+<li>
+<p><strong>Fix Test Setup for BYOK</strong></p>
+<ul>
+<li>Update test scripts to:
+<ul>
+<li>Create a test user account</li>
+<li>Generate an API key for the user</li>
+<li>Configure OpenAI API key for the user</li>
+<li>Use the generated API key for subsequent tests</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Improve Error Handling</strong></p>
+<ul>
+<li>Update backend to return appropriate HTTP status codes:
+<ul>
+<li>400 for missing/invalid request parameters</li>
+<li>401 for authentication failures</li>
+<li>402 for OpenAI API key issues</li>
+<li>500 only for unexpected errors</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Add Error Message Clarity</strong></p>
+<ul>
+<li>Return clear error messages indicating:
+<ul>
+<li>&quot;OpenAI API key not configured. Please set your OpenAI API key via /api/users/openai-key&quot;</li>
+<li>&quot;Invalid OpenAI API key format&quot;</li>
+<li>&quot;OpenAI API quota exceeded&quot;</li>
+</ul>
+</li>
+</ul>
+</li>
 </ol>
-<h3>Status: ✅ <strong>PASSING</strong></h3>
-<p>All tests have passed successfully. The API is ready for production use with the current test coverage. Consider expanding test coverage for admin endpoints and additional scenarios as outlined in the recommendations above.</p>
+<h3>Short-term Actions (Priority 2)</h3>
+<ol start="4">
+<li>
+<p><strong>Expand Test Coverage</strong></p>
+<ul>
+<li>Add tests for authentication endpoints</li>
+<li>Add tests for API key management</li>
+<li>Add tests for OpenAI key management</li>
+<li>Add tests for admin endpoints</li>
+<li>Add tests for error scenarios</li>
+</ul>
+</li>
+<li>
+<p><strong>Create Test Utilities</strong></p>
+<ul>
+<li>Build test helpers for:
+<ul>
+<li>User creation and authentication</li>
+<li>API key generation</li>
+<li>OpenAI key configuration</li>
+<li>Test data cleanup</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<h3>Long-term Actions (Priority 3)</h3>
+<ol start="6">
+<li>
+<p><strong>Test Automation</strong></p>
+<ul>
+<li>Set up CI/CD pipeline for automated testing</li>
+<li>Add test reporting and notifications</li>
+<li>Implement test result tracking</li>
+</ul>
+</li>
+<li>
+<p><strong>Performance Testing</strong></p>
+<ul>
+<li>Add load testing for cache operations</li>
+<li>Test cache hit/miss scenarios</li>
+<li>Measure latency improvements</li>
+</ul>
+</li>
+</ol>
 <hr>
-<p><strong>Report Generated:</strong> 2025-01-13<br>
-<strong>Test Execution:</strong> Automated via TestSprite MCP<br>
-<strong>Test Environment:</strong> Local development (http://localhost:8000)<br>
-<strong>Test Framework:</strong> TestSprite AI Testing Framework</p>
+<h2>6️⃣ Conclusion</h2>
+<p>The TestSprite testing has revealed that <strong>50% of core functionality tests are passing</strong>. The health check and metrics endpoints are working correctly, demonstrating that:</p>
+<p>✅ <strong>Working Correctly:</strong></p>
+<ul>
+<li>Backend server is operational</li>
+<li>Bearer token authentication is functional</li>
+<li>Metrics collection is working</li>
+<li>API response structure is correct</li>
+</ul>
+<p>❌ <strong>Needs Attention:</strong></p>
+<ul>
+<li>Query endpoints require OpenAI API key configuration (BYOK)</li>
+<li>Error handling needs improvement (500 → appropriate status codes)</li>
+<li>Test setup needs to include BYOK configuration</li>
+</ul>
+<p><strong>Overall Assessment:</strong> The backend infrastructure is solid, but the BYOK (Bring-Your-Own-Key) requirement needs to be properly handled in tests. Once OpenAI keys are configured, the query endpoints should function correctly.</p>
+<p><strong>Next Steps:</strong> Update test setup to configure OpenAI keys before testing cache operations, and improve error handling to return appropriate HTTP status codes.</p>
+<hr>
+<p><strong>Report Generated:</strong> 2025-01-27<br>
+<strong>Test Execution Date:</strong> 2025-11-23<br>
+<strong>Test Environment:</strong> Local Development (localhost:8000)</p>
 
             </li>
 </ul>

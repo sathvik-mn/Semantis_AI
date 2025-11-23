@@ -1,0 +1,429 @@
+[
+  {
+    "id": "TC001",
+    "title": "API Key Authorization Success",
+    "description": "Verify that all API endpoints require a valid tenant API key and accept requests with a properly formatted API key.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send request to /v1/chat/completions endpoint with a valid tenant API key in Authorization header."
+      },
+      {
+        "type": "assertion",
+        "description": "Response status code is 200 and the response contains valid data and meta information."
+      },
+      {
+        "type": "action",
+        "description": "Send request to /query endpoint with valid tenant API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Response status code is 200 and contains expected answer and meta fields."
+      },
+      {
+        "type": "action",
+        "description": "Send request to /metrics endpoint with valid tenant API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Response status code is 200 and cache metrics data is returned."
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "API Key Authorization Failure",
+    "description": "Verify that API requests without a valid tenant API key return unauthorized errors.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send request to /v1/chat/completions endpoint without Authorization header."
+      },
+      {
+        "type": "assertion",
+        "description": "Receive 401 Unauthorized response."
+      },
+      {
+        "type": "action",
+        "description": "Send request to /query endpoint with invalid or malformed API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Receive 401 Unauthorized response."
+      },
+      {
+        "type": "action",
+        "description": "Send request to /metrics endpoint with expired or revoked API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Receive 401 Unauthorized response."
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Exact Cache Hit Verification",
+    "description": "Validate that the system returns exact cache hits for identical prompts with matching model configuration within the same tenant session.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send a chat completions request with a specific prompt and model using the tenant's API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Response contains meta.hit equal to 'miss' because cache is initially empty."
+      },
+      {
+        "type": "action",
+        "description": "Send the same request again with identical prompt and model."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit equals 'exact' indicating exact cache hit."
+      },
+      {
+        "type": "assertion",
+        "description": "Response answer matches previously cached answer."
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Semantic Cache Hit Verification",
+    "description": "Verify semantic cache hits occur when paraphrased prompts meet or exceed the tenant-specific similarity threshold.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send a chat completions request with an original prompt and model."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit is 'miss' as cache is empty or no semantic match found."
+      },
+      {
+        "type": "action",
+        "description": "Send a chat completions request with a semantically equivalent but paraphrased prompt."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit is 'semantic'."
+      },
+      {
+        "type": "assertion",
+        "description": "meta.similarity score is greater than or equal to the tenant's similarity threshold."
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Cache Miss and Upstream Request Handling",
+    "description": "Confirm system falls back to query upstream LLM and caches the response when no exact or semantic cache entries match.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send a chat completion request with a new prompt not present in cache."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit is 'miss'."
+      },
+      {
+        "type": "assertion",
+        "description": "A fresh answer is returned from the upstream LLM."
+      },
+      {
+        "type": "action",
+        "description": "Send the same request again."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit is now 'exact' or 'semantic', confirming caching of previous response."
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "TTL and Popularity-Based Cache Expiration",
+    "description": "Verify that cache entries expire according to TTL and popularity metrics, and that TTLs are extended upon repeated hits.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Cache a response with TTL set to a short duration (e.g., 5 seconds)."
+      },
+      {
+        "type": "assertion",
+        "description": "Entry is present in cache immediately after caching."
+      },
+      {
+        "type": "action",
+        "description": "Wait beyond TTL and verify cache entry is expired and removed."
+      },
+      {
+        "type": "assertion",
+        "description": "Subsequent identical request results in cache miss."
+      },
+      {
+        "type": "action",
+        "description": "Cache an entry and then generate multiple repeated hits to increase popularity."
+      },
+      {
+        "type": "assertion",
+        "description": "TTL for entry is extended to keep cache entry live."
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Logging of Requests, Semantic Operations, and Errors",
+    "description": "Verify that each cache request, semantic operation, and error is logged properly with rotating log policies.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Make a chat completions request resulting in exact cache hit."
+      },
+      {
+        "type": "assertion",
+        "description": "Check logs contain access entry with hit type 'exact'."
+      },
+      {
+        "type": "action",
+        "description": "Make a semantic cache hit request."
+      },
+      {
+        "type": "assertion",
+        "description": "Check logs record semantic cache operations including similarity scores."
+      },
+      {
+        "type": "action",
+        "description": "Force an error in query processing (e.g., malformed request)."
+      },
+      {
+        "type": "assertion",
+        "description": "Error logs are recorded with the appropriate error message and stack trace."
+      },
+      {
+        "type": "action",
+        "description": "Verify log rotation by generating large volume of log entries."
+      },
+      {
+        "type": "assertion",
+        "description": "Logs are rotated without loss and old logs archived according to policy."
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Metrics Endpoint Accuracy",
+    "description": "Ensure that the /metrics endpoint returns accurate and up-to-date cache performance statistics that correspond with logged events.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Generate a sequence of cache hits, semantic hits, and misses for the tenant."
+      },
+      {
+        "type": "action",
+        "description": "Request /metrics endpoint for the tenant."
+      },
+      {
+        "type": "assertion",
+        "description": "Metrics data returned match the number of requests, hits, semantic hits, misses, and hit ratios generated."
+      },
+      {
+        "type": "assertion",
+        "description": "Similarity threshold and latency metrics are present and reasonable."
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Adaptive Similarity Threshold Adjustment",
+    "description": "Verify that the adaptive similarity threshold modifies within defined bounds to maintain target cache hit ratios based on traffic.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate varying load and cache hit/miss patterns for a tenant over time."
+      },
+      {
+        "type": "assertion",
+        "description": "Observe similarity threshold value adjusts to maintain cache hit ratio within target range."
+      },
+      {
+        "type": "assertion",
+        "description": "Threshold does not exceed configured upper or lower bounds."
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Multi-Tenant Isolation Validation",
+    "description": "Ensure that cache entries and data are isolated per tenant and that API keys restrict access to respective tenant caches.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Tenant A caches a prompt and its response."
+      },
+      {
+        "type": "action",
+        "description": "Tenant B sends identical request using Tenant B’s API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Tenant B receives a cache miss and query is processed independently."
+      },
+      {
+        "type": "action",
+        "description": "Attempt cross-tenant cache data access using unauthorized API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Access is denied with unauthorized response."
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Frontend Dashboard Metrics Display",
+    "description": "Verify that the frontend dashboard accurately displays metrics, cache hit/miss rates, similarity scores, and updates logs and tenant settings after interactions.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Perform a set of chat completions queries to generate cache activity."
+      },
+      {
+        "type": "action",
+        "description": "Open the tenant dashboard and navigate to metrics and logs views."
+      },
+      {
+        "type": "assertion",
+        "description": "Dashboard updates metrics and logs to reflect recent requests and cache hits/misses."
+      },
+      {
+        "type": "action",
+        "description": "Change tenant parameters in settings and save."
+      },
+      {
+        "type": "assertion",
+        "description": "Settings persist and impact subsequent cache behavior accordingly."
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Simple Query Endpoint Functionality",
+    "description": "Validate the /query endpoint supports fast semantic cache lookups and returns appropriate hit type metadata.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Submit a query with an existing prompt in cache."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit equals 'exact' or 'semantic' reflecting cache status."
+      },
+      {
+        "type": "action",
+        "description": "Submit a query with a new prompt not in cache."
+      },
+      {
+        "type": "assertion",
+        "description": "Response meta.hit equals 'miss' and upstream query is triggered."
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "SDK Functionality with Retry and Backoff",
+    "description": "Ensure that the provided Python and Node.js SDKs handle network errors with proper retry and backoff logic, completing queries successfully or reporting errors gracefully.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Invoke SDK to send chat completions requests under normal network conditions."
+      },
+      {
+        "type": "assertion",
+        "description": "Requests complete successfully and return expected results."
+      },
+      {
+        "type": "action",
+        "description": "Simulate transient network failures during requests."
+      },
+      {
+        "type": "assertion",
+        "description": "SDK retries requests with backoff and eventually succeeds or returns appropriate error."
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Health Check Endpoint",
+    "description": "Confirm that the /health endpoint returns service health status with proper fields and status 200.",
+    "category": "functional",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send GET request to /health endpoint."
+      },
+      {
+        "type": "assertion",
+        "description": "Response status is 200."
+      },
+      {
+        "type": "assertion",
+        "description": "Response JSON contains status 'ok', service name 'semantic-cache', and version string."
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Error Handling on Malformed Requests",
+    "description": "Verify server returns 400 or 500 status codes and meaningful error responses when requests are malformed or required fields are missing.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send POST to /v1/chat/completions with missing required messages field."
+      },
+      {
+        "type": "assertion",
+        "description": "Receive 400 or 500 error with descriptive error message."
+      },
+      {
+        "type": "action",
+        "description": "Send /query request with missing prompt parameter."
+      },
+      {
+        "type": "assertion",
+        "description": "Receive error indicating missing required parameter."
+      }
+    ]
+  }
+]
