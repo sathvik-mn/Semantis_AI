@@ -104,7 +104,7 @@ export default function AdminDashboard() {
 
   const revenueData = usageData.map(item => ({
     date: item.date,
-    revenue: ((item.requests * 0.001) + Math.random() * 50).toFixed(2)
+    revenue: (item.requests * 0.001).toFixed(2)
   }));
 
   if (loading) {
@@ -137,35 +137,30 @@ export default function AdminDashboard() {
           title="Total Users"
           value={summary.total_users.toLocaleString()}
           icon={Users}
-          trend={12.5}
           color="bg-gradient-to-br from-blue-500 to-blue-600"
         />
         <KPICard
-          title="Active Users"
+          title="Active Tenants"
           value={summary.active_users.toLocaleString()}
           icon={Activity}
-          trend={8.3}
           color="bg-gradient-to-br from-emerald-500 to-emerald-600"
         />
         <KPICard
           title="Total Requests"
           value={summary.total_requests.toLocaleString()}
           icon={TrendingUp}
-          trend={15.2}
           color="bg-gradient-to-br from-purple-500 to-purple-600"
         />
         <KPICard
           title="Cache Hit Ratio"
           value={`${summary.cache_hit_ratio.toFixed(1)}%`}
           icon={Activity}
-          trend={2.1}
           color="bg-gradient-to-br from-teal-500 to-teal-600"
         />
         <KPICard
-          title="Total Revenue"
+          title="Est. Cost"
           value={`$${summary.total_revenue.toLocaleString()}`}
           icon={DollarSign}
-          trend={18.7}
           color="bg-gradient-to-br from-orange-500 to-orange-600"
         />
         <KPICard

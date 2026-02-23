@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authAPI } from '../api/authAPI';
+import { supabase } from '../lib/supabase';
+import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 interface User {
-  id: number;
+  id: string;
   email: string;
   name?: string;
   is_admin?: boolean;
@@ -15,128 +16,202 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   loadUser: () => Promise<User | null>;
+  getAccessToken: () => Promise<string | null>;
   isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function mapSupabaseUser(su: SupabaseUser): User {
+  return {
+    id: su.id,
+    email: su.email ?? '',
+    name: su.user_metadata?.name ?? su.email?.split('@')[0] ?? '',
+  };
+}
+
+async function enrichUserFromBackend(token: string, user: User): Promise<User> {
+  try {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    const res = await fetch(`${backendUrl}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        ...user,
+        name: data.name || user.name,
+        is_admin: data.is_admin ?? false,
+      };
+    }
+  } catch {
+    // Backend might not be running yet; fall back to Supabase data
+  }
+  return user;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true); // Start with loading=true to check auth
+  const [loading, setLoading] = useState(true);
 
-  // Load user from token on mount if token exists (for page refresh persistence)
   useEffect(() => {
-    const loadUserOnMount = async () => {
+    let cancelled = false;
+
+    const init = async () => {
       try {
-        if (authAPI.isAuthenticated()) {
-          try {
-            const userData = await authAPI.getCurrentUser();
-            setUser(userData);
-            
-            // Also load API key if user is authenticated
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => {
+            console.warn('Auth session fetch timed out, continuing without session');
+            resolve(null);
+          }, 3000)
+        );
+
+        const result = await Promise.race([sessionPromise, timeoutPromise]);
+        if (cancelled) return;
+        const session = result && 'data' in result ? result.data.session : null;
+
+        if (session?.user) {
+          const mapped = mapSupabaseUser(session.user);
+          setUser(mapped);
+          setLoading(false);
+
+          // Enrich from backend and load API key in background (non-blocking)
+          enrichUserFromBackend(session.access_token, mapped).then((enriched) => {
+            if (!cancelled) setUser(enriched);
+          }).catch(() => {});
+          import('../api/semanticAPI').then(async ({ getCurrentApiKey, setApiKey: setKey }) => {
             try {
-              const { getCurrentApiKey, setApiKey } = await import('../api/semanticAPI');
-              const apiKeyData = await getCurrentApiKey();
-              if (apiKeyData.exists && apiKeyData.api_key) {
-                setApiKey(apiKeyData.api_key);
-              }
-            } catch (err) {
-              // Silently fail - user can generate API key manually
-              console.debug('Could not load API key on mount:', err);
-            }
-          } catch (error: any) {
-            // Token is invalid or expired - clear it
-            console.debug('Token validation failed:', error);
-            authAPI.clearAuthToken();
-            setUser(null);
-          }
+              const data = await getCurrentApiKey();
+              if (data.exists && data.api_key) setKey(data.api_key);
+            } catch {}
+          }).catch(() => {});
+        } else {
+          setLoading(false);
         }
-      } catch (error) {
-        console.error('Failed to load user on mount:', error);
-        authAPI.clearAuthToken();
-        setUser(null);
-      } finally {
-        setLoading(false);
+      } catch (err) {
+        console.error('Auth init failed:', err);
+        if (!cancelled) setLoading(false);
       }
     };
-    
-    loadUserOnMount();
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (cancelled) return;
+        if (session?.user) {
+          const mapped = mapSupabaseUser(session.user);
+          setUser(mapped);
+
+          enrichUserFromBackend(session.access_token, mapped).then((enriched) => {
+            if (!cancelled) setUser(enriched);
+          }).catch(() => {});
+          import('../api/semanticAPI').then(async ({ getCurrentApiKey, setApiKey: setKey }) => {
+            try {
+              const data = await getCurrentApiKey();
+              if (data.exists && data.api_key) setKey(data.api_key);
+            } catch {}
+          }).catch(() => {});
+        } else {
+          setUser(null);
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
-    try {
-      // Clear any existing API key from previous sessions
-      const { clearApiKey, getCurrentApiKey, setApiKey } = await import('../api/semanticAPI');
-      clearApiKey();
-      
-      const response = await authAPI.login({ email, password });
-      authAPI.setAuthToken(response.access_token);
-      setUser(response.user);
-      
-      // Automatically load user's API key if it exists
-      try {
-        const apiKeyData = await getCurrentApiKey();
-        if (apiKeyData.exists && apiKeyData.api_key) {
-          setApiKey(apiKeyData.api_key);
-        }
-      } catch (err) {
-        // Silently fail - user can generate API key manually
-        console.debug('Could not load API key:', err);
-      }
-    } catch (error: any) {
-      throw new Error(error.response?.data?.detail || 'Login failed');
-    }
-  };
+    const { clearApiKey, getCurrentApiKey, setApiKey } = await import('../api/semanticAPI');
+    clearApiKey();
 
-  // Load user from token (for admin login and explicit checks)
-  const loadUser = async () => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+
+    const mapped = mapSupabaseUser(data.user);
+    const enriched = await enrichUserFromBackend(data.session.access_token, mapped);
+    setUser(enriched);
+
     try {
-      if (authAPI.isAuthenticated()) {
-        const userData = await authAPI.getCurrentUser();
-        setUser(userData);
-        return userData;
+      const apiKeyData = await getCurrentApiKey();
+      if (apiKeyData.exists && apiKeyData.api_key) {
+        setApiKey(apiKeyData.api_key);
       }
-    } catch (error) {
-      console.error('Failed to load user:', error);
-      authAPI.clearAuthToken();
-      setUser(null);
-    }
-    return null;
+    } catch { /* ok */ }
   };
 
   const signup = async (email: string, password: string, name?: string) => {
-    try {
-      await authAPI.signUp({ email, password, name });
-      // Auto-login after signup
-      await login(email, password);
-    } catch (error: any) {
-      throw new Error(error.response?.data?.detail || 'Signup failed');
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name: name || email.split('@')[0] } },
+    });
+    if (error) throw new Error(error.message);
+    if (data.user) {
+      setUser(mapSupabaseUser(data.user));
     }
   };
 
   const logout = async () => {
-    try {
-      await authAPI.logout();
-      setUser(null);
-    } catch (error) {
-      // Clear token anyway
-      authAPI.clearAuthToken();
-      setUser(null);
+    const { clearApiKey } = await import('../api/semanticAPI');
+    clearApiKey();
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw new Error(error.message);
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw new Error(error.message);
+  };
+
+  const loadUser = async (): Promise<User | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      let mapped = mapSupabaseUser(session.user);
+      mapped = await enrichUserFromBackend(session.access_token, mapped);
+      setUser(mapped);
+      return mapped;
     }
+    setUser(null);
+    return null;
   };
 
-  const value = {
-    user,
-    loading,
-    login,
-    signup,
-    logout,
-    loadUser,
-    isAuthenticated: !!user
+  const getAccessToken = async (): Promise<string | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        signup,
+        logout,
+        resetPassword,
+        updatePassword,
+        loadUser,
+        getAccessToken,
+        isAuthenticated: !!user,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

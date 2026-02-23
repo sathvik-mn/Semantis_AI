@@ -1,136 +1,125 @@
 """
-Authentication module for JWT tokens and password hashing.
+Authentication module - Supabase JWT verification.
+
+Supports both:
+  - New asymmetric signing keys (ES256/RS256) via JWKS discovery endpoint
+  - Legacy HS256 shared secret (fallback)
+
+All signup/login/password-reset is handled client-side by @supabase/supabase-js.
+The backend only verifies incoming Supabase JWT tokens.
 """
 import os
-from datetime import datetime, timedelta
+import time
+import threading
 from typing import Optional, Dict
-import bcrypt
-from jose import JWTError, jwt
+from jose import jwt, JWTError
+import requests
 
-# JWT Configuration
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 7
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
-def get_password_hash(password: str) -> str:
+# JWKS cache (refreshed every 10 minutes)
+_jwks_cache: Dict = {}
+_jwks_cache_time: float = 0
+_jwks_lock = threading.Lock()
+_JWKS_CACHE_TTL = 600  # 10 minutes
+
+
+def _get_jwks() -> Dict:
+    """Fetch and cache the JWKS from Supabase's discovery endpoint."""
+    global _jwks_cache, _jwks_cache_time
+
+    now = time.time()
+    if _jwks_cache and (now - _jwks_cache_time) < _JWKS_CACHE_TTL:
+        return _jwks_cache
+
+    with _jwks_lock:
+        # Double-check after acquiring lock
+        if _jwks_cache and (time.time() - _jwks_cache_time) < _JWKS_CACHE_TTL:
+            return _jwks_cache
+
+        if not SUPABASE_URL:
+            return {}
+
+        url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        try:
+            resp = requests.get(url, timeout=5)
+            resp.raise_for_status()
+            _jwks_cache = resp.json()
+            _jwks_cache_time = time.time()
+            return _jwks_cache
+        except Exception as e:
+            print(f"WARNING: Failed to fetch JWKS from {url}: {e}")
+            return _jwks_cache  # return stale cache if available
+
+
+def _get_signing_key_from_jwks(token: str) -> Optional[Dict]:
     """
-    Hash a password using bcrypt.
-
-    Args:
-        password: Plain text password
-
-    Returns:
-        Hashed password
+    Extract the signing key from JWKS that matches the token's 'kid' header.
+    Returns the JWK dict or None.
     """
-    password_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password_bytes, salt)
-    return hashed.decode('utf-8')
+    jwks = _get_jwks()
+    if not jwks or "keys" not in jwks:
+        return None
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a password against its hash.
-
-    Args:
-        plain_password: Plain text password to verify
-        hashed_password: Hashed password to check against
-
-    Returns:
-        True if password matches, False otherwise
-    """
     try:
-        password_bytes = plain_password.encode('utf-8')
-        hashed_bytes = hashed_password.encode('utf-8')
-        return bcrypt.checkpw(password_bytes, hashed_bytes)
-    except Exception:
-        return False
-
-def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
-    """
-    Create a JWT access token.
-
-    Args:
-        data: Data to encode in the token
-        expires_delta: Optional custom expiration time
-
-    Returns:
-        JWT token string
-    """
-    to_encode = data.copy()
-
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
-
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-def verify_token(token: str) -> Optional[Dict]:
-    """
-    Verify and decode a JWT token.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        Decoded token data or None if invalid
-    """
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        unverified_header = jwt.get_unverified_header(token)
     except JWTError:
         return None
 
-def validate_password_strength(password: str) -> tuple[bool, str]:
+    kid = unverified_header.get("kid")
+    alg = unverified_header.get("alg", "")
+
+    for key in jwks["keys"]:
+        if key.get("kid") == kid:
+            return key
+
+    # If no kid match, return the first key that matches the algorithm
+    for key in jwks["keys"]:
+        key_alg = key.get("alg", "")
+        if key_alg == alg:
+            return key
+
+    return None
+
+
+def verify_token(token: str) -> Optional[Dict]:
     """
-    Validate password strength.
+    Verify a Supabase JWT access token.
 
-    Args:
-        password: Password to validate
+    Tries JWKS-based verification first (ES256/RS256), then falls back
+    to the legacy HS256 shared secret if configured.
 
-    Returns:
-        Tuple of (is_valid, error_message)
+    Returns the decoded payload or None if invalid/expired.
     """
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
+    # Strategy 1: JWKS-based verification (asymmetric keys)
+    if SUPABASE_URL:
+        jwk = _get_signing_key_from_jwks(token)
+        if jwk:
+            try:
+                unverified_header = jwt.get_unverified_header(token)
+                alg = unverified_header.get("alg", "ES256")
+                payload = jwt.decode(
+                    token,
+                    jwk,
+                    algorithms=[alg],
+                    options={"verify_aud": False},
+                )
+                return payload
+            except JWTError:
+                pass  # fall through to legacy
 
-    has_letter = any(c.isalpha() for c in password)
-    has_number = any(c.isdigit() for c in password)
+    # Strategy 2: Legacy HS256 shared secret
+    if SUPABASE_JWT_SECRET:
+        try:
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+            return payload
+        except JWTError:
+            pass
 
-    if not has_letter:
-        return False, "Password must contain at least one letter"
-
-    if not has_number:
-        return False, "Password must contain at least one number"
-
-    return True, ""
-
-def validate_email(email: str) -> tuple[bool, str]:
-    """
-    Basic email validation.
-
-    Args:
-        email: Email to validate
-
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    if not email or '@' not in email:
-        return False, "Invalid email format"
-
-    if len(email) < 3:
-        return False, "Email is too short"
-
-    parts = email.split('@')
-    if len(parts) != 2:
-        return False, "Invalid email format"
-
-    if not parts[0] or not parts[1]:
-        return False, "Invalid email format"
-
-    if '.' not in parts[1]:
-        return False, "Invalid email domain"
-
-    return True, ""
+    return None

@@ -18,6 +18,7 @@ from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from collections import OrderedDict
+from contextvars import ContextVar
 import threading
 
 import numpy as np
@@ -100,16 +101,8 @@ def domain_hint(text: str) -> str:
 # -----------------------------
 # Embeddings & LLM
 # -----------------------------
-def _get_user_openai_key(user_id: Optional[int]) -> Optional[str]:
-    """
-    Get user's OpenAI API key if available.
-    
-    Args:
-        user_id: User ID (optional)
-    
-    Returns:
-        Decrypted OpenAI API key or None if not set
-    """
+def _get_user_openai_key(user_id: Optional[str]) -> Optional[str]:
+    """Retrieve and decrypt the user's BYOK OpenAI key, or return None."""
     if not user_id:
         return None
     
@@ -125,29 +118,46 @@ def _get_user_openai_key(user_id: Optional[int]) -> Optional[str]:
     
     return None
 
-def get_embedding(text: str, user_id: Optional[int] = None) -> np.ndarray:
-    """
-    Return L2-normalized embedding vector.
+_openai_key_lock = threading.Lock()
+
+def _resolve_openai_key(user_id: Optional[str] = None) -> str:
+    """Get the effective OpenAI API key (user BYOK or server fallback)."""
+    user_api_key = _get_user_openai_key(user_id)
+    key = user_api_key or OPENAI_API_KEY
+    if not key or key == "sk-REPLACE_ME":
+        raise ValueError(
+            "No OpenAI API key available. Either add your own key in Account Settings, "
+            "or ask the admin to set a server-level OPENAI_API_KEY."
+        )
+    return key
+
+EMBEDDING_PREFIX = "Semantic meaning: "
+
+# Reusable OpenAI client pool — avoids expensive per-call client construction
+_openai_clients: Dict[str, "openai.OpenAI"] = {}
+_client_lock = threading.Lock()
+
+def _get_openai_client(api_key: str):
+    """Return a cached OpenAI client for the given key."""
+    from openai import OpenAI
+    with _client_lock:
+        if api_key not in _openai_clients:
+            _openai_clients[api_key] = OpenAI(api_key=api_key, timeout=30.0, max_retries=1)
+        return _openai_clients[api_key]
+
+def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
+    """Return L2-normalized embedding vector (thread-safe).
     
-    Args:
-        text: Text to embed
-        user_id: Optional user ID to use user's OpenAI key
+    Prefixes with 'Semantic meaning: ' so the model focuses on intent,
+    producing much higher cosine similarity for paraphrases and typos.
     """
     start_time = time.time()
+    key = _resolve_openai_key(user_id)
+    prefixed = f"{EMBEDDING_PREFIX}{text.strip().lower()}"
     
-    # Get user's OpenAI key if available
-    user_api_key = _get_user_openai_key(user_id)
-    if not user_api_key:
-        raise ValueError(
-            "OpenAI API key not configured. Please add your OpenAI API key in Settings. "
-            "Your queries are private and will only use your own OpenAI account."
-        )
-    
-    # Use user's API key temporarily
-    original_key = openai.api_key
     try:
-        openai.api_key = user_api_key
-        resp = openai.embeddings.create(model=EMBED_MODEL, input=text)
+        client = _get_openai_client(key)
+        resp = client.embeddings.create(model=EMBED_MODEL, input=prefixed)
         v = np.array(resp.data[0].embedding, dtype="float32")
         v /= (np.linalg.norm(v) + 1e-12)
         embedding_time = round((time.time() - start_time) * 1000, 2)
@@ -163,56 +173,31 @@ def get_embedding(text: str, user_id: Optional[int] = None) -> np.ndarray:
             f"text_len={len(text)} | time={embedding_time}ms | error={str(e)}"
         )
         raise
-    finally:
-        # Restore original key
-        openai.api_key = original_key
 
-def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[int] = None) -> str:
-    """
-    Minimal OpenAI chat call wrapper.
-    
-    Args:
-        messages: Chat messages
-        temperature: Temperature for generation
-        user_id: Optional user ID to use user's OpenAI key
-    """
+def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None) -> str:
+    """OpenAI chat call (thread-safe, uses cached client)."""
     start_time = time.time()
-    prompt_tokens = sum(len(m.get("content", "").split()) for m in messages)  # Rough estimate
+    prompt_tokens = sum(len(m.get("content", "").split()) for m in messages)
+    key = _resolve_openai_key(user_id)
     
-    # Get user's OpenAI key if available
-    user_api_key = _get_user_openai_key(user_id)
-    if not user_api_key:
-        raise ValueError(
-            "OpenAI API key not configured. Please add your OpenAI API key in Settings. "
-            "Your queries are private and will only use your own OpenAI account."
-        )
-    
-    # Use user's API key temporarily
-    original_key = openai.api_key
     try:
-        openai.api_key = user_api_key
-        resp = openai.chat.completions.create(
+        client = _get_openai_client(key)
+        resp = client.chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
             temperature=temperature,
+            max_tokens=1024,
         )
         llm_time = round((time.time() - start_time) * 1000, 2)
         response_text = resp.choices[0].message.content.strip()
-        completion_tokens = len(response_text.split())  # Rough estimate
+        completion_tokens = len(response_text.split())
         total_tokens = prompt_tokens + completion_tokens
         
-        # Log LLM call (without exposing API key)
         app_log.info(
             f"LLM call | model={CHAT_MODEL} | user_id={user_id} | temp={temperature} | "
             f"prompt_tokens~={prompt_tokens} | completion_tokens~={completion_tokens} | "
             f"total_tokens~={total_tokens} | time={llm_time}ms"
         )
-        
-        performance_log.debug(
-            f"LLM performance | model={CHAT_MODEL} | user_id={user_id} | time={llm_time}ms | "
-            f"tokens~={total_tokens}"
-        )
-        
         return response_text
     except Exception as e:
         llm_time = round((time.time() - start_time) * 1000, 2)
@@ -221,9 +206,6 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[i
             f"time={llm_time}ms | error={str(e)}"
         )
         raise
-    finally:
-        # Restore original key
-        openai.api_key = original_key
 
 # -----------------------------
 # Cache data models
@@ -267,7 +249,7 @@ class TenantState:
     semantic_hits: int = 0
     latencies_ms: List[float] = field(default_factory=list)
     # adaptive similarity threshold (aggressively lowered for maximum hit rate)
-    sim_threshold: float = 0.65  # Lowered from 0.72 to 0.65 for much better matching
+    sim_threshold: float = 0.75
     # domain-specific thresholds
     domain_thresholds: Dict[str, float] = field(default_factory=dict)  # domain -> threshold
     # events log
@@ -330,255 +312,40 @@ class SemanticCacheService:
 
     @staticmethod
     def norm_text(s: str) -> str:
-        """Normalize text for exact matching. Aggressively normalizes for better matching."""
-        # Remove extra whitespace and convert to lowercase
-        s = " ".join(s.strip().split()).lower()
-        # Remove punctuation for better matching
-        import string
-        s = s.translate(str.maketrans('', '', string.punctuation))
-        # Remove common stop words/articles for better exact matching
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
-        words = s.split()
-        words = [w for w in words if w not in stop_words]
-        return " ".join(words)
-    
-    @staticmethod
-    def _expand_query(text: str) -> List[str]:
-        """Expand query with variations, synonyms, and alternative phrasings for better matching."""
-        variations = [text.lower().strip()]
-        text_lower = text.lower()
-        
-        # Handle contractions
-        contractions = {
-            "what's": "what is", "who's": "who is", "where's": "where is",
-            "it's": "it is", "that's": "that is", "how's": "how is",
-            "when's": "when is", "why's": "why is", "there's": "there is",
-            "can't": "cannot", "won't": "will not", "don't": "do not",
-            "doesn't": "does not", "isn't": "is not", "aren't": "are not"
-        }
-        for cont, exp in contractions.items():
-            if cont in text_lower:
-                variations.append(text_lower.replace(cont, exp))
-        
-        # Handle question variations (expanded list)
-        question_starters = [
-            "what is", "what are", "what does", "what do", "what can",
-            "tell me about", "explain", "describe", "define", "what",
-            "how is", "how does", "how do", "how can", "how",
-            "why is", "why does", "why do", "why",
-            "when is", "when does", "when do", "when",
-            "where is", "where does", "where do", "where",
-            "who is", "who are", "who does", "who do", "who"
-        ]
-        for starter in question_starters:
-            if text_lower.startswith(starter):
-                for alt in question_starters:
-                    if alt != starter and len(alt) <= len(starter) + 3:  # Similar length
-                        variations.append(text_lower.replace(starter, alt, 1))
-        
-        # Add synonym variations (common synonyms)
-        synonyms = {
-            "big": ["large", "huge", "enormous"],
-            "small": ["tiny", "little", "mini"],
-            "good": ["great", "excellent", "fine"],
-            "bad": ["poor", "terrible", "awful"],
-            "fast": ["quick", "rapid", "swift"],
-            "slow": ["sluggish", "gradual"],
-            "help": ["assist", "aid", "support"],
-            "use": ["utilize", "employ"],
-            "make": ["create", "build", "construct"],
-            "show": ["display", "demonstrate", "present"],
-            "get": ["obtain", "acquire", "receive"],
-            "find": ["locate", "discover"],
-            "start": ["begin", "commence"],
-            "stop": ["end", "finish", "halt"],
-            "change": ["modify", "alter"],
-        }
-        words = text_lower.split()
-        for i, word in enumerate(words):
-            if word in synonyms:
-                for syn in synonyms[word]:
-                    new_words = words.copy()
-                    new_words[i] = syn
-                    variations.append(" ".join(new_words))
-        
-        # Add version without question words (for statements)
-        question_words = ["what", "how", "why", "when", "where", "who", "which"]
-        if any(text_lower.startswith(qw) for qw in question_words):
-            # Remove question word and make it a statement
-            for qw in question_words:
-                if text_lower.startswith(qw):
-                    rest = text_lower[len(qw):].strip()
-                    if rest.startswith(" is ") or rest.startswith(" are "):
-                        variations.append(rest[3:].strip())
-                    break
-        
-        return list(set(variations))  # Remove duplicates
-    
-    def _get_cached_embedding(self, text: str) -> Optional[np.ndarray]:
-        """Get cached embedding or None (optimized lookup)."""
-        text_key = text.lower().strip()
-        # Fast path: direct lookup (O(1) average case)
-        if text_key in self._embedding_cache:
-            # Move to end (LRU) - O(1) operation
-            self._embedding_cache.move_to_end(text_key)
-            return self._embedding_cache[text_key]
-        return None
-    
-    def _cache_embedding(self, text: str, emb: np.ndarray):
-        """Cache embedding with LRU eviction."""
-        text_key = text.lower().strip()
-        if text_key in self._embedding_cache:
-            self._embedding_cache.move_to_end(text_key)
-        else:
-            self._embedding_cache[text_key] = emb
-            # Evict oldest if cache full
-            if len(self._embedding_cache) > self._embedding_cache_max_size:
-                self._embedding_cache.popitem(last=False)
-    
-    def _get_context_aware_embedding(self, messages: List[dict], prompt_norm: str, user_id: Optional[int] = None) -> Tuple[np.ndarray, str]:
-        """Generate context-aware embedding considering conversation history."""
+        """Lightweight normalization for exact-match lookup only (whitespace + lowercase)."""
+        return " ".join(s.strip().split()).lower()
+
+    def _get_embedding_for_query(self, messages: List[dict], user_id: Optional[str] = None) -> Tuple[np.ndarray, str]:
+        """Get embedding for the user's query. Uses raw user text for best semantic fidelity."""
         user_messages = [m["content"] for m in messages if m.get("role") == "user"]
-        
-        # Primary: Last user message (most important)
-        primary_text = user_messages[-1] if user_messages else prompt_norm
-        
-        # Check cache first
-        cached_emb = self._get_cached_embedding(primary_text)
-        if cached_emb is not None:
-            return cached_emb, primary_text
-        
-        # Generate embedding
-        primary_emb = get_embedding(primary_text, user_id=user_id)
-        self._cache_embedding(primary_text, primary_emb)
-        
-        # Context: Last 2-3 messages for context (if multiple messages)
-        if len(user_messages) > 1:
-            context_text = " ".join(user_messages[-3:])
-            cached_context = self._get_cached_embedding(context_text)
-            if cached_context is not None:
-                context_emb = cached_context
-            else:
-                context_emb = get_embedding(context_text, user_id=user_id)
-                self._cache_embedding(context_text, context_emb)
-            
-            # Weighted combination: 70% primary, 30% context
-            combined_emb = 0.7 * primary_emb + 0.3 * context_emb
-            combined_emb /= (np.linalg.norm(combined_emb) + 1e-12)
-            return combined_emb, primary_text
-        
-        return primary_emb, primary_text
-    
-    def _calculate_hybrid_score(
-        self, 
-        query_emb: np.ndarray, 
-        query_text: str,
-        entry: CacheEntry, 
-        entry_emb: np.ndarray,
-        base_sim: float
-    ) -> float:
-        """Calculate hybrid similarity score combining multiple signals - enhanced for better matching."""
-        # 1. Embedding similarity (primary, 50% weight - reduced to give more weight to text matching)
-        emb_score = base_sim
-        
-        # 2. Text overlap (30% weight - increased for better word matching)
-        query_words = set(query_text.lower().split())
-        entry_words = set(entry.prompt_norm.lower().split())
-        
-        # Jaccard similarity
-        jaccard = len(query_words & entry_words) / len(query_words | entry_words) if (query_words | entry_words) else 0
-        
-        # Subset/superset bonus (if query is subset or superset of entry)
-        if query_words.issubset(entry_words) or entry_words.issubset(query_words):
-            jaccard = max(jaccard, 0.7)  # Boost for subset/superset
-        
-        # Word order invariant matching (check if same words, different order)
-        if query_words == entry_words and len(query_words) > 1:
-            jaccard = max(jaccard, 0.8)  # High score for same words
-        
-        text_score = jaccard
-        
-        # 3. Domain match (10% weight) - boost if same domain
-        query_domain = domain_hint(query_text)
-        domain_boost = 0.1 if entry.domain == query_domain else 0
-        
-        # 4. Recency score (5% weight) - fresher entries slightly preferred
-        age_days = (time.time() - entry.created_at) / 86400
-        recency_score = max(0, 1 - (age_days / 30))  # Decay over 30 days
-        
-        # 5. Usage score (5% weight) - more used = more reliable
-        usage_score = min(1.0, entry.use_count / 10)  # Cap at 10 uses
-        
-        # Weighted combination
-        hybrid_score = (
-            0.50 * emb_score +
-            0.30 * text_score +
-            0.10 * domain_boost +
-            0.05 * recency_score +
-            0.05 * usage_score
-        )
-        return min(1.0, hybrid_score)  # Cap at 1.0
-    
-    def _calculate_confidence(
-        self, 
-        hybrid_score: float, 
-        base_sim: float, 
-        entry: CacheEntry
-    ) -> float:
-        """Calculate confidence score for a match (0.0-1.0) - more lenient for better matching."""
-        # Base confidence from hybrid score
-        confidence = hybrid_score
-        
-        # Boost if base similarity is high (strong embedding match)
-        if base_sim > 0.85:
-            confidence += 0.15
-        elif base_sim > 0.80:
-            confidence += 0.10
-        elif base_sim > 0.75:
-            confidence += 0.05
-        elif base_sim > 0.70:
-            confidence += 0.03
-        elif base_sim > 0.65:
-            confidence += 0.01  # Small boost for moderate similarity
-        
-        # Boost if entry has been used before (proven useful)
-        if entry.use_count > 5:
-            confidence += 0.08
-        elif entry.use_count > 2:
-            confidence += 0.04
-        elif entry.use_count > 0:
-            confidence += 0.02
-        
-        # Less penalty for borderline similarity (more lenient)
-        if base_sim < 0.65:
-            confidence -= 0.05  # Reduced penalty
-        elif base_sim < 0.60:
-            confidence -= 0.10
-        
-        return max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
-    
-    def _get_adaptive_threshold(self, T: TenantState, num_candidates: int, domain: str = None) -> float:
-        """Get adaptive threshold - aggressively lowered for maximum hit rate."""
-        # Base threshold from cache size (much more aggressive)
-        if len(T.rows) < 5:
-            base = max(0.60, T.sim_threshold)  # Very lenient for small cache
-        elif len(T.rows) < 10:
-            base = max(0.62, T.sim_threshold)
-        elif len(T.rows) < 20:
-            base = max(0.63, T.sim_threshold)
-        else:
-            base = T.sim_threshold  # Use tenant's threshold
-        
-        # Domain-specific adjustment (can be more lenient per domain)
-        if domain and domain in T.domain_thresholds:
-            domain_thresh = T.domain_thresholds[domain]
-            # Use more lenient threshold
-            base = min(base, domain_thresh) if domain_thresh < base else base
-        
-        # Don't increase threshold with more candidates - keep it low for better hits
-        # More candidates means we can find better matches, not that we should be stricter
-        
-        return base
+        text = user_messages[-1] if user_messages else ""
+        text = text.strip()
+        if not text:
+            raise ValueError("Empty query")
+
+        text_key = text.lower()
+        if text_key in self._embedding_cache:
+            self._embedding_cache.move_to_end(text_key)
+            return self._embedding_cache[text_key], text
+
+        emb = get_embedding(text, user_id=user_id)
+        self._embedding_cache[text_key] = emb
+        if len(self._embedding_cache) > self._embedding_cache_max_size:
+            self._embedding_cache.popitem(last=False)
+
+        return emb, text
+
+    def _append_event(self, T: TenantState, tenant_id: str, prompt_hash: str, decision: str, similarity: float, latency_ms: float):
+        T.events.append(CacheEvent(
+            timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
+            tenant_id=tenant_id,
+            prompt_hash=prompt_hash,
+            decision=decision,
+            similarity=similarity,
+            latency_ms=latency_ms,
+        ))
+        if len(T.events) > 1000:
+            T.events = T.events[-1000:]
 
     def _faiss_add(self, T: TenantState, emb: np.ndarray):
         v = emb.astype("float32").reshape(1, -1)
@@ -625,14 +392,22 @@ class SemanticCacheService:
         model: str,
         ttl_seconds: int = 7 * 24 * 3600,
         temperature: float = 0.2,
-        user_id: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> Tuple[str, dict]:
-
+        """
+        Two-tier cache lookup:
+          1. Exact match on lowercased text (sub-ms).
+          2. FAISS cosine similarity on OpenAI embeddings — the embedding model
+             inherently handles spelling errors, synonyms, rephrasing, and
+             question-vs-statement variations. A single threshold (0.80) is all
+             that is needed; no Jaccard/word-overlap heuristics.
+        On miss: LLM + embedding run in parallel to minimize latency.
+        """
         T = self.tenant(tenant_id)
         t0 = time.time()
         prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()
 
-        # 1) exact
+        # ── 1) Exact match (sub-millisecond) ──
         if prompt_norm in T.exact:
             entry = T.exact[prompt_norm]
             if entry.fresh() and entry.model == model:
@@ -641,217 +416,86 @@ class SemanticCacheService:
                 T.hits += 1
                 latency = round((time.time() - t0) * 1000, 2)
                 T.latencies_ms.append(latency)
-                meta = {"hit": "exact", "similarity": 1.0, "latency_ms": latency, "strategy": "hybrid"}
+                meta = {"hit": "exact", "similarity": 1.0, "latency_ms": latency, "strategy": "exact"}
                 semantic_log.info(f"{tenant_id} | exact | sim=1.000 | key={prompt_norm[:80]}")
-                # Store event
-                T.events.append(CacheEvent(
-                    timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    tenant_id=tenant_id,
-                    prompt_hash=prompt_hash,
-                    decision="exact",
-                    similarity=1.0,
-                    latency_ms=latency
-                ))
-                # Keep only last 1000 events
-                if len(T.events) > 1000:
-                    T.events = T.events[-1000:]
+                self._append_event(T, tenant_id, prompt_hash, "exact", 1.0, latency)
                 return entry.response_text, meta
 
-        # 2) semantic - enhanced matching with context-aware embeddings, hybrid scoring, and reranking
-        # Store embedding for reuse in case of miss (avoid regenerating)
+        # ── 2) Semantic search via FAISS cosine similarity ──
         query_emb = None
-        primary_text = prompt_norm
-        
-        # Fast path: skip semantic search if cache is empty (saves embedding generation time)
-        # Only generate embedding if we have entries to search
+        query_text = prompt_norm
+        SIM_THRESHOLD = T.sim_threshold  # default 0.65, but embedding quality makes 0.80+ reliable
+
         if T.index is not None and len(T.rows) > 0:
-            user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
-            
-            # Use context-aware embedding (considers conversation history)
-            emb, primary_text = self._get_context_aware_embedding(messages, prompt_norm, user_id=user_id)
-            query_emb = emb  # Store for reuse
-            
-            # Search candidates (adaptive based on cache size for optimal performance)
-            # Smaller cache: check more candidates, larger cache: check fewer (FAISS is fast)
-            search_k = min(20 if len(T.rows) < 50 else 15 if len(T.rows) < 200 else 10, len(T.rows))
-            top_matches = self._faiss_search_top_k(T, emb, k=search_k)
-            
-            # Calculate hybrid scores for all candidates
-            candidates = []
-            for idx, sim in top_matches:
-                if idx < len(T.rows) and T.rows[idx].fresh():
-                    entry = T.rows[idx]
-                    hybrid_score = self._calculate_hybrid_score(
-                        emb, primary_text, entry, entry.embedding, sim
-                    )
-                    confidence = self._calculate_confidence(hybrid_score, sim, entry)
-                    candidates.append({
-                        'idx': idx,
-                        'entry': entry,
-                        'base_sim': sim,
-                        'hybrid_score': hybrid_score,
-                        'confidence': confidence
-                    })
-            
-            # Sort by hybrid score (best matches first)
-            candidates.sort(key=lambda x: x['hybrid_score'], reverse=True)
-            
-            # Get domain for domain-aware threshold
-            query_domain = domain_hint(primary_text)
-            
-            # Apply adaptive threshold with confidence check
-            adaptive_threshold = self._get_adaptive_threshold(T, len(candidates), query_domain)
-            
-            # Aggressive matching with multiple fallback strategies
-            best_match = None
-            for candidate in candidates:
-                hybrid_score = candidate['hybrid_score']
-                base_sim = candidate['base_sim']
-                confidence = candidate['confidence']
-                entry = candidate['entry']
-                
-                # Strategy 1: Normal match - above threshold with decent confidence
-                if hybrid_score >= adaptive_threshold and confidence >= 0.60:
-                    best_match = candidate
-                    semantic_log.info(f"{tenant_id} | match-normal | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
-                    break
-                
-                # Strategy 2: High embedding similarity (even if hybrid is lower)
-                if base_sim >= 0.70 and confidence >= 0.55:
-                    best_match = candidate
-                    semantic_log.info(f"{tenant_id} | match-high-sim | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
-                    break
-                
-                # Strategy 3: Good hybrid score with moderate similarity
-                if hybrid_score >= max(0.60, adaptive_threshold - 0.05) and base_sim >= 0.60:
-                    best_match = candidate
-                    semantic_log.info(f"{tenant_id} | match-hybrid | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | conf={confidence:.3f}")
-                    break
-                
-                # Strategy 4: Typo tolerance - accept if similarity is 0.58+ with decent confidence
-                if base_sim >= 0.58 and confidence >= 0.55:
-                    # Check if it's likely a typo/variation (high text overlap)
-                    query_words = set(primary_text.lower().split())
-                    entry_words = set(entry.prompt_norm.lower().split())
-                    word_overlap = len(query_words & entry_words) / max(len(query_words), len(entry_words), 1)
-                    if word_overlap >= 0.5:  # At least 50% word overlap
-                        best_match = candidate
-                        semantic_log.info(f"{tenant_id} | match-typo | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | overlap={word_overlap:.2f}")
-                        break
-                
-                # Strategy 5: Partial match - query is subset or superset
-                query_words = set(primary_text.lower().split())
-                entry_words = set(entry.prompt_norm.lower().split())
-                if (query_words.issubset(entry_words) or entry_words.issubset(query_words)) and base_sim >= 0.55:
-                    if len(query_words) >= 3 or len(entry_words) >= 3:  # Only for substantial queries
-                        best_match = candidate
-                        semantic_log.info(f"{tenant_id} | match-partial | sim={base_sim:.3f} | hybrid={hybrid_score:.3f}")
-                        break
-                
-                # Strategy 6: Same domain with moderate similarity
-                query_domain = domain_hint(primary_text)
-                if entry.domain == query_domain and base_sim >= 0.60:
-                    best_match = candidate
-                    semantic_log.info(f"{tenant_id} | match-domain | sim={base_sim:.3f} | domain={query_domain}")
-                    break
-            
-            if best_match is not None:
-                entry = best_match['entry']
-                entry.use_count += 1
-                entry.last_used_at = time.time()
+            query_emb, query_text = self._get_embedding_for_query(messages, user_id=user_id)
+
+            k = min(5, len(T.rows))
+            q = query_emb.astype("float32").reshape(1, -1)
+            faiss.normalize_L2(q)
+            sims, idxs = T.index.search(q, k)
+
+            best_entry = None
+            best_sim = 0.0
+
+            for i in range(k):
+                idx = int(idxs[0][i])
+                sim = float(sims[0][i])
+                if idx < 0 or idx >= len(T.rows):
+                    continue
+                entry = T.rows[idx]
+                if not entry.fresh() or entry.model != model:
+                    continue
+                if sim > best_sim:
+                    best_sim = sim
+                    best_entry = entry
+
+            if best_entry is not None and best_sim >= SIM_THRESHOLD:
+                best_entry.use_count += 1
+                best_entry.last_used_at = time.time()
                 T.hits += 1
                 T.semantic_hits += 1
                 latency = round((time.time() - t0) * 1000, 2)
                 T.latencies_ms.append(latency)
-                
-                hybrid_score = best_match['hybrid_score']
-                base_sim = best_match['base_sim']
-                confidence = best_match['confidence']
-                
                 meta = {
-                    "hit": "semantic", 
-                    "similarity": round(base_sim, 4), 
-                    "hybrid_score": round(hybrid_score, 4),
-                    "confidence": round(confidence, 4),
-                    "latency_ms": latency, 
-                    "strategy": "hybrid-enhanced", 
-                    "threshold_used": round(adaptive_threshold, 3)
+                    "hit": "semantic",
+                    "similarity": round(best_sim, 4),
+                    "latency_ms": latency,
+                    "strategy": "semantic",
+                    "threshold_used": round(SIM_THRESHOLD, 3),
                 }
                 semantic_log.info(
-                    f"{tenant_id} | semantic | sim={base_sim:.3f} | hybrid={hybrid_score:.3f} | "
-                    f"conf={confidence:.3f} | threshold={adaptive_threshold:.3f} | key={prompt_norm[:80]}"
+                    f"{tenant_id} | semantic | sim={best_sim:.3f} | "
+                    f"threshold={SIM_THRESHOLD:.3f} | key={prompt_norm[:80]}"
                 )
-                # Store event with enhanced metrics
-                T.events.append(CacheEvent(
-                    timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    tenant_id=tenant_id,
-                    prompt_hash=prompt_hash,
-                    decision="semantic",
-                    similarity=round(base_sim, 4),
-                    latency_ms=latency,
-                    confidence=round(confidence, 4),
-                    hybrid_score=round(hybrid_score, 4)
-                ))
-                # Keep only last 1000 events
-                if len(T.events) > 1000:
-                    T.events = T.events[-1000:]
-                return entry.response_text, meta
+                self._append_event(T, tenant_id, prompt_hash, "semantic", round(best_sim, 4), latency)
+                return best_entry.response_text, meta
 
-        # 3) miss → call LLM & insert (optimized for low latency)
+            if best_entry is not None:
+                semantic_log.info(
+                    f"{tenant_id} | near-miss | best_sim={best_sim:.3f} | "
+                    f"threshold={SIM_THRESHOLD:.3f} | key={prompt_norm[:80]}"
+                )
+
+        # ── 3) Cache miss — LLM call (embedding runs async for storage) ──
         T.misses += 1
-        
-        # Call LLM (this is the main latency, but necessary)
-        llm_start = time.time()
-        response_text = call_llm(messages, temperature=temperature, user_id=user_id)
-        llm_time = round((time.time() - llm_start) * 1000, 2)
-        
-        # Calculate latency BEFORE cache storage (don't include storage time)
+
+        response_text = call_llm(messages, temperature, user_id)
+
         latency = round((time.time() - t0) * 1000, 2)
-        T.latencies_ms.append(latency)  # Keep synchronous for accurate metrics
+        T.latencies_ms.append(latency)
+        semantic_log.debug(f"{tenant_id} | miss | total={latency}ms | key={prompt_norm[:80]}")
         
-        # Log timing breakdown for debugging
-        semantic_log.debug(f"{tenant_id} | miss-timing | total={latency}ms | llm={llm_time}ms | overhead={latency-llm_time:.2f}ms")
-        
-        # Prepare metadata for immediate return
-        meta = {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "hybrid"}
-        
-        # Store event asynchronously (non-blocking, lightweight but can be async)
-        def store_event():
+        meta = {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "miss"}
+        self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, latency)
+
+        # Store in cache asynchronously — embedding + storage in background
+        _cached_emb = query_emb
+        def _store():
             try:
-                with self._cache_lock:
-                    T.events.append(CacheEvent(
-                        timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                        tenant_id=tenant_id,
-                        prompt_hash=prompt_hash,
-                        decision="miss",
-                        similarity=0.0,
-                        latency_ms=latency
-                    ))
-                    # Keep only last 1000 events
-                    if len(T.events) > 1000:
-                        T.events = T.events[-1000:]
-            except Exception as e:
-                error_log.warning(f"Async event storage failed | tenant={tenant_id} | error={str(e)}")
-        
-        # Store event in background (non-blocking)
-        threading.Thread(target=store_event, daemon=True).start()
-        
-        # Store cache entry asynchronously (non-blocking)
-        # Reuse embedding if we already generated it during semantic search
-        def store_cache_entry():
-            cache_storage_start = time.time()
-            try:
-                user_text = " ".join([m["content"] for m in messages if m.get("role") == "user"]) or prompt_norm
-                
-                # Reuse embedding if available, otherwise generate (should be cached)
-                emb_start = time.time()
-                if query_emb is not None:
-                    emb = query_emb
-                    emb_time = 0
-                else:
-                    emb, _ = self._get_context_aware_embedding(messages, prompt_norm, user_id=user_id)
-                    emb_time = round((time.time() - emb_start) * 1000, 2)
-                
+                emb = _cached_emb
+                if emb is None:
+                    emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
+                user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
                 entry = CacheEntry(
                     prompt_norm=prompt_norm,
                     response_text=response_text,
@@ -861,40 +505,16 @@ class SemanticCacheService:
                     domain=domain_hint(user_text),
                     strategy="miss",
                 )
-                
-                # Thread-safe cache storage (fast operations)
-                lock_start = time.time()
                 with self._cache_lock:
                     T.exact[prompt_norm] = entry
                     T.rows.append(entry)
                     self._faiss_add(T, emb)
-                    should_save = len(T.rows) % 10 == 0
-                lock_time = round((time.time() - lock_start) * 1000, 2)
-                
-                # Save cache to disk asynchronously (outside lock to avoid blocking)
-                if should_save:
-                    # Save in separate thread to avoid any blocking
-                    threading.Thread(target=self._save_cache, daemon=True).start()
-                
-                cache_storage_time = round((time.time() - cache_storage_start) * 1000, 2)
-                semantic_log.debug(
-                    f"{tenant_id} | async-cache-storage | total={cache_storage_time}ms | "
-                    f"emb={emb_time}ms | lock={lock_time}ms"
-                )
+                    if len(T.rows) % 10 == 0:
+                        threading.Thread(target=self._save_cache, daemon=True).start()
             except Exception as e:
-                error_log.warning(f"Async cache storage failed | tenant={tenant_id} | error={str(e)}")
-        
-        # Store cache in background thread (non-blocking)
-        threading.Thread(target=store_cache_entry, daemon=True).start()
-        
-        semantic_log.info(f"{tenant_id} | miss | sim=0.000 | latency={latency}ms | key={prompt_norm[:80]}")
-        
-        # Log time right before return to verify immediate return
-        return_time = time.time()
-        return_latency = round((return_time - t0) * 1000, 2)
-        semantic_log.debug(f"{tenant_id} | miss-return | latency={return_latency}ms | response_len={len(response_text)}")
-        
-        # Return immediately - cache storage happens in background
+                error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
+        threading.Thread(target=_store, daemon=True).start()
+
         return response_text, meta
 
     def metrics(self, tenant_id: str) -> dict:
@@ -905,11 +525,10 @@ class SemanticCacheService:
         avg_latency = np.mean(T.latencies_ms) if T.latencies_ms else 0
         semantic_hit_ratio = (T.semantic_hits / total) if total > 0 else 0.0
         
-        # Calculate quality metrics for semantic hits
         semantic_events = [e for e in T.events if e.decision == "semantic"]
-        avg_confidence = np.mean([e.confidence for e in semantic_events]) if semantic_events else 0.0
-        avg_hybrid_score = np.mean([e.hybrid_score for e in semantic_events]) if semantic_events else 0.0
-        high_confidence_hits = len([e for e in semantic_events if e.confidence >= 0.8])
+        avg_confidence = np.mean([e.similarity for e in semantic_events]) if semantic_events else 0.0
+        avg_hybrid_score = avg_confidence
+        high_confidence_hits = len([e for e in semantic_events if e.similarity >= 0.8])
         
         # Estimate tokens saved (rough estimate: 100 tokens per miss saved)
         tokens_saved_est = T.hits * 100  # Rough estimate
@@ -936,46 +555,43 @@ class SemanticCacheService:
         }
 
     def adapt_threshold(self, tenant_id: str):
-        """Aggressively adjust sim threshold based on hit ratio for maximum hit rate."""
+        """Gently adapt threshold based on observed hit ratio."""
         T = self.tenant(tenant_id)
         total = T.hits + T.misses
-        if total < 10:
-            return  # Need some data first
+        if total < 20:
+            return
         hit_ratio = T.hits / total
-        # More aggressive lowering when hit rate is low
-        if hit_ratio < 0.50:
-            T.sim_threshold = max(0.55, T.sim_threshold - 0.02)  # Lower faster
-        elif hit_ratio < 0.60:
-            T.sim_threshold = max(0.58, T.sim_threshold - 0.01)
-        elif hit_ratio > 0.90:
-            T.sim_threshold = min(0.75, T.sim_threshold + 0.01)  # Only raise if very high hit rate
+        if hit_ratio < 0.30:
+            T.sim_threshold = max(0.70, T.sim_threshold - 0.01)
+        elif hit_ratio > 0.85:
+            T.sim_threshold = min(0.85, T.sim_threshold + 0.01)
 
 svc = SemanticCacheService()
 
 # Save cache on shutdown
 import atexit
-import signal
 
-def shutdown_handler(signum=None, frame=None):
-    """Handle graceful shutdown."""
-    system_log.info("Shutdown signal received | saving cache...")
+def _save_cache_on_exit():
+    """Save cache on normal exit."""
     try:
         svc._save_cache()
-        system_log.info("Shutdown complete | cache saved")
+        system_log.info("Shutdown | cache saved")
     except Exception as e:
-        error_log.exception(f"Shutdown error | {str(e)}")
-    finally:
-        import sys
-        sys.exit(0)
+        print(f"Failed to save cache on exit: {e}")
 
-atexit.register(lambda: svc._save_cache())
-signal.signal(signal.SIGTERM, shutdown_handler)
-signal.signal(signal.SIGINT, shutdown_handler)
+atexit.register(_save_cache_on_exit)
 
 # -----------------------------
-# FastAPI app + middleware
+# FastAPI app + middleware + rate limiting
 # -----------------------------
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Request logging middleware
 @app.middleware("http")
@@ -1084,9 +700,10 @@ setup_admin_routes()
 
 # Simple API-key format: Bearer sc-{tenant}-{anything}
 API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]+)$")
+_api_key_cache: Dict[str, dict] = {}  # token -> {"user_id": ..., "ts": epoch}
 
-# Store current request API key for usage logging (thread-local would be better for production)
-_current_api_key = {"key": None}
+# Request-scoped API key context (safe for concurrent async requests)
+_current_api_key_var: ContextVar[dict] = ContextVar('_current_api_key', default={"key": None, "user_id": None})
 
 def get_tenant_from_key(request: Request) -> str:
     client_ip = request.client.host if request.client else "unknown"
@@ -1110,33 +727,44 @@ def get_tenant_from_key(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Malformed API key")
     tenant = parts[1]
     
-    # Store API key for usage logging
-    _current_api_key["key"] = token
-    _current_api_key["user_id"] = None  # Will be set if key_info is found
+    # Store API key in request-scoped context
+    ctx = {"key": token, "user_id": None}
+    _current_api_key_var.set(ctx)
     
-    # Verify API key in database and track usage
+    # Fast in-memory API key cache (avoids DB round-trip on every request)
+    cached = _api_key_cache.get(token)
+    if cached and (time.time() - cached["ts"]) < 300:  # 5-min TTL
+        ctx["user_id"] = cached.get("user_id")
+        _current_api_key_var.set(ctx)
+        # Update usage async (non-blocking)
+        def _bg_usage():
+            try:
+                from database import update_api_key_usage
+                update_api_key_usage(token, tenant)
+            except Exception:
+                pass
+        threading.Thread(target=_bg_usage, daemon=True).start()
+        return tenant
+
+    # Cache miss — hit the database
     try:
-        from database import get_api_key_info, update_api_key_usage, create_api_key
+        from database import get_api_key_info, update_api_key_usage
         key_info = get_api_key_info(token)
         if key_info:
-            # Key exists and is active
             update_api_key_usage(token, tenant)
-            _current_api_key["user_id"] = key_info.get('user_id')
+            ctx["user_id"] = key_info.get('user_id')
+            _current_api_key_var.set(ctx)
+            _api_key_cache[token] = {"user_id": ctx["user_id"], "ts": time.time()}
             security_log.debug(
                 f"Auth success | tenant={tenant} | ip={client_ip} | "
-                f"plan={key_info.get('plan', 'unknown')} | user_id={_current_api_key['user_id']}"
+                f"plan={key_info.get('plan', 'unknown')} | user_id={ctx['user_id']}"
             )
         else:
-            # Don't auto-create keys anymore - users must generate them through the API
-            # This ensures proper user_id linking and isolation
             security_log.warning(
                 f"API key not found | tenant={tenant} | ip={client_ip} | "
                 f"key_prefix={token[:20]}"
             )
-            # Still allow the request to proceed for backward compatibility,
-            # but log a warning that the key should be generated properly
     except Exception as e:
-        # Don't fail if database is not available, but log it
         error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
     
     return tenant
@@ -1167,7 +795,7 @@ def health():
             import psutil
             # Get system metrics
             memory = psutil.virtual_memory()
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = psutil.cpu_percent(interval=0)
             has_system_metrics = True
         except ImportError:
             # psutil not available, skip system metrics
@@ -1237,7 +865,8 @@ def prometheus_metrics():
         raise HTTPException(status_code=500, detail="Metrics endpoint failed")
 
 @app.get("/query")
-def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str = Depends(get_tenant_from_key)):
+@limiter.limit("60/minute")
+def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str = Depends(get_tenant_from_key)):
     messages = [{"role": "user", "content": prompt}]
     prompt_norm = SemanticCacheService.norm_text(prompt)
     prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()[:8]
@@ -1245,7 +874,8 @@ def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str 
     endpoint_start = time.time()
     try:
         # Get user_id from current API key context
-        user_id = _current_api_key.get("user_id")
+        _ctx = _current_api_key_var.get()
+        user_id = _ctx.get("user_id")
         ans, meta = svc.query(tenant, prompt_norm, messages, model, user_id=user_id)
         query_time = round((time.time() - endpoint_start) * 1000, 2)
         
@@ -1263,12 +893,16 @@ def simple_query(prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str 
         )
         log_time = round((time.time() - log_start) * 1000, 2)
         
+        # Capture context for async logging (ContextVar is not inherited by threads)
+        _log_api_key = _ctx.get("key", "unknown")
+        _log_user_id = user_id
+        
         # Log usage to database asynchronously (non-blocking - database can be slow)
         def log_usage_async():
             try:
                 from database import log_usage
-                api_key = _current_api_key.get("key", "unknown")
-                user_id = _current_api_key.get("user_id")
+                api_key = _log_api_key
+                user_id = _log_user_id
                 log_usage(
                     api_key=api_key,
                     tenant_id=tenant,
@@ -1320,49 +954,80 @@ def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get
         for e in reversed(events)  # Most recent first
     ]
 
+class SettingsUpdate(BaseModel):
+    sim_threshold: Optional[float] = None
+    ttl_days: Optional[int] = None
+
+@app.get("/settings")
+def get_settings(tenant: str = Depends(get_tenant_from_key)):
+    """Get current cache settings for the tenant."""
+    T = svc.tenant(tenant)
+    return {
+        "sim_threshold": round(T.sim_threshold, 3),
+        "ttl_days": 7,
+        "entries": len(T.rows),
+    }
+
+@app.put("/settings")
+def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_key)):
+    """Update cache settings for the tenant."""
+    T = svc.tenant(tenant)
+    changed = {}
+    if body.sim_threshold is not None:
+        clamped = max(0.50, min(0.99, body.sim_threshold))
+        T.sim_threshold = clamped
+        changed["sim_threshold"] = round(clamped, 3)
+    if body.ttl_days is not None:
+        changed["ttl_days"] = max(1, min(90, body.ttl_days))
+    access_log.info(f"{tenant} | /settings | updated={changed}")
+    return {"status": "ok", "settings": {**changed, "sim_threshold": round(T.sim_threshold, 3)}}
+
+def _get_user_from_supabase_token(request: Request) -> dict:
+    """Extract and verify Supabase JWT from Authorization header. Returns user profile dict."""
+    from auth import verify_token
+    from database import get_user_by_id
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    token = auth_header.split(" ")[1]
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    user["id"] = str(user["id"])
+    return user
+
+
 @app.get("/api/keys/current")
 def get_current_api_key(request: Request):
-    """
-    Get the current user's API key if it exists.
-    
-    Requires authentication via JWT token.
-    Returns the user's API key or None if not found.
-    """
+    """Get the current user's API key (requires Supabase JWT)."""
     try:
-        from auth import verify_token
-        from database import get_user_by_id, list_api_keys
-        
-        # Verify authentication
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Authentication required")
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-        # Get user from token
-        user_id = int(payload.get("sub"))
-        user = get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        # Get user's API keys
-        api_keys = list_api_keys(user_id=user_id)
+        user = _get_user_from_supabase_token(request)
+        from database import list_api_keys
+
+        api_keys = list_api_keys(user_id=user["id"])
         if api_keys:
-            # Return the most recent active key
-            active_keys = [k for k in api_keys if k.get('is_active', 1)]
+            active_keys = [k for k in api_keys if k.get('is_active')]
             if active_keys:
                 key = active_keys[0]
                 return {
                     "api_key": key.get('api_key'),
                     "tenant_id": key.get('tenant_id'),
                     "plan": key.get('plan', 'free'),
-                    "created_at": key.get('created_at'),
+                    "created_at": str(key.get('created_at', '')),
                     "exists": True
                 }
-        
+
         return {"exists": False, "message": "No API key found. Generate one in Settings."}
     except HTTPException:
         raise
@@ -1371,107 +1036,53 @@ def get_current_api_key(request: Request):
         raise HTTPException(status_code=500, detail="Failed to get API key")
 
 @app.post("/api/keys/generate")
+@limiter.limit("5/hour")
 def generate_api_key_endpoint(
     request: Request,
-    tenant: Optional[str] = Query(None, description="Optional tenant ID. If not provided, a unique tenant ID will be generated"),
-    length: int = Query(32, ge=16, le=64, description="Length of random string (16-64, default: 32)"),
-    plan: str = Query("free", description="Plan type (default: free)")
+    tenant: Optional[str] = Query(None),
+    length: int = Query(32, ge=16, le=64),
+    plan: str = Query("free")
 ):
-    """
-    Generate a new API key for the authenticated user.
-    
-    Requires authentication via JWT token.
-    Returns a new API key with a unique tenant ID.
-    The key is automatically saved to the database and linked to the user.
-    """
+    """Generate a new API key for the authenticated user (requires Supabase JWT)."""
     try:
-        from auth import verify_token
-        from database import get_user_by_id
+        user = _get_user_from_supabase_token(request)
+        user_id = user["id"]
         from api_key_generator import generate_api_key
-        from database import create_api_key
-        
-        # Verify authentication
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Authentication required")
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-        # Get user from token
-        user_id = int(payload.get("sub"))
-        user = get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        # Check if user already has an API key - reuse tenant_id for consistency
-        from database import list_api_keys
+        from database import create_api_key, list_api_keys, get_api_key_info
+
         existing_keys = list_api_keys(user_id=user_id)
-        
         if existing_keys and tenant is None:
-            # User already has an API key - reuse the tenant_id
-            existing_key = existing_keys[0]  # Get most recent
-            tenant_id = existing_key.get('tenant_id')
-            api_key = existing_key.get('api_key')
-            app_log.info(f"Reusing existing API key | tenant={tenant_id} | user_id={user_id}")
-            
+            existing_key = existing_keys[0]
             return {
-                "api_key": api_key,
-                "tenant_id": tenant_id,
+                "api_key": existing_key.get('api_key'),
+                "tenant_id": existing_key.get('tenant_id'),
                 "plan": existing_key.get('plan', plan),
-                "created_at": existing_key.get('created_at', time.strftime("%Y-%m-%dT%H:%M:%S")),
-                "format": f"Bearer {api_key}",
-                "message": "Using existing API key. Generate a new one by specifying a different tenant ID."
+                "created_at": str(existing_key.get('created_at', '')),
+                "format": f"Bearer {existing_key.get('api_key')}",
+                "message": "Using existing API key."
             }
-        
-        # Generate tenant_id based on user_id to ensure uniqueness and consistency
-        # This ensures each user always gets the same tenant_id
+
         if tenant is None:
-            # Use user_id-based tenant_id: usr_{user_id}
-            tenant = f"usr_{user_id}"
-        
-        # Generate API key with user-specific tenant_id
+            tenant = f"usr_{user_id[:8]}"
+
         api_key, tenant_id = generate_api_key(tenant=tenant, length=length, auto_tenant=False)
-        
-        # Save API key to database linked to user
-        try:
-            result = create_api_key(api_key, tenant_id, user_id=user_id, plan=plan)
-            if not result:
-                error_log.error(f"create_api_key returned False | tenant={tenant_id} | user_id={user_id}")
-                raise HTTPException(status_code=500, detail="Failed to save API key to database")
-            
-            # Verify the key was saved
-            from database import get_api_key_info
-            saved_key = get_api_key_info(api_key)
-            if not saved_key:
-                error_log.error(f"API key not found after creation | tenant={tenant_id} | user_id={user_id}")
-                raise HTTPException(status_code=500, detail="API key was not saved properly")
-            
-            if saved_key.get('user_id') != user_id:
-                error_log.warning(f"API key user_id mismatch | expected={user_id} | got={saved_key.get('user_id')}")
-                # Try to update it
-                from database import get_db_connection
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute('UPDATE api_keys SET user_id = ? WHERE api_key = ?', (user_id, api_key))
-                    conn.commit()
-            
-            app_log.info(f"API key generated and saved | tenant={tenant_id} | user_id={user_id} | plan={plan} | key_id={saved_key.get('id')}")
-        except HTTPException:
-            raise
-        except Exception as e:
-            error_log.exception(f"Could not save API key to database | tenant={tenant_id} | user_id={user_id} | error={str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to save API key to database: {str(e)}")
-        
+        result = create_api_key(api_key, tenant_id, user_id=user_id, plan=plan)
+        if not result:
+            raise HTTPException(status_code=500, detail="Failed to save API key to database")
+
+        saved_key = get_api_key_info(api_key)
+        if not saved_key:
+            raise HTTPException(status_code=500, detail="API key was not saved properly")
+
+        app_log.info(f"API key generated | tenant={tenant_id} | user_id={user_id}")
+
         return {
             "api_key": api_key,
             "tenant_id": tenant_id,
             "plan": plan,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "format": f"Bearer {api_key}",
-            "message": "API key generated successfully. Save this key securely - it won't be shown again."
+            "message": "API key generated successfully. Save this key securely."
         }
     except HTTPException:
         raise
@@ -1480,150 +1091,23 @@ def generate_api_key_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
 
 # -----------------------------
-# Authentication endpoints
+# Authentication endpoints (Supabase JWT)
+# Signup / login / password-reset are handled entirely by the
+# frontend via @supabase/supabase-js. The backend only verifies tokens.
 # -----------------------------
-
-class SignUpRequest(BaseModel):
-    email: str
-    password: str
-    name: Optional[str] = None
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-@app.post("/api/auth/signup")
-def signup(request: SignUpRequest):
-    """
-    Create a new user account with email and password.
-    """
-    try:
-        from auth import get_password_hash, validate_email, validate_password_strength
-        from database import get_user_by_email, create_user_with_password
-
-        # Validate email
-        email_valid, email_error = validate_email(request.email)
-        if not email_valid:
-            raise HTTPException(status_code=400, detail=email_error)
-
-        # Validate password strength
-        password_valid, password_error = validate_password_strength(request.password)
-        if not password_valid:
-            raise HTTPException(status_code=400, detail=password_error)
-
-        # Check if user already exists
-        existing_user = get_user_by_email(request.email)
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        # Hash password
-        password_hash = get_password_hash(request.password)
-
-        # Create user
-        user_id = create_user_with_password(request.email, password_hash, request.name)
-
-        app_log.info(f"User signed up | email={request.email} | user_id={user_id}")
-
-        return {
-            "user_id": user_id,
-            "email": request.email,
-            "name": request.name,
-            "message": "Account created successfully"
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_log.exception(f"Signup failed | email={request.email} | error={str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create account")
-
-@app.post("/api/auth/login")
-def login(request: LoginRequest):
-    """
-    Login with email and password, returns JWT access token.
-    """
-    try:
-        from auth import verify_password, create_access_token
-        from database import get_user_by_email, update_last_login
-
-        # Get user by email
-        user = get_user_by_email(request.email)
-
-        # Generic error message for security (don't reveal if email exists)
-        if not user or not user.get('password_hash'):
-            error_log.warning(f"Login failed | email={request.email} | reason=user_not_found_or_no_password")
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        # Verify password
-        password_valid = verify_password(request.password, user['password_hash'])
-        if not password_valid:
-            error_log.warning(f"Login failed | email={request.email} | user_id={user['id']} | reason=invalid_password")
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        # Update last login
-        update_last_login(user['id'])
-
-        # Create access token
-        token_data = {
-            "sub": str(user['id']),
-            "email": user['email']
-        }
-        access_token = create_access_token(token_data)
-
-        app_log.info(f"User logged in | email={request.email} | user_id={user['id']}")
-
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user['id'],
-                "email": user['email'],
-                "name": user['name']
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_log.exception(f"Login failed | email={request.email} | error={str(e)}")
-        raise HTTPException(status_code=500, detail="Login failed")
 
 @app.get("/api/auth/me")
 def get_current_user(request: Request):
-    """
-    Get current authenticated user info from JWT token.
-    """
+    """Get current authenticated user info from Supabase JWT."""
     try:
-        from auth import verify_token
-        from database import get_user_by_id
-
-        # Get token from Authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Not authenticated")
-
-        token = auth_header.split(" ")[1]
-
-        # Verify token
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-        # Get user from database
-        user_id = int(payload.get("sub"))
-        user = get_user_by_id(user_id)
-
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-
+        user = _get_user_from_supabase_token(request)
         return {
             "id": user['id'],
             "email": user['email'],
             "name": user['name'],
             "is_admin": user.get('is_admin', False),
-            "created_at": user['created_at']
+            "created_at": str(user.get('created_at', ''))
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -1635,49 +1119,23 @@ class OpenAIKeyRequest(BaseModel):
 
 @app.post("/api/users/openai-key")
 def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Request):
-    """
-    Set user's OpenAI API key.
-    
-    Requires authentication via JWT token.
-    """
+    """Set user's OpenAI API key (requires Supabase JWT)."""
     try:
-        from auth import verify_token
-        from database import get_user_by_id, set_user_openai_key
+        user = _get_user_from_supabase_token(auth_request)
+        from database import set_user_openai_key
         from encryption import encrypt_api_key
-        
-        # Verify authentication
-        auth_header = auth_request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Authentication required")
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-        # Get user from token
-        user_id = int(payload.get("sub"))
-        user = get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        # Validate and encrypt API key
+
         try:
             encrypted_key = encrypt_api_key(request.api_key)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        
-        # Store encrypted key
-        success = set_user_openai_key(user_id, encrypted_key)
+
+        success = set_user_openai_key(user["id"], encrypted_key)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to save OpenAI API key")
-        
-        app_log.info(f"OpenAI API key set | user_id={user_id}")
-        
-        return {
-            "message": "OpenAI API key saved successfully",
-            "key_set": True
-        }
+
+        app_log.info(f"OpenAI API key set | user_id={user['id']}")
+        return {"message": "OpenAI API key saved successfully", "key_set": True}
     except HTTPException:
         raise
     except Exception as e:
@@ -1686,46 +1144,15 @@ def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Reques
 
 @app.get("/api/users/openai-key")
 def get_user_openai_key_status(auth_request: Request):
-    """
-    Check if user has OpenAI API key set.
-    
-    Requires authentication via JWT token.
-    Returns status (not the actual key for security).
-    """
+    """Check if user has OpenAI API key set (requires Supabase JWT)."""
     try:
-        from auth import verify_token
-        from database import get_user_by_id, get_user_openai_key_encrypted
-        
-        # Verify authentication
-        auth_header = auth_request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Authentication required")
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-        # Get user from token
-        user_id = int(payload.get("sub"))
-        user = get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        # Check if key exists
-        encrypted_key = get_user_openai_key_encrypted(user_id)
-        
+        user = _get_user_from_supabase_token(auth_request)
+        from database import get_user_openai_key_encrypted
+
+        encrypted_key = get_user_openai_key_encrypted(user["id"])
         if encrypted_key:
-            # Return masked key preview (first 7 chars + ...)
-            return {
-                "key_set": True,
-                "key_preview": "sk-..." + encrypted_key[-4:] if len(encrypted_key) > 4 else "sk-***"
-            }
-        else:
-            return {
-                "key_set": False,
-                "message": "No OpenAI API key configured"
-            }
+            return {"key_set": True, "key_preview": "sk-..." + encrypted_key[-4:] if len(encrypted_key) > 4 else "sk-***"}
+        return {"key_set": False, "message": "No OpenAI API key configured"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1734,120 +1161,38 @@ def get_user_openai_key_status(auth_request: Request):
 
 @app.delete("/api/users/openai-key")
 def remove_user_openai_key(auth_request: Request):
-    """
-    Remove user's OpenAI API key.
-    
-    Requires authentication via JWT token.
-    """
+    """Remove user's OpenAI API key (requires Supabase JWT)."""
     try:
-        from auth import verify_token
-        from database import get_user_by_id, clear_user_openai_key
-        
-        # Verify authentication
-        auth_header = auth_request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Authentication required")
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-        # Get user from token
-        user_id = int(payload.get("sub"))
-        user = get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        # Remove key
-        success = clear_user_openai_key(user_id)
+        user = _get_user_from_supabase_token(auth_request)
+        from database import clear_user_openai_key
+
+        success = clear_user_openai_key(user["id"])
         if not success:
             raise HTTPException(status_code=500, detail="Failed to remove OpenAI API key")
-        
-        app_log.info(f"OpenAI API key removed | user_id={user_id}")
-        
-        return {
-            "message": "OpenAI API key removed successfully",
-            "key_set": False
-        }
+
+        app_log.info(f"OpenAI API key removed | user_id={user['id']}")
+        return {"message": "OpenAI API key removed successfully", "key_set": False}
     except HTTPException:
         raise
     except Exception as e:
         error_log.exception(f"Remove OpenAI key failed | error={str(e)}")
         raise HTTPException(status_code=500, detail="Failed to remove OpenAI API key")
 
-@app.post("/api/auth/admin/login")
-def admin_login(request: LoginRequest):
-    """
-    Admin login endpoint - checks if user is admin before allowing login.
-    """
-    try:
-        from auth import verify_password, create_access_token
-        from database import get_user_by_email, update_last_login
-
-        # Get user by email
-        user = get_user_by_email(request.email)
-
-        # Generic error message for security
-        if not user or not user.get('password_hash'):
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        # Verify password
-        password_valid = verify_password(request.password, user['password_hash'])
-        if not password_valid:
-            error_log.warning(f"Admin login failed | email={request.email} | user_id={user['id']} | reason=invalid_password")
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        # Check if user is admin
-        if not user.get('is_admin', False):
-            error_log.warning(f"Admin login failed | email={request.email} | user_id={user['id']} | reason=not_admin")
-            raise HTTPException(status_code=403, detail="Access denied. Admin privileges required.")
-
-        # Update last login
-        update_last_login(user['id'])
-
-        # Create access token with admin flag
-        token_data = {
-            "sub": str(user['id']),
-            "email": user['email'],
-            "is_admin": True
-        }
-        access_token = create_access_token(token_data)
-
-        app_log.info(f"Admin logged in | email={request.email} | user_id={user['id']}")
-
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user['id'],
-                "email": user['email'],
-                "name": user['name'],
-                "is_admin": True
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_log.exception(f"Admin login failed | email={request.email} | error={str(e)}")
-        raise HTTPException(status_code=500, detail="Admin login failed")
-
 @app.post("/api/auth/logout")
 def logout():
-    """
-    Logout (client should clear token).
-    """
+    """Logout (client clears Supabase session)."""
     return {"message": "Logged out successfully"}
 
 @app.post("/v1/chat/completions")
-def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_key)):
+@limiter.limit("60/minute")
+def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends(get_tenant_from_key)):
     prompt_norm = SemanticCacheService.norm_text(
         " ".join([m.content for m in body.messages if m.role == "user"]) or ""
     )
     try:
         # Get user_id from current API key context
-        user_id = _current_api_key.get("user_id")
+        _ctx = _current_api_key_var.get()
+        user_id = _ctx.get("user_id")
         ans, meta = svc.query(
             tenant,
             prompt_norm,
@@ -1857,25 +1202,23 @@ def openai_compatible(body: ChatRequest, tenant: str = Depends(get_tenant_from_k
             temperature=body.temperature,
             user_id=user_id,
         )
-        # Log usage to database with user_id
-        try:
-            from database import log_usage
-            api_key = _current_api_key.get("key", "unknown")
-            user_id = _current_api_key.get("user_id")
-            log_usage(
-                api_key=api_key,
-                tenant_id=tenant,
-                endpoint="/v1/chat/completions",
-                request_count=1,
-                cache_hits=1 if meta.get('hit') != 'miss' else 0,
-                cache_misses=1 if meta.get('hit') == 'miss' else 0,
-                tokens_used=0,  # Can be calculated from response if needed
-                cost_estimate=0,  # Can be calculated based on tokens
-                user_id=user_id
-            )
-        except Exception as e:
-            # Don't fail if database logging fails
-            error_log.warning(f"Could not log usage to database: {e}")
+        # Log usage to database asynchronously (non-blocking)
+        _log_key = _ctx.get("key", "unknown")
+        _log_uid = _ctx.get("user_id")
+        _log_hit = meta.get('hit')
+        def _bg_log():
+            try:
+                from database import log_usage
+                log_usage(
+                    api_key=_log_key, tenant_id=tenant,
+                    endpoint="/v1/chat/completions", request_count=1,
+                    cache_hits=1 if _log_hit != 'miss' else 0,
+                    cache_misses=1 if _log_hit == 'miss' else 0,
+                    tokens_used=0, cost_estimate=0, user_id=_log_uid,
+                )
+            except Exception:
+                pass
+        threading.Thread(target=_bg_log, daemon=True).start()
         
         access_log.info(f"{tenant} | /v1/chat/completions | {meta['hit']} | sim={meta['similarity']:.3f} | {meta['latency_ms']}ms")
         return {

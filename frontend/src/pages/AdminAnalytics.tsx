@@ -54,34 +54,7 @@ export default function AdminAnalytics() {
       setPlanData(plans);
     } catch (err) {
       console.error('Error loading analytics:', err);
-      setError('Using sample data for demonstration.');
-
-      // Load sample data
-      const dates = Array.from({ length: timePeriod }, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (timePeriod - 1 - i));
-        return d.toISOString().split('T')[0];
-      });
-
-      setGrowthData(dates.map((date, i) => ({
-        date: date.slice(5),
-        new_users: Math.floor(Math.random() * 50) + 20,
-        active_users: 800 + Math.floor(Math.random() * 200),
-        total_users: 1000 + i * 8
-      })));
-
-      setUsageData(dates.map(date => ({
-        date: date.slice(5),
-        requests: Math.floor(Math.random() * 2000) + 1000,
-        cache_hits: Math.floor(Math.random() * 1500) + 700,
-        cache_misses: Math.floor(Math.random() * 500) + 200
-      })));
-
-      setPlanData([
-        { plan_name: 'Free', user_count: 687, percentage: 55.1 },
-        { plan_name: 'Pro', user_count: 423, percentage: 33.9 },
-        { plan_name: 'Enterprise', user_count: 137, percentage: 11.0 }
-      ]);
+      setError('Failed to load analytics data. Check backend connection.');
     } finally {
       setLoading(false);
     }
@@ -115,7 +88,7 @@ export default function AdminAnalytics() {
   const performanceData = usageData.map(item => ({
     date: item.date,
     hit_rate: ((item.cache_hits / (item.requests || 1)) * 100).toFixed(2),
-    latency: Math.random() * 100 + 20
+    miss_rate: ((item.cache_misses / (item.requests || 1)) * 100).toFixed(2),
   }));
 
   if (loading) {
@@ -437,10 +410,10 @@ export default function AdminAnalytics() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="latency"
+                    dataKey="miss_rate"
                     stroke="#F59E0B"
                     strokeWidth={3}
-                    name="Avg Latency (ms)"
+                    name="Cache Miss Rate (%)"
                     dot={{ r: 4, fill: '#F59E0B' }}
                     activeDot={{ r: 7, fill: '#F59E0B' }}
                   />

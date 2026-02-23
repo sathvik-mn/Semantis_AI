@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { Check, ArrowRight, Mail } from 'lucide-react';
-import { Prism } from '../components/Prism';
 
 interface PricingTier {
   name: string;
@@ -24,7 +23,6 @@ export function PricingPage() {
         '100K tokens included',
         'Basic semantic caching',
         'Community support',
-        'Email support',
       ],
       cta: 'Get Started',
       ctaLink: '/signup',
@@ -41,7 +39,6 @@ export function PricingPage() {
         'Priority support',
         'Custom cache TTL',
         'Analytics dashboard',
-        'API key management',
       ],
       cta: 'Get Started',
       ctaLink: '/signup',
@@ -58,8 +55,7 @@ export function PricingPage() {
         'Dedicated infrastructure',
         'Custom SLA guarantees',
         '24/7 priority support',
-        'Advanced security features',
-        'Custom integrations',
+        'Advanced security',
         'Dedicated account manager',
       ],
       cta: 'Contact Sales',
@@ -68,61 +64,55 @@ export function PricingPage() {
   ];
 
   return (
-    <div style={styles.container}>
-      <Prism />
-
-      <nav style={styles.nav}>
-        <div style={styles.navContent}>
-          <Link to="/" style={styles.logo}>
-            <span style={styles.logoText}>Semantis AI</span>
-          </Link>
-          <div style={styles.navLinks}>
-            <Link to="/" style={styles.navLink}>Home</Link>
-            <Link to="/pricing" style={styles.navLink}>Pricing</Link>
-            <Link to="/signin" style={styles.signinButton}>Sign In</Link>
+    <div className="min-h-screen bg-surface noise">
+      {/* Nav */}
+      <nav className="fixed top-0 inset-x-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/[0.06]">
+        <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
+          <Link to="/" className="text-xl font-bold text-gradient no-underline">Semantis AI</Link>
+          <div className="flex gap-3 items-center">
+            <Link to="/" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Home</Link>
+            <Link to="/signin" className="btn-primary text-sm no-underline">Sign In</Link>
           </div>
         </div>
       </nav>
 
-      <div style={styles.content}>
-        <div style={styles.header}>
-          <h1 style={styles.title}>Simple, Transparent Pricing</h1>
-          <p style={styles.subtitle}>
-            Semantis AI pricing is based on token usage and LLM API calls.
-            <br />
-            Choose the plan that fits your needs and scale as you grow.
+      <div className="max-w-6xl mx-auto pt-32 pb-20 px-5 relative z-10">
+        <div className="text-center mb-16">
+          <h1 className="text-5xl md:text-6xl font-bold text-white mb-4 tracking-tight">Simple, Transparent Pricing</h1>
+          <p className="text-lg text-white/60 max-w-2xl mx-auto leading-relaxed">
+            Choose the plan that fits your needs. Scale as you grow.
           </p>
         </div>
 
-        <div style={styles.tiersContainer}>
-          {tiers.map((tier, index) => (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
+          {tiers.map((tier) => (
             <div
               key={tier.name}
-              style={{
-                ...styles.tierCard,
-                ...(tier.popular ? styles.popularCard : {}),
-              }}
+              className={`glass-card flex flex-col p-8 transition-all hover:-translate-y-1 relative ${
+                tier.popular ? 'border-blue-500/40 bg-blue-500/[0.06] md:scale-105' : ''
+              }`}
             >
               {tier.popular && (
-                <div style={styles.popularBadge}>Most Popular</div>
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full
+                                bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-bold uppercase tracking-wider">
+                  Most Popular
+                </div>
               )}
 
-              <div style={styles.tierHeader}>
-                <h3 style={styles.tierName}>{tier.name}</h3>
-                <div style={styles.priceContainer}>
-                  <span style={styles.price}>{tier.price}</span>
-                  {tier.price !== 'Custom' && (
-                    <span style={styles.priceFrequency}>/month</span>
-                  )}
+              <div className="mb-8">
+                <h3 className="text-xl font-bold text-white mb-3">{tier.name}</h3>
+                <div className="flex items-baseline gap-1 mb-2">
+                  <span className="text-5xl font-bold text-white tracking-tight">{tier.price}</span>
+                  {tier.price !== 'Custom' && <span className="text-white/40 text-sm">/month</span>}
                 </div>
-                <p style={styles.tierDescription}>{tier.description}</p>
+                <p className="text-sm text-white/50">{tier.description}</p>
               </div>
 
-              <div style={styles.featuresContainer}>
-                {tier.features.map((feature, featureIndex) => (
-                  <div key={featureIndex} style={styles.feature}>
-                    <Check size={18} style={styles.checkIcon} />
-                    <span style={styles.featureText}>{feature}</span>
+              <div className="flex flex-col gap-3.5 mb-8 flex-1">
+                {tier.features.map((f) => (
+                  <div key={f} className="flex items-center gap-3">
+                    <Check size={16} className="text-emerald-500 shrink-0" />
+                    <span className="text-sm text-white/70">{f}</span>
                   </div>
                 ))}
               </div>
@@ -130,35 +120,35 @@ export function PricingPage() {
               {tier.ctaLink.startsWith('mailto:') ? (
                 <a
                   href={tier.ctaLink}
-                  style={{
-                    ...styles.ctaButton,
-                    ...(tier.popular ? styles.popularButton : styles.regularButton),
-                  }}
+                  className={`flex items-center justify-center gap-2 w-full py-3.5 rounded-xl font-semibold text-sm no-underline transition-all ${
+                    tier.popular
+                      ? 'btn-primary'
+                      : 'bg-white/[0.06] border border-white/[0.1] text-white hover:bg-white/[0.1]'
+                  }`}
                 >
-                  <Mail size={18} />
-                  <span>{tier.cta}</span>
+                  <Mail size={16} /> {tier.cta}
                 </a>
               ) : (
                 <Link
                   to={tier.ctaLink}
-                  style={{
-                    ...styles.ctaButton,
-                    ...(tier.popular ? styles.popularButton : styles.regularButton),
-                  }}
+                  className={`flex items-center justify-center gap-2 w-full py-3.5 rounded-xl font-semibold text-sm no-underline transition-all ${
+                    tier.popular
+                      ? 'btn-primary'
+                      : 'bg-white/[0.06] border border-white/[0.1] text-white hover:bg-white/[0.1]'
+                  }`}
                 >
-                  <span>{tier.cta}</span>
-                  <ArrowRight size={18} />
+                  {tier.cta} <ArrowRight size={16} />
                 </Link>
               )}
             </div>
           ))}
         </div>
 
-        <div style={styles.faq}>
-          <h3 style={styles.faqTitle}>Questions about pricing?</h3>
-          <p style={styles.faqText}>
+        <div className="glass-card p-10 text-center">
+          <h3 className="text-xl font-bold text-white mb-2">Questions about pricing?</h3>
+          <p className="text-white/60">
             Contact our sales team at{' '}
-            <a href="mailto:sales@semantis.ai" style={styles.emailLink}>
+            <a href="mailto:sales@semantis.ai" className="text-blue-400 font-semibold no-underline hover:underline">
               sales@semantis.ai
             </a>
           </p>
@@ -167,226 +157,3 @@ export function PricingPage() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    position: 'relative',
-    padding: '0 20px 80px',
-  },
-  nav: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    background: 'rgba(0, 0, 0, 0.8)',
-    backdropFilter: 'blur(20px)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-  },
-  navContent: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '16px 20px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  logo: {
-    textDecoration: 'none',
-  },
-  logoText: {
-    fontSize: '20px',
-    fontWeight: '700',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-  },
-  navLinks: {
-    display: 'flex',
-    gap: '12px',
-    alignItems: 'center',
-  },
-  navLink: {
-    padding: '8px 16px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    textDecoration: 'none',
-    fontSize: '14px',
-    fontWeight: '500',
-    borderRadius: '8px',
-    transition: 'all 0.2s',
-  },
-  signinButton: {
-    padding: '10px 20px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    color: '#fff',
-    textDecoration: 'none',
-    fontSize: '14px',
-    fontWeight: '600',
-    borderRadius: '8px',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
-  },
-  content: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    paddingTop: '120px',
-    position: 'relative',
-    zIndex: 1,
-  },
-  header: {
-    textAlign: 'center',
-    marginBottom: '64px',
-  },
-  title: {
-    fontSize: '56px',
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: '16px',
-    letterSpacing: '-0.02em',
-  },
-  subtitle: {
-    fontSize: '18px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    lineHeight: '1.6',
-    maxWidth: '700px',
-    margin: '0 auto',
-  },
-  tiersContainer: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-    gap: '32px',
-    marginBottom: '80px',
-  },
-  tierCard: {
-    background: 'rgba(255, 255, 255, 0.04)',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    borderRadius: '24px',
-    padding: '40px 32px',
-    backdropFilter: 'blur(40px)',
-    transition: 'all 0.4s ease',
-    position: 'relative',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  popularCard: {
-    background: 'rgba(59, 130, 246, 0.08)',
-    border: '2px solid rgba(59, 130, 246, 0.4)',
-    transform: 'scale(1.05)',
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: '-12px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    padding: '6px 16px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    color: '#fff',
-    fontSize: '12px',
-    fontWeight: '700',
-    borderRadius: '20px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  },
-  tierHeader: {
-    marginBottom: '32px',
-  },
-  tierName: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: '16px',
-  },
-  priceContainer: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '8px',
-    marginBottom: '12px',
-  },
-  price: {
-    fontSize: '48px',
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: '-0.02em',
-  },
-  priceFrequency: {
-    fontSize: '16px',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  tierDescription: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    lineHeight: '1.5',
-  },
-  featuresContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px',
-    marginBottom: '32px',
-    flex: 1,
-  },
-  feature: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  checkIcon: {
-    color: '#10b981',
-    flexShrink: 0,
-  },
-  featureText: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.8)',
-    lineHeight: '1.5',
-  },
-  ctaButton: {
-    width: '100%',
-    padding: '16px 24px',
-    fontSize: '16px',
-    fontWeight: '600',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    textDecoration: 'none',
-    border: 'none',
-  },
-  popularButton: {
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    color: '#fff',
-    boxShadow: '0 4px 16px rgba(59, 130, 246, 0.4)',
-  },
-  regularButton: {
-    background: 'rgba(255, 255, 255, 0.08)',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    color: '#fff',
-  },
-  faq: {
-    textAlign: 'center',
-    padding: '48px 32px',
-    background: 'rgba(255, 255, 255, 0.04)',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    borderRadius: '24px',
-    backdropFilter: 'blur(40px)',
-  },
-  faqTitle: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: '12px',
-  },
-  faqText: {
-    fontSize: '16px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    lineHeight: '1.6',
-  },
-  emailLink: {
-    color: '#3b82f6',
-    textDecoration: 'none',
-    fontWeight: '600',
-  },
-};

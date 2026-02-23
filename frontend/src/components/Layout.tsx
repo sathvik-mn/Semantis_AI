@@ -8,13 +8,10 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const isHealthy = useHealthCheck(30000);
-  const { user, isAuthenticated, logout: authLogout } = useAuth();
+  const { isAuthenticated, user, logout: authLogout } = useAuth();
 
   const handleLogout = async () => {
-    // Clear both auth token and API key
-    if (isAuthenticated) {
-      await authLogout();
-    }
+    if (isAuthenticated) await authLogout();
     api.clearApiKey();
     navigate('/');
   };
@@ -30,137 +27,67 @@ export function Layout() {
   ];
 
   return (
-    <div style={styles.container}>
-      <nav style={styles.nav}>
-        <div style={styles.navContent}>
-          <Link to="/" style={styles.logo}>
+    <div className="min-h-screen flex flex-col bg-surface noise">
+      {/* Top accent line */}
+      <div className="h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent" />
+
+      <nav className="sticky top-0 z-50 bg-black/70 backdrop-blur-xl border-b border-white/[0.06]">
+        <div className="max-w-[1400px] mx-auto px-5 py-3.5 flex items-center gap-8">
+          <Link to="/" className="text-xl font-bold text-gradient no-underline shrink-0">
             Semantis AI
           </Link>
 
-          <div style={styles.navLinks}>
+          <div className="flex gap-1 flex-1">
             {navItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
-                style={{
-                  ...styles.navLink,
-                  ...(isActive(item.path) ? styles.navLinkActive : {}),
-                }}
+                className={`px-4 py-2 text-sm font-medium rounded-lg no-underline transition-all ${
+                  isActive(item.path)
+                    ? 'text-white bg-white/[0.08]'
+                    : 'text-white/60 hover:text-white hover:bg-white/[0.04]'
+                }`}
               >
                 {item.label}
               </Link>
             ))}
+            {user?.is_admin && (
+              <Link
+                to="/admin"
+                className={`px-4 py-2 text-sm font-medium rounded-lg no-underline transition-all ${
+                  location.pathname.startsWith('/admin')
+                    ? 'text-amber-300 bg-amber-500/10'
+                    : 'text-amber-400/70 hover:text-amber-300 hover:bg-amber-500/10'
+                }`}
+              >
+                Admin
+              </Link>
+            )}
           </div>
 
-          <div style={styles.navRight}>
-            <div style={styles.healthIndicator}>
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-2">
               <div
-                style={{
-                  ...styles.healthDot,
-                  backgroundColor: isHealthy ? '#10b981' : isHealthy === null ? '#f59e0b' : '#ef4444',
-                }}
+                className={`w-2 h-2 rounded-full ${
+                  isHealthy ? 'bg-emerald-500' : isHealthy === null ? 'bg-amber-500' : 'bg-red-500'
+                }`}
               />
-              <span style={styles.healthText}>
-                {isHealthy ? 'Connected' : isHealthy === null ? 'Checking...' : 'Disconnected'}
+              <span className="text-xs text-white/50">
+                {isHealthy ? 'Connected' : isHealthy === null ? 'Checking...' : 'Offline'}
               </span>
             </div>
-
             <AccountMenu onLogout={handleLogout} />
           </div>
         </div>
       </nav>
 
-      <main style={styles.main}>
+      <main className="flex-1">
         <Outlet />
       </main>
 
-      <footer style={styles.footer}>
-        <p style={styles.footerText}>
-          Semantis AI - Semantic Caching Platform
-        </p>
+      <footer className="px-5 py-5 text-center border-t border-white/[0.06]">
+        <p className="text-xs text-white/30">Semantis AI &mdash; Semantic Caching Platform</p>
       </footer>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  nav: {
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
-    background: 'rgba(0, 0, 0, 0.8)',
-    backdropFilter: 'blur(20px)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-  },
-  navContent: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '16px 20px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '32px',
-  },
-  logo: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#fff',
-    textDecoration: 'none',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-  },
-  navLinks: {
-    display: 'flex',
-    gap: '8px',
-    flex: 1,
-  },
-  navLink: {
-    padding: '8px 16px',
-    fontSize: '14px',
-    fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.7)',
-    textDecoration: 'none',
-    borderRadius: '6px',
-    transition: 'all 0.2s',
-  },
-  navLinkActive: {
-    color: '#fff',
-    background: 'rgba(59, 130, 246, 0.2)',
-  },
-  navRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  healthIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  healthDot: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-  },
-  healthText: {
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  main: {
-    flex: 1,
-  },
-  footer: {
-    padding: '20px',
-    textAlign: 'center',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-  },
-  footerText: {
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-};

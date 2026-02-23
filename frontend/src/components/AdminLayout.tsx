@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, Trophy, TrendingUp, Settings, Moon, Sun } from 'lucide-react';
+import { Outlet, NavLink, Link } from 'react-router-dom';
+import { LayoutDashboard, Users, Trophy, TrendingUp, Settings, Moon, Sun, ArrowLeft } from 'lucide-react';
 
 export default function AdminLayout() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -63,7 +63,14 @@ export default function AdminLayout() {
             ))}
           </nav>
 
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-1">
+            <Link
+              to="/playground"
+              className="flex items-center w-full px-4 py-3 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors no-underline"
+            >
+              <ArrowLeft className="w-5 h-5 mr-3" />
+              <span className="font-medium">Back to App</span>
+            </Link>
             <button
               onClick={toggleDarkMode}
               className="flex items-center w-full px-4 py-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

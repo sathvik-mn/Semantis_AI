@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { authAPI } from '../api/authAPI';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -9,23 +8,9 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { user, isAuthenticated, loadUser } = useAuth();
+  const { user, isAuthenticated, login, loadUser } = useAuth();
 
   useEffect(() => {
-    // Check if already authenticated as admin
-    const checkAuth = async () => {
-      if (authAPI.isAuthenticated()) {
-        await loadUser();
-        if (user?.is_admin) {
-          navigate('/admin');
-        }
-      }
-    };
-    checkAuth();
-  }, []);
-
-  useEffect(() => {
-    // Redirect if authenticated as admin
     if (isAuthenticated && user?.is_admin) {
       navigate('/admin');
     }
@@ -37,97 +22,60 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/auth/admin/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Admin login failed');
+      await login(email, password);
+      const u = await loadUser();
+      if (!u?.is_admin) {
+        setError('Access denied. Admin privileges required.');
+        return;
       }
-
-      // Store token and update user context
-      authAPI.setAuthToken(data.access_token);
-      await loadUser();
-      
-      // Navigate to admin dashboard
       navigate('/admin');
     } catch (err: any) {
-      setError(err.message || 'Admin login failed. Please check your credentials.');
+      setError(err.message || 'Login failed.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
-            Admin Login
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-400">
-            Sign in to access the admin dashboard
-          </p>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="email" className="sr-only">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-800 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-800 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
+    <div className="min-h-screen flex items-center justify-center bg-surface px-4">
+      <div className="max-w-md w-full">
+        <div className="glass-card p-10">
+          <h2 className="text-3xl font-bold text-white text-center mb-2">Admin Login</h2>
+          <p className="text-sm text-white/50 text-center mb-8">Sign in to access the admin dashboard</p>
 
-          <div>
+          <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+            <input
+              type="email"
+              required
+              className="input-field"
+              placeholder="Email address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
+            <input
+              type="password"
+              required
+              className="input-field"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary w-full py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );
 }
-

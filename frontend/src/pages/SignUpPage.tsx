@@ -11,10 +11,10 @@ export function SignUpPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
   const { signup, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/playground', { replace: true });
@@ -49,7 +49,7 @@ export function SignUpPage() {
 
     try {
       await signup(email, password, name || undefined);
-      navigate('/playground');
+      setSignupComplete(true);
     } catch (err: any) {
       setError(err.message || 'Sign up failed');
     } finally {
@@ -71,6 +71,20 @@ export function SignUpPage() {
 
       <div style={styles.content}>
         <div style={styles.card}>
+          {signupComplete ? (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>&#9993;</div>
+              <h2 style={styles.cardTitle}>Check your email</h2>
+              <p style={{ ...styles.cardSubtitle, marginBottom: '24px' }}>
+                We sent a verification link to <strong style={{ color: '#fff' }}>{email}</strong>.
+                Click the link to activate your account, then sign in.
+              </p>
+              <Link to="/signin" style={{ ...styles.link, fontSize: '16px' }}>
+                Go to Sign In
+              </Link>
+            </div>
+          ) : (
+          <>
           <h2 style={styles.cardTitle}>Create Account</h2>
           <p style={styles.cardSubtitle}>
             Get started with Semantis AI for free
@@ -202,10 +216,12 @@ export function SignUpPage() {
 
           <div style={styles.footer}>
             Already have an account?{' '}
-            <Link to="/login" style={styles.link}>
+            <Link to="/signin" style={styles.link}>
               Sign in
             </Link>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

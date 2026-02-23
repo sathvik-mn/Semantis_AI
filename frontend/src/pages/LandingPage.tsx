@@ -2,196 +2,132 @@ import { Link } from 'react-router-dom';
 
 export function LandingPage() {
   return (
-    <div style={styles.pageContainer}>
+    <div className="min-h-screen bg-surface noise">
       {/* Navigation */}
-      <nav style={styles.nav}>
-        <div style={styles.navContent}>
-          <div style={styles.logo}>Semantis AI</div>
-          <div style={styles.navLinks}>
-            <Link to="/docs" style={styles.navLink}>Docs</Link>
-            <Link to="/pricing" style={styles.navLink}>Pricing</Link>
-            <Link to="/playground" style={styles.navLink}>Playground</Link>
+      <nav className="fixed top-0 inset-x-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/[0.06]">
+        <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
+          <div className="text-2xl font-extrabold text-gradient">Semantis AI</div>
+          <div className="hidden md:flex gap-8">
+            <Link to="/docs" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Docs</Link>
+            <Link to="/pricing" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Pricing</Link>
+            <Link to="/playground" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Playground</Link>
           </div>
-          <div style={styles.navButtons}>
-            <Link to="/signin" style={styles.signInBtn}>Sign In</Link>
-            <Link to="/signup" style={styles.getStartedBtn}>Get Started</Link>
+          <div className="flex gap-3">
+            <Link to="/signin" className="btn-ghost no-underline">Sign In</Link>
+            <Link to="/signup" className="btn-primary no-underline">Get Started</Link>
           </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section style={styles.hero}>
-        <div style={styles.badge}>
-          <span style={styles.badgeIcon}>✨</span>
+      {/* Hero */}
+      <section className="pt-40 pb-24 text-center max-w-5xl mx-auto px-8">
+        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8 animate-fade-in">
           Intelligent Semantic Caching for LLMs
         </div>
-        <h1 style={styles.heroTitle}>
-          Cut Your LLM Costs
-          <br />
-          <span style={styles.heroGradient}>By Up To 80%</span>
+
+        <h1 className="text-5xl md:text-7xl font-extrabold text-white mb-6 leading-[1.08] tracking-tight animate-slide-up">
+          Cut Your LLM Costs{' '}
+          <span className="text-gradient">By Up To 80%</span>
         </h1>
-        <p style={styles.heroSubtitle}>
-          Semantis AI is an intelligent caching layer that sits between your application and LLM providers,
-          reducing costs and latency by serving cached responses for semantically similar queries.
+
+        <p className="text-lg md:text-xl text-white/60 max-w-3xl mx-auto mb-12 leading-relaxed animate-slide-up"
+           style={{ animationDelay: '0.1s' }}>
+          An intelligent caching layer between your application and LLM providers.
+          Reduce costs and latency by serving cached responses for semantically similar queries.
         </p>
-        <div style={styles.heroButtons}>
-          <Link to="/signup" style={styles.primaryBtn}>
-            Start Saving Now →
+
+        <div className="flex gap-4 justify-center flex-wrap mb-20 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+          <Link to="/signup" className="btn-primary text-lg px-8 py-4 no-underline">
+            Start Saving Now &rarr;
           </Link>
-          <Link to="/docs" style={styles.secondaryBtn}>
-            📖 View Documentation
+          <Link to="/docs" className="btn-ghost text-lg px-8 py-4 no-underline">
+            View Documentation
           </Link>
         </div>
 
         {/* Stats */}
-        <div style={styles.statsGrid}>
-          <div style={styles.statCard}>
-            <div style={styles.statNumber}>80%</div>
-            <div style={styles.statLabel}>Cost Reduction</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statNumber}>&lt;50ms</div>
-            <div style={styles.statLabel}>Cache Response Time</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statNumber}>100%</div>
-            <div style={styles.statLabel}>LLM Compatible</div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          {[
+            { num: '80%', label: 'Cost Reduction' },
+            { num: '<50ms', label: 'Cache Response Time' },
+            { num: '100%', label: 'LLM Compatible' },
+          ].map((s) => (
+            <div key={s.label} className="glass-card gradient-border p-8 text-center">
+              <div className="text-4xl md:text-5xl font-bold text-gradient mb-2">{s.num}</div>
+              <div className="text-white/60 text-sm">{s.label}</div>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* How It Works */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>How It Works</h2>
-        <p style={styles.sectionSubtitle}>Simple, fast, and transparent caching</p>
+      <section className="py-24 px-8 max-w-6xl mx-auto">
+        <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-4">How It Works</h2>
+        <p className="text-lg text-white/60 text-center mb-16">Simple, fast, and transparent caching</p>
 
-        <div style={styles.flowGrid}>
-          <div style={styles.flowCard}>
-            <div style={styles.flowIcon}>🚀</div>
-            <h3 style={styles.flowTitle}>Your App Sends Query</h3>
-            <p style={styles.flowText}>Your application makes an LLM request through Semantis AI</p>
-          </div>
-
-          <div style={{...styles.flowCard, ...styles.flowCardHighlight}}>
-            <div style={styles.flowIcon}>⚡</div>
-            <h3 style={styles.flowTitle}>Semantis Checks Cache</h3>
-            <p style={styles.flowText}>We analyze semantic similarity against cached responses</p>
-          </div>
-
-          <div style={styles.flowCard}>
-            <div style={styles.flowIcon}>✓</div>
-            <h3 style={styles.flowTitle}>Instant Response</h3>
-            <p style={styles.flowText}>Return cached result or fetch from LLM and cache it</p>
-          </div>
-        </div>
-
-        <div style={styles.stepsContainer}>
-          <div style={styles.stepRow}>
-            <div style={styles.stepNumber}>1</div>
-            <div style={styles.stepContent}>
-              <h4 style={styles.stepTitle}>Query Received</h4>
-              <p style={styles.stepText}>Your application sends an LLM query to our API endpoint</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+          {[
+            { icon: '1', title: 'Your App Sends Query', text: 'Your application makes an LLM request through Semantis AI', highlighted: false },
+            { icon: '2', title: 'Semantis Checks Cache', text: 'We analyze semantic similarity against cached responses', highlighted: true },
+            { icon: '3', title: 'Instant Response', text: 'Return cached result or fetch from LLM and cache it', highlighted: false },
+          ].map((f) => (
+            <div
+              key={f.title}
+              className={`glass-card p-8 text-center transition-all hover:-translate-y-1 ${
+                f.highlighted ? 'border-blue-500/30 bg-blue-500/[0.06]' : ''
+              }`}
+            >
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl">
+                {f.icon}
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-3">{f.title}</h3>
+              <p className="text-sm text-white/50 leading-relaxed">{f.text}</p>
             </div>
-          </div>
-
-          <div style={styles.stepRow}>
-            <div style={styles.stepNumber}>2</div>
-            <div style={styles.stepContent}>
-              <h4 style={styles.stepTitle}>Semantic Analysis</h4>
-              <p style={styles.stepText}>Advanced algorithms check for semantically similar cached queries</p>
-            </div>
-          </div>
-
-          <div style={styles.stepRow}>
-            <div style={styles.stepNumber}>3</div>
-            <div style={styles.stepContent}>
-              <h4 style={styles.stepTitle}>Cache Hit</h4>
-              <p style={styles.stepText}>Return instant cached response, saving time and money</p>
-            </div>
-          </div>
-
-          <div style={styles.stepRow}>
-            <div style={styles.stepNumber}>4</div>
-            <div style={styles.stepContent}>
-              <h4 style={styles.stepTitle}>Cache Miss</h4>
-              <p style={styles.stepText}>Forward to LLM provider and cache response for future queries</p>
-            </div>
-          </div>
+          ))}
         </div>
       </section>
 
       {/* Features */}
-      <section style={styles.featuresSection}>
-        <h2 style={styles.sectionTitle}>Why Choose Semantis AI?</h2>
-        <p style={styles.sectionSubtitle}>Built for modern AI applications</p>
+      <section className="py-24 px-8 max-w-6xl mx-auto">
+        <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-4">Why Choose Semantis AI?</h2>
+        <p className="text-lg text-white/60 text-center mb-16">Built for modern AI applications</p>
 
-        <div style={styles.featuresGrid}>
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>📉</div>
-            <h3 style={styles.featureTitle}>Massive Savings</h3>
-            <p style={styles.featureText}>Reduce LLM API costs by 60-80% with intelligent caching</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>⚡</div>
-            <h3 style={styles.featureTitle}>Lightning Fast</h3>
-            <p style={styles.featureText}>Cache hits return in milliseconds, not seconds</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>🔌</div>
-            <h3 style={styles.featureTitle}>Plug & Play</h3>
-            <p style={styles.featureText}>Integrate with just a few lines of code via our SDK</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>🌐</div>
-            <h3 style={styles.featureTitle}>Universal</h3>
-            <p style={styles.featureText}>Works with OpenAI, Anthropic, Cohere, and more</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>🛡️</div>
-            <h3 style={styles.featureTitle}>Enterprise Ready</h3>
-            <p style={styles.featureText}>Secure, scalable, and built for production workloads</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>🎯</div>
-            <h3 style={styles.featureTitle}>Smart Matching</h3>
-            <p style={styles.featureText}>Advanced semantic similarity algorithms with typo tolerance</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>👨‍💻</div>
-            <h3 style={styles.featureTitle}>Developer First</h3>
-            <p style={styles.featureText}>Comprehensive docs, SDKs, and amazing developer experience</p>
-          </div>
-
-          <div style={styles.featureCard}>
-            <div style={styles.featureIcon}>📊</div>
-            <h3 style={styles.featureTitle}>Real-time Analytics</h3>
-            <p style={styles.featureText}>Track cache performance, costs, and usage in real-time</p>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {[
+            { icon: '📉', title: 'Massive Savings', text: 'Reduce LLM API costs by 60-80%' },
+            { icon: '⚡', title: 'Lightning Fast', text: 'Cache hits return in milliseconds' },
+            { icon: '🔌', title: 'Plug & Play', text: 'Integrate with just a few lines of code' },
+            { icon: '🌐', title: 'Universal', text: 'Works with OpenAI, Anthropic, and more' },
+            { icon: '🛡️', title: 'Enterprise Ready', text: 'Secure and built for production' },
+            { icon: '🎯', title: 'Smart Matching', text: 'Advanced similarity with typo tolerance' },
+            { icon: '👨‍💻', title: 'Developer First', text: 'Great docs, SDKs, and DX' },
+            { icon: '📊', title: 'Real-time Analytics', text: 'Track cache performance live' },
+          ].map((f) => (
+            <div key={f.title} className="glass-card p-6 hover:-translate-y-1 transition-all group">
+              <div className="text-3xl mb-3">{f.icon}</div>
+              <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-400 transition-colors">{f.title}</h3>
+              <p className="text-sm text-white/50 leading-relaxed">{f.text}</p>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* Code Example */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Start in Minutes</h2>
-        <p style={styles.sectionSubtitle}>Simple integration with any tech stack</p>
+      <section className="py-24 px-8 max-w-4xl mx-auto">
+        <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-4">Start in Minutes</h2>
+        <p className="text-lg text-white/60 text-center mb-12">Simple integration with any tech stack</p>
 
-        <div style={styles.codeContainer}>
-          <div style={styles.codeHeader}>
-            <div style={styles.codeButtons}>
-              <span style={{...styles.codeDot, background: '#ff5f56'}}></span>
-              <span style={{...styles.codeDot, background: '#ffbd2e'}}></span>
-              <span style={{...styles.codeDot, background: '#27c93f'}}></span>
+        <div className="glass-card overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 bg-black/30 border-b border-white/[0.06]">
+            <div className="flex gap-2">
+              <span className="w-3 h-3 rounded-full bg-red-500" />
+              <span className="w-3 h-3 rounded-full bg-yellow-500" />
+              <span className="w-3 h-3 rounded-full bg-green-500" />
             </div>
-            <span style={styles.codeLabel}>Python</span>
+            <span className="text-xs text-white/40 font-mono">Python</span>
           </div>
-          <pre style={styles.codeBlock}>
-            <code style={styles.code}>{`from semantis_ai import SemantisClient
+          <pre className="p-6 overflow-auto">
+            <code className="text-sm text-white/80 font-mono leading-relaxed">{`from semantis_ai import SemantisClient
 
 # Initialize client
 client = SemantisClient(api_key="your_api_key")
@@ -208,502 +144,45 @@ print(response.content)  # Lightning fast response!`}</code>
       </section>
 
       {/* CTA */}
-      <section style={styles.ctaSection}>
-        <div style={styles.ctaContainer}>
-          <h2 style={styles.ctaTitle}>Ready to Save on LLM Costs?</h2>
-          <p style={styles.ctaSubtitle}>
-            Join developers saving thousands on AI infrastructure costs every month.
-          </p>
-          <Link to="/signup" style={styles.ctaButton}>
-            Get Started Free →
+      <section className="py-24 px-8 max-w-5xl mx-auto">
+        <div className="glass-card gradient-border p-16 md:p-20 text-center animate-glow">
+          <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">Ready to Save on LLM Costs?</h2>
+          <p className="text-lg text-white/70 mb-8">Join developers saving thousands on AI infrastructure costs every month.</p>
+          <Link to="/signup" className="btn-primary text-lg px-10 py-4 no-underline inline-block">
+            Get Started Free &rarr;
           </Link>
-          <p style={styles.ctaFootnote}>No credit card required • Free tier available</p>
+          <p className="text-sm text-white/40 mt-4">No credit card required</p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer style={styles.footer}>
-        <div style={styles.footerContent}>
-          <div style={styles.footerColumn}>
-            <div style={styles.footerLogo}>Semantis AI</div>
-            <p style={styles.footerDescription}>
-              Intelligent semantic caching for modern AI applications.
-            </p>
+      <footer className="border-t border-white/[0.06] px-8 py-16">
+        <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-10 mb-10">
+          <div>
+            <div className="text-xl font-bold text-gradient mb-3">Semantis AI</div>
+            <p className="text-sm text-white/40 leading-relaxed">Intelligent semantic caching for modern AI applications.</p>
           </div>
-
-          <div style={styles.footerColumn}>
-            <h4 style={styles.footerHeading}>Product</h4>
-            <Link to="/docs" style={styles.footerLink}>Documentation</Link>
-            <Link to="/playground" style={styles.footerLink}>Playground</Link>
-            <Link to="/pricing" style={styles.footerLink}>Pricing</Link>
+          <div className="flex flex-col gap-2.5">
+            <h4 className="text-sm font-semibold text-white mb-1">Product</h4>
+            <Link to="/docs" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Documentation</Link>
+            <Link to="/playground" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Playground</Link>
+            <Link to="/pricing" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Pricing</Link>
           </div>
-
-          <div style={styles.footerColumn}>
-            <h4 style={styles.footerHeading}>Resources</h4>
-            <a href="https://github.com" style={styles.footerLink} target="_blank" rel="noopener noreferrer">GitHub</a>
-            <Link to="/docs" style={styles.footerLink}>API Reference</Link>
-            <Link to="/docs" style={styles.footerLink}>Guides</Link>
+          <div className="flex flex-col gap-2.5">
+            <h4 className="text-sm font-semibold text-white mb-1">Resources</h4>
+            <a href="https://github.com" className="text-sm text-white/50 no-underline hover:text-white transition-colors" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <Link to="/docs" className="text-sm text-white/50 no-underline hover:text-white transition-colors">API Reference</Link>
           </div>
-
-          <div style={styles.footerColumn}>
-            <h4 style={styles.footerHeading}>Company</h4>
-            <a href="mailto:contact@semantis.ai" style={styles.footerLink}>Contact</a>
-            <Link to="/privacy" style={styles.footerLink}>Privacy</Link>
-            <Link to="/terms" style={styles.footerLink}>Terms</Link>
+          <div className="flex flex-col gap-2.5">
+            <h4 className="text-sm font-semibold text-white mb-1">Company</h4>
+            <a href="mailto:contact@semantis.ai" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Contact</a>
+            <Link to="/privacy" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Privacy</Link>
           </div>
         </div>
-
-        <div style={styles.footerBottom}>
-          <p style={styles.copyright}>© 2025 Semantis AI. All rights reserved.</p>
+        <div className="max-w-6xl mx-auto pt-8 border-t border-white/[0.06] text-center">
+          <p className="text-xs text-white/40">&copy; 2026 Semantis AI. All rights reserved.</p>
         </div>
       </footer>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  pageContainer: {
-    minHeight: '100vh',
-    background: 'linear-gradient(to bottom, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
-  },
-
-  // Navigation
-  nav: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    background: 'rgba(15, 23, 42, 0.8)',
-    backdropFilter: 'blur(20px)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-  },
-  navContent: {
-    maxWidth: '1280px',
-    margin: '0 auto',
-    padding: '16px 32px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  logo: {
-    fontSize: '24px',
-    fontWeight: '700',
-    background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-  },
-  navLinks: {
-    display: 'flex',
-    gap: '32px',
-  },
-  navLink: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    textDecoration: 'none',
-    fontSize: '15px',
-    fontWeight: '500',
-    transition: 'color 0.2s',
-  },
-  navButtons: {
-    display: 'flex',
-    gap: '12px',
-  },
-  signInBtn: {
-    padding: '10px 24px',
-    fontSize: '15px',
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
-    textDecoration: 'none',
-    borderRadius: '8px',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    background: 'rgba(255, 255, 255, 0.05)',
-    transition: 'all 0.2s',
-  },
-  getStartedBtn: {
-    padding: '10px 24px',
-    fontSize: '15px',
-    fontWeight: '600',
-    color: '#fff',
-    textDecoration: 'none',
-    borderRadius: '8px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
-    transition: 'all 0.2s',
-  },
-
-  // Hero
-  hero: {
-    paddingTop: '160px',
-    paddingBottom: '100px',
-    textAlign: 'center',
-    maxWidth: '1100px',
-    margin: '0 auto',
-    padding: '160px 32px 100px',
-  },
-  badge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 20px',
-    background: 'rgba(59, 130, 246, 0.1)',
-    border: '1px solid rgba(59, 130, 246, 0.3)',
-    borderRadius: '999px',
-    color: '#60a5fa',
-    fontSize: '14px',
-    fontWeight: '500',
-    marginBottom: '32px',
-  },
-  badgeIcon: {
-    fontSize: '16px',
-  },
-  heroTitle: {
-    fontSize: '64px',
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: '24px',
-    lineHeight: '1.1',
-    letterSpacing: '-0.02em',
-  },
-  heroGradient: {
-    background: 'linear-gradient(135deg, #3b82f6, #06b6d4, #14b8a6)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-  },
-  heroSubtitle: {
-    fontSize: '20px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: '40px',
-    lineHeight: '1.6',
-    maxWidth: '800px',
-    margin: '0 auto 40px',
-  },
-  heroButtons: {
-    display: 'flex',
-    gap: '16px',
-    justifyContent: 'center',
-    marginBottom: '80px',
-    flexWrap: 'wrap',
-  },
-  primaryBtn: {
-    padding: '16px 32px',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#fff',
-    textDecoration: 'none',
-    borderRadius: '12px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
-    transition: 'all 0.2s',
-  },
-  secondaryBtn: {
-    padding: '16px 32px',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
-    textDecoration: 'none',
-    borderRadius: '12px',
-    border: '2px solid rgba(255, 255, 255, 0.2)',
-    background: 'rgba(255, 255, 255, 0.05)',
-    transition: 'all 0.2s',
-  },
-
-  // Stats
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '24px',
-    maxWidth: '900px',
-    margin: '0 auto',
-  },
-  statCard: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '16px',
-    padding: '32px',
-  },
-  statNumber: {
-    fontSize: '48px',
-    fontWeight: '700',
-    color: '#3b82f6',
-    marginBottom: '8px',
-  },
-  statLabel: {
-    fontSize: '16px',
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-
-  // Section
-  section: {
-    padding: '100px 32px',
-    maxWidth: '1200px',
-    margin: '0 auto',
-  },
-  sectionTitle: {
-    fontSize: '48px',
-    fontWeight: '700',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: '16px',
-  },
-  sectionSubtitle: {
-    fontSize: '20px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    textAlign: 'center',
-    marginBottom: '64px',
-  },
-
-  // Flow
-  flowGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '24px',
-    marginBottom: '64px',
-  },
-  flowCard: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '16px',
-    padding: '32px',
-    textAlign: 'center',
-  },
-  flowCardHighlight: {
-    background: 'rgba(59, 130, 246, 0.1)',
-    border: '1px solid rgba(59, 130, 246, 0.3)',
-  },
-  flowIcon: {
-    fontSize: '48px',
-    marginBottom: '16px',
-  },
-  flowTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: '12px',
-  },
-  flowText: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    lineHeight: '1.6',
-  },
-
-  // Steps
-  stepsContainer: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '32px',
-  },
-  stepRow: {
-    display: 'flex',
-    gap: '16px',
-  },
-  stepNumber: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '18px',
-    fontWeight: '700',
-    flexShrink: 0,
-  },
-  stepContent: {
-    flex: 1,
-  },
-  stepTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: '8px',
-  },
-  stepText: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    lineHeight: '1.5',
-  },
-
-  // Features
-  featuresSection: {
-    padding: '100px 32px',
-    maxWidth: '1200px',
-    margin: '0 auto',
-    background: 'rgba(0, 0, 0, 0.2)',
-  },
-  featuresGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '24px',
-  },
-  featureCard: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '16px',
-    padding: '32px',
-    transition: 'all 0.3s',
-  },
-  featureIcon: {
-    fontSize: '48px',
-    marginBottom: '16px',
-  },
-  featureTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: '12px',
-  },
-  featureText: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    lineHeight: '1.6',
-  },
-
-  // Code
-  codeContainer: {
-    maxWidth: '900px',
-    margin: '0 auto',
-    background: 'rgba(255, 255, 255, 0.05)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '16px',
-    overflow: 'hidden',
-  },
-  codeHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 24px',
-    background: 'rgba(0, 0, 0, 0.2)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-  },
-  codeButtons: {
-    display: 'flex',
-    gap: '8px',
-  },
-  codeDot: {
-    width: '12px',
-    height: '12px',
-    borderRadius: '50%',
-  },
-  codeLabel: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  codeBlock: {
-    padding: '24px',
-    margin: 0,
-    overflow: 'auto',
-  },
-  code: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: '14px',
-    lineHeight: '1.6',
-    fontFamily: 'monospace',
-  },
-
-  // CTA
-  ctaSection: {
-    padding: '120px 32px',
-    maxWidth: '1200px',
-    margin: '0 auto',
-  },
-  ctaContainer: {
-    background: 'rgba(59, 130, 246, 0.1)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(59, 130, 246, 0.3)',
-    borderRadius: '24px',
-    padding: '80px 40px',
-    textAlign: 'center',
-  },
-  ctaTitle: {
-    fontSize: '48px',
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: '16px',
-    lineHeight: '1.2',
-  },
-  ctaSubtitle: {
-    fontSize: '20px',
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: '32px',
-  },
-  ctaButton: {
-    display: 'inline-block',
-    padding: '18px 40px',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#fff',
-    textDecoration: 'none',
-    borderRadius: '12px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
-    transition: 'all 0.2s',
-  },
-  ctaFootnote: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: '16px',
-  },
-
-  // Footer
-  footer: {
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-    padding: '60px 32px 32px',
-  },
-  footerContent: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '40px',
-    marginBottom: '40px',
-  },
-  footerColumn: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  footerLogo: {
-    fontSize: '20px',
-    fontWeight: '700',
-    background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-    marginBottom: '8px',
-  },
-  footerDescription: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.5)',
-    lineHeight: '1.6',
-  },
-  footerHeading: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: '8px',
-  },
-  footerLink: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    textDecoration: 'none',
-    transition: 'color 0.2s',
-  },
-  footerBottom: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    paddingTop: '32px',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-    textAlign: 'center',
-  },
-  copyright: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-};

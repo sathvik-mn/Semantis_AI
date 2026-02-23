@@ -1,38 +1,88 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { generateApiKey } from '../api/semanticAPI';
-import { setApiKey, hasApiKey, getApiKey } from '../api/semanticAPI';
-import { Key, Copy, Check, AlertCircle } from 'lucide-react';
+import { generateApiKey, setApiKey, hasApiKey, getApiKey, getSettings, updateSettings } from '../api/semanticAPI';
+import { Key, Copy, Check, AlertCircle, Save, Loader2, RefreshCw } from 'lucide-react';
 
 export function SettingsPanel() {
-  const [threshold, setThreshold] = useState(0.83);
+  const [threshold, setThreshold] = useState(0.75);
   const [ttl, setTtl] = useState(7);
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [dirty, setDirty] = useState(false);
+  const [serverThreshold, setServerThreshold] = useState(0.75);
+  const [serverTtl, setServerTtl] = useState(7);
+  const [entries, setEntries] = useState(0);
   const { user } = useAuth();
 
-  useEffect(() => {
-    // Load existing API key from localStorage
-    const existingKey = getApiKey();
-    if (existingKey) {
-      setApiKeyState(existingKey);
+  const loadSettings = useCallback(async () => {
+    if (!hasApiKey()) {
+      setLoadingSettings(false);
+      return;
+    }
+    try {
+      const s = await getSettings();
+      setThreshold(s.sim_threshold);
+      setServerThreshold(s.sim_threshold);
+      setTtl(s.ttl_days);
+      setServerTtl(s.ttl_days);
+      setEntries(s.entries);
+    } catch {
+      // backend might not be up yet
+    } finally {
+      setLoadingSettings(false);
     }
   }, []);
+
+  useEffect(() => {
+    const existingKey = getApiKey();
+    if (existingKey) setApiKeyState(existingKey);
+    loadSettings();
+  }, [loadSettings]);
+
+  useEffect(() => {
+    setDirty(threshold !== serverThreshold || ttl !== serverTtl);
+    setSaveSuccess(false);
+  }, [threshold, ttl, serverThreshold, serverTtl]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSaveSuccess(false);
+    try {
+      const result = await updateSettings({ sim_threshold: threshold, ttl_days: ttl });
+      const updated = result.settings;
+      if (updated.sim_threshold !== undefined) {
+        setServerThreshold(updated.sim_threshold);
+        setThreshold(updated.sim_threshold);
+      }
+      if (updated.ttl_days !== undefined) {
+        setServerTtl(updated.ttl_days);
+        setTtl(updated.ttl_days);
+      }
+      setDirty(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleGenerateApiKey = async () => {
     setGenerating(true);
     setError(null);
     try {
-      const result = await generateApiKey({
-        email: user?.email,
-        name: user?.name,
-        plan: 'free',
-      });
+      const result = await generateApiKey({ plan: 'free' });
       setApiKeyState(result.api_key);
       setApiKey(result.api_key);
       setCopied(false);
+      loadSettings();
     } catch (err: any) {
       setError(err.message || 'Failed to generate API key');
     } finally {
@@ -50,108 +100,151 @@ export function SettingsPanel() {
 
   return (
     <div style={styles.container}>
-      {/* API Key Management Section */}
+      {/* API Key Management */}
       <div style={styles.apiKeyContainer}>
         <div style={styles.apiKeyHeader}>
-          <Key size={20} style={styles.apiKeyIcon} />
-          <h3 style={styles.apiKeyTitle}>API Key Management</h3>
+          <Key size={20} style={{ color: '#60a5fa' }} />
+          <h3 style={styles.sectionTitle}>API Key Management</h3>
         </div>
-        <p style={styles.apiKeyDescription}>
-          Generate an API key to use the playground and make API calls. Keep your API key secure and don't share it publicly.
+        <p style={styles.description}>
+          Generate an API key to use the playground and make API calls.
         </p>
-
         {apiKey ? (
-          <div style={styles.apiKeyDisplay}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={styles.apiKeyValue}>
               <code style={styles.apiKeyCode}>{apiKey}</code>
-              <button
-                onClick={handleCopyApiKey}
-                style={styles.copyButton}
-                title="Copy API key"
-              >
+              <button onClick={handleCopyApiKey} style={styles.iconButton} title="Copy API key">
                 {copied ? <Check size={16} /> : <Copy size={16} />}
               </button>
             </div>
-            <p style={styles.apiKeyWarning}>
-              <AlertCircle size={14} style={styles.warningIcon} />
-              Save this key securely - it won't be shown again after you refresh the page.
+            <p style={styles.warning}>
+              <AlertCircle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+              Save this key securely — it won't be shown again after you refresh.
             </p>
-            <button
-              onClick={handleGenerateApiKey}
-              disabled={generating}
-              style={styles.regenerateButton}
-            >
+            <button onClick={handleGenerateApiKey} disabled={generating} style={styles.secondaryButton}>
               {generating ? 'Generating...' : 'Generate New Key'}
             </button>
           </div>
         ) : (
-          <div style={styles.apiKeyGenerate}>
-            <button
-              onClick={handleGenerateApiKey}
-              disabled={generating}
-              style={styles.generateButton}
-            >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <button onClick={handleGenerateApiKey} disabled={generating} style={styles.primaryButton}>
               {generating ? 'Generating...' : 'Generate API Key'}
             </button>
-            {error && (
-              <div style={styles.errorMessage}>
-                <AlertCircle size={16} />
-                {error}
-              </div>
-            )}
           </div>
         )}
       </div>
 
-      <h3 style={styles.title}>Cache Settings</h3>
-      <p style={styles.description}>
-        Adjust cache behavior settings. Note: Some settings may require backend support.
-      </p>
-
-      <div style={styles.setting}>
-        <div style={styles.settingHeader}>
-          <label style={styles.label}>Similarity Threshold</label>
-          <span style={styles.value}>{threshold.toFixed(2)}</span>
+      {/* Cache Settings */}
+      <div style={styles.settingsSection}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <h3 style={styles.sectionTitle}>Cache Settings</h3>
+          <button
+            onClick={loadSettings}
+            style={styles.iconButton}
+            title="Refresh settings from server"
+          >
+            <RefreshCw size={16} />
+          </button>
         </div>
-        <input
-          type="range"
-          min="0.5"
-          max="1"
-          step="0.01"
-          value={threshold}
-          onChange={(e) => setThreshold(parseFloat(e.target.value))}
-          style={styles.slider}
-        />
-        <p style={styles.hint}>
-          Minimum similarity score required for semantic cache hits. Higher values require closer
-          matches.
+        <p style={styles.description}>
+          Adjust similarity threshold and TTL for your semantic cache. Changes apply immediately after saving.
         </p>
+
+        {loadingSettings ? (
+          <div style={{ textAlign: 'center', padding: '24px', color: 'rgba(255,255,255,0.5)' }}>
+            <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+            <p>Loading settings...</p>
+          </div>
+        ) : (
+          <>
+            {/* Similarity Threshold */}
+            <div style={styles.setting}>
+              <div style={styles.settingHeader}>
+                <label style={styles.label}>Similarity Threshold</label>
+                <span style={styles.valueDisplay}>{threshold.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.50"
+                max="0.99"
+                step="0.01"
+                value={threshold}
+                onChange={(e) => setThreshold(parseFloat(e.target.value))}
+                style={styles.slider}
+              />
+              <div style={styles.sliderLabels}>
+                <span>0.50 (lenient)</span>
+                <span>0.99 (strict)</span>
+              </div>
+              <p style={styles.hint}>
+                Minimum cosine similarity for a semantic cache hit. Lower = more matches but less precise. Higher = fewer matches but higher quality.
+              </p>
+            </div>
+
+            {/* TTL */}
+            <div style={styles.setting}>
+              <div style={styles.settingHeader}>
+                <label style={styles.label}>Default TTL (days)</label>
+                <span style={styles.valueDisplay}>{ttl}</span>
+              </div>
+              <input
+                type="number"
+                min="1"
+                max="90"
+                value={ttl}
+                onChange={(e) => setTtl(parseInt(e.target.value) || 1)}
+                style={styles.numberInput}
+              />
+              <p style={styles.hint}>How long cache entries are retained before expiring.</p>
+            </div>
+
+            {/* Save button */}
+            <button
+              onClick={handleSave}
+              disabled={saving || !dirty || !hasApiKey()}
+              style={{
+                ...styles.saveButton,
+                opacity: (saving || !dirty || !hasApiKey()) ? 0.5 : 1,
+                cursor: (saving || !dirty || !hasApiKey()) ? 'default' : 'pointer',
+              }}
+            >
+              {saving ? (
+                <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
+              ) : saveSuccess ? (
+                <><Check size={16} /> Saved!</>
+              ) : (
+                <><Save size={16} /> Save Settings</>
+              )}
+            </button>
+
+            {saveSuccess && (
+              <div style={styles.successMessage}>
+                <Check size={16} /> Settings saved successfully.
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      <div style={styles.setting}>
-        <div style={styles.settingHeader}>
-          <label style={styles.label}>Default TTL (days)</label>
-          <span style={styles.value}>{ttl}</span>
-        </div>
-        <input
-          type="number"
-          min="1"
-          max="90"
-          value={ttl}
-          onChange={(e) => setTtl(parseInt(e.target.value))}
-          style={styles.input}
-        />
-        <p style={styles.hint}>How long cache entries should be retained before expiring.</p>
-      </div>
-
+      {/* Summary */}
       <div style={styles.infoBox}>
         <h4 style={styles.infoTitle}>Current Settings Summary</h4>
         <ul style={styles.list}>
-          <li>Threshold: {threshold.toFixed(2)} - Controls semantic matching strictness</li>
-          <li>TTL: {ttl} days - Cache entry lifetime</li>
-          <li>Strategy: Hybrid (exact + semantic)</li>
+          <li>Threshold: <strong>{serverThreshold.toFixed(2)}</strong> — controls semantic matching strictness</li>
+          <li>TTL: <strong>{serverTtl}</strong> days — cache entry lifetime</li>
+          <li>Cache entries: <strong>{entries}</strong></li>
+          <li>Strategy: Exact match + FAISS cosine similarity</li>
         </ul>
       </div>
+
+      {error && (
+        <div style={styles.errorMessage}>
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -164,111 +257,34 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
     backdropFilter: 'blur(10px)',
     maxWidth: '600px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px',
   },
-  title: {
+  sectionTitle: {
     fontSize: '20px',
     color: '#fff',
-    marginBottom: '8px',
+    margin: 0,
     fontWeight: '600',
   },
   description: {
     fontSize: '14px',
     color: 'rgba(255, 255, 255, 0.6)',
-    marginBottom: '24px',
+    marginBottom: '16px',
     lineHeight: '1.5',
-  },
-  setting: {
-    marginBottom: '28px',
-  },
-  settingHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  },
-  label: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
-  },
-  value: {
-    fontSize: '15px',
-    color: '#60a5fa',
-    fontWeight: '600',
-  },
-  slider: {
-    width: '100%',
-    cursor: 'pointer',
-    marginBottom: '8px',
-  },
-  input: {
-    width: '100%',
-    padding: '12px',
-    fontSize: '14px',
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
-    color: '#fff',
-    marginBottom: '8px',
-  },
-  hint: {
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.5)',
-    lineHeight: '1.4',
-  },
-  infoBox: {
-    marginTop: '28px',
-    padding: '16px',
-    background: 'rgba(59, 130, 246, 0.1)',
-    border: '1px solid rgba(59, 130, 246, 0.2)',
-    borderRadius: '8px',
-  },
-  infoTitle: {
-    fontSize: '15px',
-    color: '#60a5fa',
-    marginBottom: '12px',
-    fontWeight: '600',
-  },
-  list: {
-    margin: 0,
-    paddingLeft: '20px',
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.8)',
-    lineHeight: '1.8',
+    marginTop: '4px',
   },
   apiKeyContainer: {
     background: 'rgba(59, 130, 246, 0.1)',
     border: '1px solid rgba(59, 130, 246, 0.3)',
     borderRadius: '12px',
     padding: '24px',
-    marginBottom: '32px',
-    backdropFilter: 'blur(10px)',
   },
   apiKeyHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    marginBottom: '12px',
-  },
-  apiKeyIcon: {
-    color: '#60a5fa',
-  },
-  apiKeyTitle: {
-    fontSize: '20px',
-    color: '#fff',
-    margin: 0,
-    fontWeight: '600',
-  },
-  apiKeyDescription: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: '20px',
-    lineHeight: '1.5',
-  },
-  apiKeyDisplay: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
+    marginBottom: '8px',
   },
   apiKeyValue: {
     display: 'flex',
@@ -284,21 +300,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     fontFamily: 'monospace',
     color: '#60a5fa',
-    wordBreak: 'break-all',
+    wordBreak: 'break-all' as const,
   },
-  copyButton: {
-    padding: '8px',
-    background: 'rgba(255, 255, 255, 0.1)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '6px',
-    color: '#fff',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'background 0.2s',
-  },
-  apiKeyWarning: {
+  warning: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
@@ -306,35 +310,111 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'rgba(255, 255, 255, 0.6)',
     margin: 0,
   },
-  warningIcon: {
-    color: '#f59e0b',
+  settingsSection: {
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '12px',
+    padding: '24px',
   },
-  regenerateButton: {
-    padding: '10px 20px',
+  setting: {
+    marginBottom: '24px',
+  },
+  settingHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+  },
+  label: {
+    fontSize: '15px',
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+  },
+  valueDisplay: {
+    fontSize: '16px',
+    color: '#60a5fa',
+    fontWeight: '700',
+    fontFamily: 'monospace',
+    background: 'rgba(96, 165, 250, 0.1)',
+    padding: '4px 10px',
+    borderRadius: '6px',
+  },
+  slider: {
+    width: '100%',
+    cursor: 'pointer',
+    marginBottom: '4px',
+    accentColor: '#3b82f6',
+  },
+  sliderLabels: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '11px',
+    color: 'rgba(255, 255, 255, 0.35)',
+    marginBottom: '8px',
+  },
+  numberInput: {
+    width: '100%',
+    padding: '12px',
     fontSize: '14px',
-    fontWeight: '600',
-    background: 'rgba(255, 255, 255, 0.1)',
+    background: 'rgba(0, 0, 0, 0.3)',
     border: '1px solid rgba(255, 255, 255, 0.2)',
     borderRadius: '8px',
     color: '#fff',
-    cursor: 'pointer',
-    transition: 'background 0.2s',
+    marginBottom: '8px',
   },
-  apiKeyGenerate: {
+  hint: {
+    fontSize: '13px',
+    color: 'rgba(255, 255, 255, 0.45)',
+    lineHeight: '1.4',
+    margin: 0,
+  },
+  saveButton: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  generateButton: {
-    padding: '12px 24px',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    width: '100%',
+    padding: '14px 24px',
     fontSize: '15px',
     fontWeight: '600',
     background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: '#fff',
-    cursor: 'pointer',
-    transition: 'opacity 0.2s',
+    transition: 'all 0.2s',
+    marginTop: '4px',
+  },
+  successMessage: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px',
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid rgba(34, 197, 94, 0.3)',
+    borderRadius: '8px',
+    color: '#86efac',
+    fontSize: '14px',
+    marginTop: '8px',
+  },
+  infoBox: {
+    padding: '16px',
+    background: 'rgba(59, 130, 246, 0.08)',
+    border: '1px solid rgba(59, 130, 246, 0.2)',
+    borderRadius: '8px',
+  },
+  infoTitle: {
+    fontSize: '15px',
+    color: '#60a5fa',
+    marginBottom: '12px',
+    fontWeight: '600',
+    marginTop: 0,
+  },
+  list: {
+    margin: 0,
+    paddingLeft: '20px',
+    fontSize: '14px',
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: '2',
   },
   errorMessage: {
     display: 'flex',
@@ -346,5 +426,39 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '8px',
     color: '#fca5a5',
     fontSize: '14px',
+  },
+  iconButton: {
+    padding: '8px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '6px',
+    color: '#fff',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background 0.2s',
+  },
+  primaryButton: {
+    padding: '12px 24px',
+    fontSize: '15px',
+    fontWeight: '600',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    transition: 'opacity 0.2s',
+  },
+  secondaryButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
   },
 };

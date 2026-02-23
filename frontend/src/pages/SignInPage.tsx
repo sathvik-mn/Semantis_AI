@@ -126,6 +126,9 @@ export function SignInPage() {
           </button>
 
           <div style={styles.footer}>
+            <Link to="/forgot-password" style={{ ...styles.link, display: 'block', marginBottom: '12px' }}>
+              Forgot your password?
+            </Link>
             Don't have an account?{' '}
             <Link to="/signup" style={styles.link}>
               Sign up

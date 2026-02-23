@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useSemanticCache } from '../hooks/useSemanticCache';
 import { ChatResponse } from '../api/semanticAPI';
-import { setApiKey, hasApiKey, getUserOpenAIKeyStatus } from '../api/semanticAPI';
-import { Key, ExternalLink, AlertCircle } from 'lucide-react';
+import { setApiKey, hasApiKey } from '../api/semanticAPI';
+import { Key, ExternalLink } from 'lucide-react';
 
 interface QueryPlaygroundProps {
   onQueryComplete?: () => void;
@@ -16,48 +16,46 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey());
-  const [openaiKeySet, setOpenaiKeySet] = useState<boolean | null>(null);
   const { sendQuery, isLoading, error } = useSemanticCache();
 
   useEffect(() => {
-    // Check if API key exists in localStorage
     const storedKey = localStorage.getItem('semantic_api_key');
     if (storedKey) {
       setShowApiKeyInput(false);
     }
+  }, []);
 
-    // Check OpenAI key status
-    const checkOpenAIKey = async () => {
-      try {
-        const status = await getUserOpenAIKeyStatus();
-        setOpenaiKeySet(status.key_set);
-      } catch (err) {
-        console.error('Failed to check OpenAI key status:', err);
-        setOpenaiKeySet(false);
+  useEffect(() => {
+    const checkKey = () => {
+      if (hasApiKey() && showApiKeyInput) {
+        setShowApiKeyInput(false);
       }
     };
-    checkOpenAIKey();
-  }, []);
+    window.addEventListener('storage', checkKey);
+    const interval = setInterval(checkKey, 2000);
+    return () => {
+      window.removeEventListener('storage', checkKey);
+      clearInterval(interval);
+    };
+  }, [showApiKeyInput]);
 
   const handleApiKeySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (apiKeyInput.trim()) {
-      setApiKey(apiKeyInput.trim());
-      setShowApiKeyInput(false);
-      setApiKeyInput('');
+    const key = apiKeyInput.trim();
+    if (!key) return;
+    if (!key.startsWith('sc-')) {
+      alert('Invalid Semantis API key format. The key must start with "sc-". You can generate one from the API Keys menu (click your avatar → API Keys → New Key).');
+      return;
     }
+    setApiKey(key);
+    setShowApiKeyInput(false);
+    setApiKeyInput('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!prompt.trim()) return;
-
-    // Check OpenAI key before submitting
-    if (openaiKeySet === false) {
-      alert('Please add your OpenAI API key in Account Settings first.');
-      return;
-    }
 
     try {
       const result = await sendQuery({
@@ -70,10 +68,6 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       if (onQueryComplete) onQueryComplete();
     } catch (err: any) {
       console.error('Query failed:', err);
-      // Show user-friendly error message
-      if (err.message && err.message.includes('OpenAI API key')) {
-        alert(err.message);
-      }
     }
   };
 
@@ -128,7 +122,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
           </div>
         </div>
 
-        <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey() || openaiKeySet === false} style={styles.button}>
+        <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey()} style={styles.button}>
           {isLoading ? 'Processing...' : 'Run Query'}
         </button>
 
@@ -149,7 +143,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
               type="text"
               value={apiKeyInput}
               onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="Paste your API key here (e.g., sc-tenant-xxxxx)"
+              placeholder="Paste your Semantis API key here (starts with sc-...)"
               style={styles.apiKeyInput}
             />
             <button type="submit" disabled={!apiKeyInput.trim()} style={styles.apiKeyButton}>

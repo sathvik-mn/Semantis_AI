@@ -1,4 +1,8 @@
+import { supabase } from '../lib/supabase';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+// ---------- Types ----------
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -53,68 +57,40 @@ export interface Event {
   latency_ms: number;
 }
 
+export interface GenerateApiKeyResponse {
+  api_key: string;
+  tenant_id: string;
+  plan: string;
+  created_at: string;
+  format: string;
+  message: string;
+}
+
+export interface GenerateApiKeyParams {
+  tenant?: string;
+  length?: number;
+  plan?: string;
+}
+
+export interface CurrentApiKeyResponse {
+  api_key?: string;
+  tenant_id?: string;
+  plan?: string;
+  created_at?: string;
+  exists: boolean;
+  message?: string;
+}
+
+export interface OpenAIKeyStatus {
+  key_set: boolean;
+  key_preview?: string;
+  message?: string;
+}
+
+// ---------- API Key helpers ----------
+
 export function getApiKey(): string | null {
   return localStorage.getItem('semantic_api_key');
-}
-
-function getHeaders(): HeadersInit {
-  const apiKey = getApiKey();
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
-
-  return headers;
-}
-
-export async function checkHealth(): Promise<{ status: string }> {
-  const response = await fetch(`${BACKEND_URL}/health`);
-  if (!response.ok) {
-    throw new Error('Backend health check failed');
-  }
-  return response.json();
-}
-
-export async function sendChatCompletion(request: ChatRequest): Promise<ChatResponse> {
-  const response = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || `HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
-}
-
-export async function getMetrics(): Promise<Metrics> {
-  const response = await fetch(`${BACKEND_URL}/metrics`, {
-    headers: getHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch metrics: ${response.status}`);
-  }
-
-  return response.json();
-}
-
-export async function getEvents(limit: number = 100): Promise<Event[]> {
-  const response = await fetch(`${BACKEND_URL}/events?limit=${limit}`, {
-    headers: getHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch events: ${response.status}`);
-  }
-
-  return response.json();
 }
 
 export function setApiKey(key: string): void {
@@ -129,152 +105,141 @@ export function hasApiKey(): boolean {
   return !!getApiKey();
 }
 
-export interface GenerateApiKeyResponse {
-  api_key: string;
-  tenant_id: string;
-  plan: string;
-  created_at: string;
-  format: string;
-  message: string;
+// ---------- Auth header helpers ----------
+
+async function getSupabaseToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('Authentication required. Please log in first.');
+  }
+  return session.access_token;
 }
 
-export interface GenerateApiKeyParams {
-  tenant?: string;
-  length?: number;
-  email?: string;
-  name?: string;
-  plan?: string;
+function getCacheHeaders(): HeadersInit {
+  const apiKey = getApiKey();
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  return headers;
 }
 
-export interface CurrentApiKeyResponse {
-  api_key?: string;
-  tenant_id?: string;
-  plan?: string;
-  created_at?: string;
-  exists: boolean;
-  message?: string;
+// ---------- Public API ----------
+
+export async function checkHealth(): Promise<{ status: string }> {
+  const res = await fetch(`${BACKEND_URL}/health`);
+  if (!res.ok) throw new Error('Backend health check failed');
+  return res.json();
 }
+
+export async function sendChatCompletion(request: ChatRequest): Promise<ChatResponse> {
+  const res = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: getCacheHeaders(),
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+    throw new Error(err.detail || `HTTP error! status: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getMetrics(): Promise<Metrics> {
+  const res = await fetch(`${BACKEND_URL}/metrics`, { headers: getCacheHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch metrics: ${res.status}`);
+  return res.json();
+}
+
+export async function getEvents(limit: number = 100): Promise<Event[]> {
+  const res = await fetch(`${BACKEND_URL}/events?limit=${limit}`, { headers: getCacheHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch events: ${res.status}`);
+  return res.json();
+}
+
+// ---------- Settings endpoints ----------
+
+export async function getSettings(): Promise<{ sim_threshold: number; ttl_days: number; entries: number }> {
+  const res = await fetch(`${BACKEND_URL}/settings`, { headers: getCacheHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
+  return res.json();
+}
+
+export async function updateSettings(settings: { sim_threshold?: number; ttl_days?: number }): Promise<{ status: string; settings: Record<string, number> }> {
+  const res = await fetch(`${BACKEND_URL}/settings`, {
+    method: 'PUT',
+    headers: getCacheHeaders(),
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error(`Failed to update settings: ${res.status}`);
+  return res.json();
+}
+
+// ---------- Authenticated endpoints (use Supabase token) ----------
 
 export async function getCurrentApiKey(): Promise<CurrentApiKeyResponse> {
-  // Get auth token from localStorage
-  const authToken = localStorage.getItem('auth_token');
-  if (!authToken) {
-    throw new Error('Authentication required. Please log in first.');
-  }
-
-  const response = await fetch(`${BACKEND_URL}/api/keys/current`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
-    },
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/keys/current`, {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to get API key' }));
-    throw new Error(error.detail || 'Failed to get API key');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to get API key' }));
+    throw new Error(err.detail || 'Failed to get API key');
   }
-
-  return response.json();
-}
-
-export interface OpenAIKeyStatus {
-  key_set: boolean;
-  key_preview?: string;
-  message?: string;
-}
-
-export async function getUserOpenAIKeyStatus(): Promise<OpenAIKeyStatus> {
-  const authToken = localStorage.getItem('auth_token');
-  if (!authToken) {
-    throw new Error('Authentication required. Please log in first.');
-  }
-
-  const response = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to get OpenAI key status' }));
-    throw new Error(error.detail || 'Failed to get OpenAI key status');
-  }
-
-  return response.json();
-}
-
-export async function setUserOpenAIKey(apiKey: string): Promise<{ message: string; key_set: boolean }> {
-  const authToken = localStorage.getItem('auth_token');
-  if (!authToken) {
-    throw new Error('Authentication required. Please log in first.');
-  }
-
-  const response = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
-    },
-    body: JSON.stringify({ api_key: apiKey }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to set OpenAI key' }));
-    throw new Error(error.detail || 'Failed to set OpenAI key');
-  }
-
-  return response.json();
-}
-
-export async function removeUserOpenAIKey(): Promise<{ message: string; key_set: boolean }> {
-  const authToken = localStorage.getItem('auth_token');
-  if (!authToken) {
-    throw new Error('Authentication required. Please log in first.');
-  }
-
-  const response = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to remove OpenAI key' }));
-    throw new Error(error.detail || 'Failed to remove OpenAI key');
-  }
-
-  return response.json();
+  return res.json();
 }
 
 export async function generateApiKey(params: GenerateApiKeyParams = {}): Promise<GenerateApiKeyResponse> {
-  const queryParams = new URLSearchParams();
-  if (params.tenant) queryParams.append('tenant', params.tenant);
-  if (params.length) queryParams.append('length', params.length.toString());
-  if (params.plan) queryParams.append('plan', params.plan);
+  const token = await getSupabaseToken();
+  const qp = new URLSearchParams();
+  if (params.tenant) qp.append('tenant', params.tenant);
+  if (params.length) qp.append('length', params.length.toString());
+  if (params.plan) qp.append('plan', params.plan);
 
-  // Get auth token from localStorage
-  const authToken = localStorage.getItem('auth_token');
-  if (!authToken) {
-    throw new Error('Authentication required. Please log in first.');
-  }
-
-  const response = await fetch(`${BACKEND_URL}/api/keys/generate?${queryParams.toString()}`, {
+  const res = await fetch(`${BACKEND_URL}/api/keys/generate?${qp.toString()}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to generate API key' }));
-    throw new Error(error.detail || 'Failed to generate API key');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to generate API key' }));
+    throw new Error(err.detail || 'Failed to generate API key');
   }
+  return res.json();
+}
 
-  return response.json();
+export async function getUserOpenAIKeyStatus(): Promise<OpenAIKeyStatus> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to get OpenAI key status' }));
+    throw new Error(err.detail || 'Failed to get OpenAI key status');
+  }
+  return res.json();
+}
+
+export async function setUserOpenAIKey(apiKey: string): Promise<{ message: string; key_set: boolean }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to set OpenAI key' }));
+    throw new Error(err.detail || 'Failed to set OpenAI key');
+  }
+  return res.json();
+}
+
+export async function removeUserOpenAIKey(): Promise<{ message: string; key_set: boolean }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/users/openai-key`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to remove OpenAI key' }));
+    throw new Error(err.detail || 'Failed to remove OpenAI key');
+  }
+  return res.json();
 }

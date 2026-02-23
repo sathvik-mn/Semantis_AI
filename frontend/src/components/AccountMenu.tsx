@@ -439,7 +439,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               <div style={{ ...styles.inputGroup, marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
                 <label style={styles.label}>
                   <Key size={14} style={{ marginRight: '6px' }} />
-                  OpenAI API Key
+                  OpenAI API Key (Optional — for BYOK privacy)
                 </label>
                 {loadingOpenAIStatus ? (
                   <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '14px', padding: '8px 0' }}>Loading...</div>
@@ -504,7 +504,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                       <svg style={{ width: '14px', height: '14px', flexShrink: 0, marginTop: '2px' }} fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                       </svg>
-                      <span style={{ fontSize: '12px' }}>Add your OpenAI API key for complete privacy. Your queries will only use your own OpenAI account.</span>
+                      <span style={{ fontSize: '12px' }}>Optional: Add your own OpenAI API key (starts with "sk-") for complete privacy. Without it, the server's shared key is used. This is NOT your Semantis API key — manage Semantis keys from the "API Keys" menu.</span>
                     </div>
                   </div>
                 )}
