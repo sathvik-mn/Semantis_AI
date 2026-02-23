@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+gunicorn
 openai
 faiss-cpu
 numpy
@@ -10,4 +11,6 @@ python-jose[cryptography]==3.3.0
 cryptography
 psycopg2-binary
 slowapi
+redis>=5.0.0
+stripe
 

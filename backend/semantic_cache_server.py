@@ -1,16 +1,17 @@
 """
-Semantis AI - Semantic Cache API (Plug & Play)
+Semantis AI - Semantic Cache API (Enterprise Edition)
 
 Repo: Semantis_AI
 Folder: backend/
 
 FastAPI service providing:
- - Multi-tenant API-key auth (Bearer sc-{tenant}-{any})
- - Exact + semantic cache (FAISS cosine)
+ - Multi-tenant, org-level auth (Bearer sc-{org_slug}-{any})
+ - Exact + semantic cache (FAISS cosine) with Redis L2 + PostgreSQL L3
  - Adaptive per-tenant threshold
  - Rotating logs (access/errors/semantic_ops)
  - OpenAI integration
  - OpenAI-like POST /v1/chat/completions + simple GET /query
+ - Audit logging, API key scoping, per-org rate limits
 """
 
 import os, time, re, logging, hashlib
@@ -35,8 +36,9 @@ from dotenv import load_dotenv
 # -----------------------------
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-REPLACE_ME")
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-REPLACE_ME":
-    print("⚠️  OPENAI_API_KEY is not set. Set it in backend/.env or OS env.")
+    print("WARNING: OPENAI_API_KEY is not set. Set it in backend/.env or OS env.")
 
 # openai python (responses-compatible style kept for portability)
 import openai
@@ -261,16 +263,13 @@ class TenantState:
 class SemanticCacheService:
     def __init__(self):
         self.tenants: Dict[str, TenantState] = {}
-        # Embedding cache with LRU eviction
         self._embedding_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self._embedding_cache_max_size = 1000
-        # Thread lock for async cache operations
         self._cache_lock = threading.Lock()
-        # Load cache from disk if available
         self._load_cache()
     
     def _load_cache(self):
-        """Load cache from disk on startup."""
+        """Load cache from pickle (local fallback), then warm from Redis if available."""
         try:
             from cache_persistence import load_cache
             start_time = time.time()
@@ -280,14 +279,23 @@ class SemanticCacheService:
                 total_entries = sum(len(t.rows) for t in loaded_tenants.values())
                 self.tenants.update(loaded_tenants)
                 system_log.info(
-                    f"Cache loaded | tenants={len(loaded_tenants)} | "
+                    f"Cache loaded from disk | tenants={len(loaded_tenants)} | "
                     f"entries={total_entries} | time={load_time}ms"
                 )
             else:
-                system_log.info(f"Cache load | no cache found | time={load_time}ms")
+                system_log.info(f"Cache load | no local cache found | time={load_time}ms")
         except Exception as e:
             error_log.exception(f"Cache load failed | error={str(e)}")
-            system_log.error(f"Could not load cache from disk: {e}")
+        
+        # Check Redis availability
+        try:
+            from redis_cache import is_available
+            if is_available():
+                system_log.info("Redis L2 cache connected")
+            else:
+                system_log.info("Redis not available, using in-memory only")
+        except Exception:
+            pass
     
     def _save_cache(self):
         """Save cache to disk periodically."""
@@ -511,6 +519,13 @@ class SemanticCacheService:
                     self._faiss_add(T, emb)
                     if len(T.rows) % 10 == 0:
                         threading.Thread(target=self._save_cache, daemon=True).start()
+                # Write-through to Redis L2 and PostgreSQL L3
+                try:
+                    from redis_cache import store_exact_match, store_embedding
+                    store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
+                    store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
+                except Exception:
+                    pass
             except Exception as e:
                 error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
         threading.Thread(target=_store, daemon=True).start()
@@ -644,7 +659,7 @@ async def log_requests(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten for production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -717,7 +732,6 @@ def get_tenant_from_key(request: Request) -> str:
         error_log.error(f"Unauthorized access | ip={client_ip} | Header length: {len(auth)}")
         raise HTTPException(status_code=401, detail="Missing or invalid API key")
     token = m.group(1)
-    # sc-devA-foo -> tenant = 'devA'
     parts = token.split("-")
     if len(parts) < 3:
         security_log.warning(
@@ -727,16 +741,24 @@ def get_tenant_from_key(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Malformed API key")
     tenant = parts[1]
     
-    # Store API key in request-scoped context
-    ctx = {"key": token, "user_id": None}
+    ctx = {"key": token, "user_id": None, "org_id": None, "scope": "read-write"}
     _current_api_key_var.set(ctx)
     
     # Fast in-memory API key cache (avoids DB round-trip on every request)
     cached = _api_key_cache.get(token)
-    if cached and (time.time() - cached["ts"]) < 300:  # 5-min TTL
+    if cached and (time.time() - cached["ts"]) < 300:
         ctx["user_id"] = cached.get("user_id")
+        ctx["org_id"] = cached.get("org_id")
+        ctx["scope"] = cached.get("scope", "read-write")
         _current_api_key_var.set(ctx)
-        # Update usage async (non-blocking)
+        # Check expiration
+        if cached.get("expires_at") and time.time() > cached["expires_at"]:
+            raise HTTPException(status_code=401, detail="API key expired")
+        # Check IP allowlist
+        allowed = cached.get("allowed_ips")
+        if allowed and client_ip not in allowed:
+            security_log.warning(f"IP denied | tenant={tenant} | ip={client_ip}")
+            raise HTTPException(status_code=403, detail="IP not allowed for this key")
         def _bg_usage():
             try:
                 from database import update_api_key_usage
@@ -746,28 +768,61 @@ def get_tenant_from_key(request: Request) -> str:
         threading.Thread(target=_bg_usage, daemon=True).start()
         return tenant
 
-    # Cache miss — hit the database
     try:
         from database import get_api_key_info, update_api_key_usage
         key_info = get_api_key_info(token)
         if key_info:
+            # Check expiration
+            exp = key_info.get("expires_at")
+            if exp and str(exp) < time.strftime("%Y-%m-%d %H:%M:%S"):
+                raise HTTPException(status_code=401, detail="API key expired")
+            # Check IP allowlist
+            allowed = key_info.get("allowed_ips")
+            if allowed and client_ip not in allowed:
+                security_log.warning(f"IP denied | tenant={tenant} | ip={client_ip}")
+                raise HTTPException(status_code=403, detail="IP not allowed for this key")
+            
             update_api_key_usage(token, tenant)
             ctx["user_id"] = key_info.get('user_id')
+            ctx["org_id"] = str(key_info.get('org_id', '')) or None
+            ctx["scope"] = key_info.get('scope', 'read-write')
             _current_api_key_var.set(ctx)
-            _api_key_cache[token] = {"user_id": ctx["user_id"], "ts": time.time()}
+            _api_key_cache[token] = {
+                "user_id": ctx["user_id"],
+                "org_id": ctx["org_id"],
+                "scope": ctx["scope"],
+                "allowed_ips": allowed,
+                "expires_at": None,
+                "ts": time.time(),
+            }
             security_log.debug(
                 f"Auth success | tenant={tenant} | ip={client_ip} | "
-                f"plan={key_info.get('plan', 'unknown')} | user_id={ctx['user_id']}"
+                f"plan={key_info.get('plan', 'unknown')} | scope={ctx['scope']} | "
+                f"org_id={ctx['org_id']}"
             )
         else:
             security_log.warning(
                 f"API key not found | tenant={tenant} | ip={client_ip} | "
                 f"key_prefix={token[:20]}"
             )
+    except HTTPException:
+        raise
     except Exception as e:
         error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
     
     return tenant
+
+
+def _require_scope(request: Request, required: str):
+    """Check that the current API key has the required scope."""
+    ctx = _current_api_key_var.get()
+    scope = ctx.get("scope", "read-write")
+    scope_levels = {"read-only": 0, "read-write": 1, "admin": 2}
+    if scope_levels.get(scope, 0) < scope_levels.get(required, 0):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Insufficient permissions. Required: {required}, got: {scope}"
+        )
 
 # -----------------------------
 # Request/Response models (OpenAI-like)
@@ -793,26 +848,31 @@ def health():
     try:
         try:
             import psutil
-            # Get system metrics
             memory = psutil.virtual_memory()
             cpu_percent = psutil.cpu_percent(interval=0)
             has_system_metrics = True
         except ImportError:
-            # psutil not available, skip system metrics
             has_system_metrics = False
         
-        # Cache statistics
         total_tenants = len(svc.tenants)
         total_entries = sum(len(t.rows) for t in svc.tenants.values())
+        
+        # Redis health
+        try:
+            from redis_cache import health_check as redis_health
+            redis_status = redis_health()
+        except Exception:
+            redis_status = {"status": "unavailable"}
         
         health_status = {
             "status": "ok",
             "service": "semantic-cache",
-            "version": "0.1.0",
+            "version": "2.0.0",
             "cache": {
                 "tenants": total_tenants,
                 "total_entries": total_entries,
-            }
+            },
+            "redis": redis_status,
         }
         
         if has_system_metrics:
@@ -821,20 +881,11 @@ def health():
                 "memory_available_gb": round(memory.available / (1024**3), 2),
                 "cpu_percent": round(cpu_percent, 2),
             }
-            system_log.debug(
-                f"Health check | memory={memory.percent:.1f}% | "
-                f"cpu={cpu_percent:.1f}% | tenants={total_tenants} | entries={total_entries}"
-            )
-        else:
-            system_log.debug(
-                f"Health check | psutil not available | "
-                f"tenants={total_tenants} | entries={total_entries}"
-            )
         
         return health_status
     except Exception as e:
         error_log.exception(f"Health check failed | error={str(e)}")
-        return {"status": "error", "service": "semantic-cache", "version": "0.1.0"}
+        return {"status": "error", "service": "semantic-cache", "version": "2.0.0"}
 
 @app.get("/metrics")
 def get_metrics(tenant: str = Depends(get_tenant_from_key)):
@@ -1041,14 +1092,16 @@ def generate_api_key_endpoint(
     request: Request,
     tenant: Optional[str] = Query(None),
     length: int = Query(32, ge=16, le=64),
-    plan: str = Query("free")
+    plan: str = Query("free"),
+    label: Optional[str] = Query(None),
+    scope: str = Query("read-write"),
 ):
     """Generate a new API key for the authenticated user (requires Supabase JWT)."""
     try:
         user = _get_user_from_supabase_token(request)
         user_id = user["id"]
         from api_key_generator import generate_api_key
-        from database import create_api_key, list_api_keys, get_api_key_info
+        from database import create_api_key, list_api_keys, get_api_key_info, get_user_orgs
 
         existing_keys = list_api_keys(user_id=user_id)
         if existing_keys and tenant is None:
@@ -1062,11 +1115,26 @@ def generate_api_key_endpoint(
                 "message": "Using existing API key."
             }
 
+        # Resolve org for user
+        org_id = None
+        try:
+            orgs = get_user_orgs(user_id)
+            if orgs:
+                org = orgs[0]
+                org_id = str(org["id"])
+                if tenant is None:
+                    tenant = org["slug"]
+        except Exception:
+            pass
+
         if tenant is None:
             tenant = f"usr_{user_id[:8]}"
 
         api_key, tenant_id = generate_api_key(tenant=tenant, length=length, auto_tenant=False)
-        result = create_api_key(api_key, tenant_id, user_id=user_id, plan=plan)
+        result = create_api_key(
+            api_key, tenant_id, user_id=user_id, plan=plan,
+            org_id=org_id, scope=scope, label=label,
+        )
         if not result:
             raise HTTPException(status_code=500, detail="Failed to save API key to database")
 
@@ -1074,12 +1142,26 @@ def generate_api_key_endpoint(
         if not saved_key:
             raise HTTPException(status_code=500, detail="API key was not saved properly")
 
-        app_log.info(f"API key generated | tenant={tenant_id} | user_id={user_id}")
+        # Audit log
+        try:
+            from database import log_audit
+            log_audit(
+                org_id=org_id, user_id=user_id, action="api_key.created",
+                resource_type="api_key", resource_id=api_key[:20],
+                details={"scope": scope, "label": label},
+                ip_address=request.client.host if request.client else None,
+            )
+        except Exception:
+            pass
+
+        app_log.info(f"API key generated | tenant={tenant_id} | user_id={user_id} | org={org_id}")
 
         return {
             "api_key": api_key,
             "tenant_id": tenant_id,
+            "org_id": org_id,
             "plan": plan,
+            "scope": scope,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "format": f"Bearer {api_key}",
             "message": "API key generated successfully. Save this key securely."
@@ -1101,12 +1183,25 @@ def get_current_user(request: Request):
     """Get current authenticated user info from Supabase JWT."""
     try:
         user = _get_user_from_supabase_token(request)
+        orgs = []
+        try:
+            from database import get_user_orgs
+            orgs = get_user_orgs(user["id"])
+        except Exception:
+            pass
         return {
             "id": user['id'],
             "email": user['email'],
             "name": user['name'],
             "is_admin": user.get('is_admin', False),
-            "created_at": str(user.get('created_at', ''))
+            "created_at": str(user.get('created_at', '')),
+            "orgs": [{
+                "id": str(o["id"]),
+                "name": o["name"],
+                "slug": o["slug"],
+                "plan": o.get("plan", "free"),
+                "role": o.get("role", "member"),
+            } for o in orgs],
         }
     except HTTPException:
         raise
@@ -1183,15 +1278,115 @@ def logout():
     """Logout (client clears Supabase session)."""
     return {"message": "Logged out successfully"}
 
+# ── Organization endpoints ──
+
+class CreateOrgRequest(BaseModel):
+    name: str
+    slug: str
+
+@app.post("/api/orgs")
+def create_org(body: CreateOrgRequest, request: Request):
+    """Create a new organization (requires Supabase JWT)."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import create_organization, log_audit
+        org = create_organization(body.name, body.slug, user["id"])
+        if not org:
+            raise HTTPException(status_code=400, detail="Could not create organization")
+        log_audit(
+            org_id=str(org["id"]), user_id=user["id"], action="org.created",
+            resource_type="organization", resource_id=str(org["id"]),
+            ip_address=request.client.host if request.client else None,
+        )
+        return {"org": {k: str(v) for k, v in org.items()}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Create org failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/orgs")
+def list_user_orgs(request: Request):
+    """List organizations for the current user."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs
+        orgs = get_user_orgs(user["id"])
+        return {"orgs": [{k: str(v) for k, v in o.items()} for o in orgs]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"List orgs failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class InviteMemberRequest(BaseModel):
+    email: str
+    role: str = "member"
+
+@app.post("/api/orgs/{org_id}/members")
+def invite_member(org_id: str, body: InviteMemberRequest, request: Request):
+    """Add a member to an organization."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import add_org_member, get_user_by_email, log_audit
+        target = get_user_by_email(body.email)
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        ok = add_org_member(org_id, str(target["id"]), body.role)
+        if not ok:
+            raise HTTPException(status_code=400, detail="Already a member")
+        log_audit(
+            org_id=org_id, user_id=user["id"], action="member.added",
+            resource_type="org_member", resource_id=str(target["id"]),
+            details={"role": body.role, "email": body.email},
+            ip_address=request.client.host if request.client else None,
+        )
+        return {"message": f"Added {body.email} as {body.role}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Invite member failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/orgs/{org_id}/audit")
+def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, le=500)):
+    """Get audit logs for an organization."""
+    try:
+        _get_user_from_supabase_token(request)
+        from database import get_db_connection
+        from psycopg2.extras import RealDictCursor
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                """SELECT id, org_id, user_id, action, resource_type, resource_id,
+                          details, ip_address, created_at
+                   FROM audit_logs WHERE org_id = %s
+                   ORDER BY created_at DESC LIMIT %s""",
+                (org_id, limit)
+            )
+            logs = [dict(r) for r in cur.fetchall()]
+        return {"audit_logs": [{k: str(v) for k, v in l.items()} for l in logs]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Audit logs failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/v1/chat/completions")
 @limiter.limit("60/minute")
 def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends(get_tenant_from_key)):
+    """OpenAI-compatible endpoint for zero-code integration.
+    
+    Point your OpenAI client at this server:
+        client = openai.OpenAI(base_url="https://api.semantis.ai/v1", api_key="sc-...")
+    """
+    _ctx = _current_api_key_var.get()
+    _require_scope(request, "read-write")
+    
     prompt_norm = SemanticCacheService.norm_text(
         " ".join([m.content for m in body.messages if m.role == "user"]) or ""
     )
     try:
-        # Get user_id from current API key context
-        _ctx = _current_api_key_var.get()
         user_id = _ctx.get("user_id")
         ans, meta = svc.query(
             tenant,
@@ -1202,9 +1397,9 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
             temperature=body.temperature,
             user_id=user_id,
         )
-        # Log usage to database asynchronously (non-blocking)
         _log_key = _ctx.get("key", "unknown")
         _log_uid = _ctx.get("user_id")
+        _log_org = _ctx.get("org_id")
         _log_hit = meta.get('hit')
         def _bg_log():
             try:
@@ -1214,25 +1409,184 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     endpoint="/v1/chat/completions", request_count=1,
                     cache_hits=1 if _log_hit != 'miss' else 0,
                     cache_misses=1 if _log_hit == 'miss' else 0,
-                    tokens_used=0, cost_estimate=0, user_id=_log_uid,
+                    tokens_used=0, cost_estimate=0,
+                    user_id=_log_uid, org_id=_log_org,
                 )
             except Exception:
                 pass
         threading.Thread(target=_bg_log, daemon=True).start()
         
+        # Estimate token counts for compatibility
+        prompt_tokens = sum(len(m.content.split()) * 4 // 3 for m in body.messages)
+        completion_tokens = len(ans.split()) * 4 // 3
+        
         access_log.info(f"{tenant} | /v1/chat/completions | {meta['hit']} | sim={meta['similarity']:.3f} | {meta['latency_ms']}ms")
         return {
-            "id": f"chatcmpl-{int(time.time())}",
+            "id": f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": body.model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": ans}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None},
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": ans},
+                "finish_reason": "stop",
+                "logprobs": None,
+            }],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+            "system_fingerprint": f"semantis-{meta.get('hit', 'miss')}",
             "meta": meta,
         }
     except Exception as e:
         error_log.exception(f"{tenant} | /v1/chat/completions | error: {e}")
         raise HTTPException(status_code=500, detail="Internal error")
+
+
+@app.get("/v1/models")
+def list_models(tenant: str = Depends(get_tenant_from_key)):
+    """OpenAI-compatible models listing for proxy compatibility."""
+    return {
+        "object": "list",
+        "data": [
+            {"id": "gpt-4o-mini", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
+            {"id": "gpt-4o", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
+            {"id": "gpt-4", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
+            {"id": "gpt-3.5-turbo", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
+        ],
+    }
+
+
+# ── Billing endpoints ──
+
+@app.get("/api/billing/plans")
+def get_billing_plans():
+    """Get available billing plans and their limits."""
+    from billing import PLANS, is_enabled
+    return {"plans": PLANS, "stripe_enabled": is_enabled()}
+
+
+@app.get("/api/billing/status")
+def get_billing_status(request: Request):
+    """Get billing status for the current user's org."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs, get_usage_stats
+        from billing import get_plan_limits
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            return {"plan": "free", "limits": get_plan_limits("free")}
+        org = orgs[0]
+        plan = org.get("plan", "free")
+        
+        # Get current usage
+        usage = {}
+        try:
+            usage = get_usage_stats(org["slug"], days=30)
+        except Exception:
+            pass
+        
+        limits = get_plan_limits(plan)
+        return {
+            "org_id": str(org["id"]),
+            "org_name": org["name"],
+            "plan": plan,
+            "limits": limits,
+            "usage_30d": usage,
+            "savings_estimate": {
+                "cached_requests": usage.get("total_hits", 0),
+                "total_requests": usage.get("total_requests", 0),
+                "estimated_savings_usd": round(usage.get("total_hits", 0) * 0.002, 2),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Billing status failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpgradePlanRequest(BaseModel):
+    plan: str
+    success_url: str = "http://localhost:3000/settings?billing=success"
+    cancel_url: str = "http://localhost:3000/settings?billing=cancel"
+
+@app.post("/api/billing/upgrade")
+def upgrade_plan(body: UpgradePlanRequest, request: Request):
+    """Start a plan upgrade via Stripe Checkout."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from billing import is_enabled, create_checkout_session, STRIPE_PRICE_PRO, STRIPE_PRICE_TEAM
+        
+        if not is_enabled():
+            # If Stripe is not configured, just update the plan directly
+            from database import get_user_orgs, update_org_settings
+            orgs = get_user_orgs(user["id"])
+            if orgs:
+                from database import get_db_connection
+                with get_db_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "UPDATE organizations SET plan = %s WHERE id = %s",
+                        (body.plan, orgs[0]["id"])
+                    )
+                return {"message": f"Plan updated to {body.plan}", "redirect_url": None}
+            raise HTTPException(status_code=400, detail="No organization found")
+        
+        price_map = {
+            "pro": STRIPE_PRICE_PRO,
+            "team": STRIPE_PRICE_TEAM,
+        }
+        price_id = price_map.get(body.plan)
+        if not price_id:
+            raise HTTPException(status_code=400, detail=f"Invalid plan: {body.plan}")
+        
+        # For now, return a placeholder since full Stripe integration needs customer creation
+        return {"message": f"Stripe checkout for {body.plan}", "redirect_url": None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Plan upgrade failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events."""
+    try:
+        from billing import handle_webhook
+        payload = await request.body()
+        sig = request.headers.get("stripe-signature", "")
+        event = handle_webhook(payload, sig)
+        if not event:
+            raise HTTPException(status_code=400, detail="Invalid webhook")
+        
+        event_type = event.get("type")
+        app_log.info(f"Stripe webhook | type={event_type}")
+        
+        if event_type == "checkout.session.completed":
+            data = event.get("data", {})
+            org_id = data.get("metadata", {}).get("org_id")
+            if org_id:
+                try:
+                    from database import get_db_connection
+                    with get_db_connection() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "UPDATE organizations SET plan = 'pro' WHERE id = %s",
+                            (org_id,)
+                        )
+                except Exception as e:
+                    error_log.error(f"Webhook plan update failed | org={org_id} | error={e}")
+        
+        return {"received": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Webhook failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # -----------------------------
 # Entry point

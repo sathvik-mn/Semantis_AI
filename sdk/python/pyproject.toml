@@ -1,26 +1,44 @@
-[tool.poetry]
-name = "semantis-ai-semantic-cache-api-client"
-version = "0.1.0"
-description = "A client library for accessing Semantis AI Semantic Cache API"
-authors = []
-readme = "README.md"
-packages = [
-    { include = "semantis_ai_semantic_cache_api_client" },
-]
-include = ["semantis_ai_semantic_cache_api_client/py.typed"]
-
-[tool.poetry.dependencies]
-python = "^3.10"
-httpx = ">=0.23.0,<0.29.0"
-attrs = ">=22.2.0"
-python-dateutil = "^2.8.0"
-
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff]
-line-length = 120
+[project]
+name = "semantis"
+version = "0.1.0"
+description = "Python SDK for Semantis AI - Semantic LLM Cache"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Semantis AI"},
+]
+keywords = ["llm", "cache", "semantic", "openai", "gpt"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "httpx>=0.24.0",
+]
 
-[tool.ruff.lint]
-select = ["F", "I", "UP"]
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+dev = ["pytest", "pytest-asyncio", "respx"]
+
+[project.urls]
+Homepage = "https://semantis.ai"
+Documentation = "https://docs.semantis.ai"
+Repository = "https://github.com/semantis-ai/semantis-python"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["semantis*"]

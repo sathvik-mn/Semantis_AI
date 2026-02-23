@@ -243,3 +243,111 @@ export async function removeUserOpenAIKey(): Promise<{ message: string; key_set:
   }
   return res.json();
 }
+
+// ---------- Organization endpoints ----------
+
+export interface Org {
+  id: string;
+  name: string;
+  slug: string;
+  plan: string;
+  role: string;
+}
+
+export async function getUserOrgs(): Promise<{ orgs: Org[] }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/orgs`, {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch organizations');
+  return res.json();
+}
+
+export async function createOrg(name: string, slug: string): Promise<{ org: Org }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/orgs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, slug }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to create organization' }));
+    throw new Error(err.detail || 'Failed to create organization');
+  }
+  return res.json();
+}
+
+export async function inviteOrgMember(orgId: string, email: string, role: string = 'member'): Promise<{ message: string }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/orgs/${orgId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ email, role }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to invite member' }));
+    throw new Error(err.detail || 'Failed to invite member');
+  }
+  return res.json();
+}
+
+export async function getAuditLogs(orgId: string, limit: number = 50): Promise<{ audit_logs: any[] }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/orgs/${orgId}/audit?limit=${limit}`, {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch audit logs');
+  return res.json();
+}
+
+// ---------- Billing endpoints ----------
+
+export interface BillingPlan {
+  name: string;
+  price_monthly: number | null;
+  max_users: number | null;
+  max_requests_month: number | null;
+  max_cache_entries: number | null;
+}
+
+export interface BillingStatus {
+  org_id: string;
+  org_name: string;
+  plan: string;
+  limits: BillingPlan;
+  usage_30d: Record<string, number>;
+  savings_estimate: {
+    cached_requests: number;
+    total_requests: number;
+    estimated_savings_usd: number;
+  };
+}
+
+export async function getBillingPlans(): Promise<{ plans: Record<string, BillingPlan>; stripe_enabled: boolean }> {
+  const res = await fetch(`${BACKEND_URL}/api/billing/plans`);
+  if (!res.ok) throw new Error('Failed to fetch billing plans');
+  return res.json();
+}
+
+export async function getBillingStatus(): Promise<BillingStatus> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/billing/status`, {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch billing status');
+  return res.json();
+}
+
+export async function upgradePlan(plan: string): Promise<{ message: string; redirect_url: string | null }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/billing/upgrade`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ plan }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to upgrade plan' }));
+    throw new Error(err.detail || 'Failed to upgrade plan');
+  }
+  return res.json();
+}
