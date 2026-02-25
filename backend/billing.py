@@ -123,6 +123,7 @@ def create_checkout_session(
     success_url: str,
     cancel_url: str,
     org_id: str,
+    plan: str = "pro",
 ) -> Optional[str]:
     """Create a Stripe Checkout session. Returns session URL."""
     stripe = _get_stripe()
@@ -136,7 +137,7 @@ def create_checkout_session(
             mode="subscription",
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"org_id": org_id},
+            metadata={"org_id": org_id, "plan": plan},
         )
         return session.url
     except Exception as e:

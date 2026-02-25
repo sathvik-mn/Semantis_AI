@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSemanticCache } from '../hooks/useSemanticCache';
 import { ChatResponse } from '../api/semanticAPI';
 import { setApiKey, hasApiKey } from '../api/semanticAPI';
-import { Key, ExternalLink } from 'lucide-react';
+import { Key, ExternalLink, Copy, Check } from 'lucide-react';
 
 interface QueryPlaygroundProps {
   onQueryComplete?: () => void;
@@ -16,7 +16,16 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey());
+  const [copied, setCopied] = useState(false);
   const { sendQuery, isLoading, error } = useSemanticCache();
+
+  const copyResponse = () => {
+    if (response?.choices?.[0]?.message?.content) {
+      navigator.clipboard.writeText(response.choices[0].message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   useEffect(() => {
     const storedKey = localStorage.getItem('semantic_api_key');
@@ -68,6 +77,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       if (onQueryComplete) onQueryComplete();
     } catch (err: any) {
       console.error('Query failed:', err);
+      setResponse(null);
     }
   };
 
@@ -195,7 +205,17 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
           </div>
 
           <div style={styles.responsePanel}>
-            <h3 style={styles.responseTitle}>Response</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h3 style={styles.responseTitle}>Response</h3>
+              <button
+                onClick={copyResponse}
+                style={styles.copyButton}
+                title="Copy to clipboard"
+              >
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+                {copied ? ' Copied!' : ' Copy'}
+              </button>
+            </div>
             <div style={styles.responseText}>
               {response.choices[0]?.message.content}
             </div>
@@ -337,6 +357,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     padding: '24px',
     backdropFilter: 'blur(10px)',
+  },
+  copyButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    fontSize: '13px',
+    background: 'rgba(59, 130, 246, 0.2)',
+    border: '1px solid rgba(59, 130, 246, 0.4)',
+    borderRadius: '6px',
+    color: '#60a5fa',
+    cursor: 'pointer',
   },
   responseTitle: {
     fontSize: '18px',

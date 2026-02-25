@@ -124,7 +124,16 @@ function getCacheHeaders(): HeadersInit {
 
 // ---------- Public API ----------
 
-export async function checkHealth(): Promise<{ status: string }> {
+export interface HealthStatus {
+  status: string;
+  service?: string;
+  version?: string;
+  cache?: { tenants: number; total_entries: number };
+  redis?: { status: string };
+  system?: { memory_percent: number; memory_available_gb: number; cpu_percent: number };
+}
+
+export async function checkHealth(): Promise<HealthStatus> {
   const res = await fetch(`${BACKEND_URL}/health`);
   if (!res.ok) throw new Error('Backend health check failed');
   return res.json();
@@ -141,6 +150,45 @@ export async function sendChatCompletion(request: ChatRequest): Promise<ChatResp
     throw new Error(err.detail || `HTTP error! status: ${res.status}`);
   }
   return res.json();
+}
+
+/** Stream chat completion. Yields content deltas. */
+export async function* sendChatCompletionStream(
+  request: Omit<ChatRequest, 'stream'> & { stream?: true }
+): AsyncGenerator<string, void, unknown> {
+  const res = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: getCacheHeaders(),
+    body: JSON.stringify({ ...request, stream: true }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+    throw new Error(err.detail || `HTTP error! status: ${res.status}`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('No response body');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed?.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {
+          /* skip invalid */
+        }
+      }
+    }
+  }
 }
 
 export async function getMetrics(): Promise<Metrics> {
@@ -338,12 +386,48 @@ export async function getBillingStatus(): Promise<BillingStatus> {
   return res.json();
 }
 
-export async function upgradePlan(plan: string): Promise<{ message: string; redirect_url: string | null }> {
+export interface WarmupEntry {
+  prompt: string;
+  response: string;
+  model?: string;
+}
+
+export interface WarmupResult {
+  message: string;
+  added: number;
+  skipped: number;
+  errors: number;
+}
+
+export async function warmupCache(entries: WarmupEntry[], skipDuplicates = true): Promise<WarmupResult> {
   const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/cache/warmup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ entries, skip_duplicates: skipDuplicates }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to warm cache' }));
+    throw new Error(err.detail || 'Failed to warm cache');
+  }
+  return res.json();
+}
+
+export async function upgradePlan(
+  plan: string,
+  successUrl?: string,
+  cancelUrl?: string
+): Promise<{ message: string; redirect_url: string | null }> {
+  const token = await getSupabaseToken();
+  const base = typeof window !== 'undefined' ? window.location.origin : '';
   const res = await fetch(`${BACKEND_URL}/api/billing/upgrade`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify({
+      plan,
+      success_url: successUrl || `${base}/settings?billing=success`,
+      cancel_url: cancelUrl || `${base}/settings?billing=cancel`,
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed to upgrade plan' }));

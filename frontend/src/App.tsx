@@ -12,6 +12,8 @@ import { MetricsPage } from './pages/MetricsPage';
 import { LogsPage } from './pages/LogsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DocsPageWrapper } from './pages/DocsPageWrapper';
+import { StatusPage } from './pages/StatusPage';
+import { SecurityPage } from './pages/SecurityPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { Layout } from './components/Layout';
 import AdminLayout from './components/AdminLayout';
@@ -68,6 +70,8 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/status" element={<StatusPage />} />
+      <Route path="/security" element={<SecurityPage />} />
       <Route
         element={
           <ProtectedRoute>

@@ -86,7 +86,11 @@ export function Layout() {
       </main>
 
       <footer className="px-5 py-5 text-center border-t border-white/[0.06]">
-        <p className="text-xs text-white/30">Semantis AI &mdash; Semantic Caching Platform</p>
+        <p className="text-xs text-white/30">
+          Semantis AI &mdash; Semantic Caching Platform
+          <Link to="/status" className="ml-2 text-white/40 hover:text-white/60 no-underline">Status</Link>
+          <Link to="/security" className="ml-2 text-white/40 hover:text-white/60 no-underline">Security</Link>
+        </p>
       </footer>
     </div>
   );

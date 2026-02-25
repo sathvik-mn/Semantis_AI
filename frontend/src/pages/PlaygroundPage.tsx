@@ -1,8 +1,10 @@
 import { QueryPlayground } from '../components/QueryPlayground';
+import { OnboardingWizard, useOnboarding } from '../components/OnboardingWizard';
 import { useMetrics, useEvents } from '../hooks/useSemanticCache';
 import { LightRays } from '../components/LightRays';
 
 export function PlaygroundPage() {
+  const { show: showOnboarding, complete: completeOnboarding } = useOnboarding();
   const { metrics, refetch: refetchMetrics } = useMetrics();
   const { events, refetch: refetchEvents } = useEvents(10);
 
@@ -13,6 +15,7 @@ export function PlaygroundPage() {
 
   return (
     <div style={styles.container}>
+      {showOnboarding && <OnboardingWizard onComplete={completeOnboarding} />}
       <LightRays />
       <div style={styles.content}>
         <div style={styles.header}>

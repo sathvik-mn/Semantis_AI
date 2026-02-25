@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { generateApiKey, setApiKey, hasApiKey, getApiKey, getSettings, updateSettings } from '../api/semanticAPI';
 import { Key, Copy, Check, AlertCircle, Save, Loader2, RefreshCw } from 'lucide-react';
+import { CacheWarmup } from './CacheWarmup';
 
 export function SettingsPanel() {
   const [threshold, setThreshold] = useState(0.75);
@@ -225,6 +226,9 @@ export function SettingsPanel() {
           </>
         )}
       </div>
+
+      {/* Cache Warm-Up */}
+      <CacheWarmup />
 
       {/* Summary */}
       <div style={styles.infoBox}>

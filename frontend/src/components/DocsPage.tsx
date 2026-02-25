@@ -26,7 +26,9 @@ const client = new Semantis("${apiKey}");
 const res = await client.chat("Explain embeddings");
 console.log(res.text, res.meta);`;
 
-  const curlExample = `curl -X POST http://localhost:8000/v1/chat/completions \\
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+  const curlExample = `curl -X POST ${backendUrl}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey}" \\
   -d '{
@@ -37,6 +39,27 @@ console.log(res.text, res.meta);`;
     "temperature": 0.2
   }'`;
 
+  const langchainExample = `from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
+
+llm = ChatOpenAI(
+    base_url="${backendUrl}/v1",
+    api_key="${apiKey}",
+    model="gpt-4o-mini",
+)
+response = llm.invoke([HumanMessage(content="What is semantic caching?")])
+print(response.content)`;
+
+  const llamaindexExample = `from llama_index.llms.openai import OpenAI
+
+llm = OpenAI(
+    api_base="${backendUrl}/v1",
+    api_key="${apiKey}",
+    model="gpt-4o-mini",
+)
+response = llm.complete("Explain embeddings")
+print(response.text)`;
+
   return (
     <div style={styles.container}>
       <div style={styles.hero}>
@@ -46,6 +69,24 @@ console.log(res.text, res.meta);`;
           semantic caching into your application.
         </p>
       </div>
+
+      <section style={styles.quickstartSection}>
+        <h2 style={styles.quickstartTitle}>5-Minute Quickstart</h2>
+        <ol style={styles.stepsList}>
+          <li style={styles.step}>
+            <strong>Get your API key</strong> — Sign in, go to Settings → API Keys, and generate a key.
+          </li>
+          <li style={styles.step}>
+            <strong>Install the client</strong> — <code style={styles.inlineCode}>pip install semantis</code> or <code style={styles.inlineCode}>npm install semantis</code>
+          </li>
+          <li style={styles.step}>
+            <strong>Replace your LLM call</strong> — Use the Semantis client instead of direct OpenAI calls (see examples below).
+          </li>
+          <li style={styles.step}>
+            <strong>Verify</strong> — Check the <code style={styles.inlineCode}>meta.hit</code> field in responses to see cache hits.
+          </li>
+        </ol>
+      </section>
 
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Quick Start</h2>
@@ -144,6 +185,10 @@ console.log(res.text, res.meta);`;
         <h2 style={styles.sectionTitle}>Best Practices</h2>
         <div style={styles.tipBox}>
           <p style={styles.tipText}>
+            <strong>Cache warm-up:</strong> Pre-populate the cache with historical queries from Settings
+            → Cache Warm-Up. Upload a CSV or JSON file of prompt/response pairs for immediate semantic hits.
+          </p>
+          <p style={styles.tipText}>
             Start with the default threshold (0.83) and adjust based on your hit ratio and quality
             requirements.
           </p>
@@ -154,6 +199,40 @@ console.log(res.text, res.meta);`;
           <p style={styles.tipText}>
             Use consistent temperature values for better cache utilization across similar queries.
           </p>
+        </div>
+      </section>
+
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>Framework Integrations</h2>
+        <p style={styles.text}>
+          Use Semantis with LangChain or LlamaIndex by pointing their OpenAI client to our
+          compatible endpoint.
+        </p>
+
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
+            <h3 style={styles.cardTitle}>LangChain</h3>
+            <button
+              onClick={() => copyToClipboard(langchainExample, 'langchain')}
+              style={styles.copyButton}
+            >
+              {copiedSection === 'langchain' ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+          <pre style={styles.code}>{langchainExample}</pre>
+        </div>
+
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
+            <h3 style={styles.cardTitle}>LlamaIndex</h3>
+            <button
+              onClick={() => copyToClipboard(llamaindexExample, 'llamaindex')}
+              style={styles.copyButton}
+            >
+              {copiedSection === 'llamaindex' ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+          <pre style={styles.code}>{llamaindexExample}</pre>
         </div>
       </section>
     </div>
@@ -181,6 +260,36 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: '1.6',
     maxWidth: '700px',
     margin: '0 auto',
+  },
+  quickstartSection: {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.25)',
+    borderRadius: '12px',
+    padding: '24px',
+    marginBottom: '48px',
+  },
+  quickstartTitle: {
+    fontSize: '20px',
+    color: '#60a5fa',
+    marginBottom: '16px',
+    fontWeight: '600',
+  },
+  stepsList: {
+    margin: 0,
+    paddingLeft: '24px',
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: '2',
+    fontSize: '15px',
+  },
+  step: {
+    marginBottom: '8px',
+  },
+  inlineCode: {
+    background: 'rgba(0, 0, 0, 0.3)',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontFamily: 'monospace',
   },
   section: {
     marginBottom: '48px',

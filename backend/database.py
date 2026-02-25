@@ -423,8 +423,47 @@ def get_usage_stats(tenant_id: str, days: int = 30) -> Dict:
                  COALESCE(SUM(cost_estimate), 0)  as total_cost
                FROM usage_logs
                WHERE tenant_id = %s
-                 AND logged_at >= NOW() - INTERVAL '%s days'""",
+                 AND logged_at >= NOW() - INTERVAL '1 day' * %s""",
             (tenant_id, days)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else {
+            "total_requests": 0, "total_hits": 0,
+            "total_misses": 0, "total_tokens": 0, "total_cost": 0
+        }
+
+
+def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
+    """Get usage stats aggregated by org_id (for billing/savings)."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """SELECT
+                 COALESCE(SUM(request_count), 0) as total_requests,
+                 COALESCE(SUM(cache_hits), 0)    as total_hits,
+                 COALESCE(SUM(cache_misses), 0)  as total_misses,
+                 COALESCE(SUM(tokens_used), 0)   as total_tokens,
+                 COALESCE(SUM(cost_estimate), 0)  as total_cost
+               FROM usage_logs
+               WHERE org_id = %s
+                 AND logged_at >= NOW() - INTERVAL '1 day' * %s""",
+            (org_id, days)
+        )
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        # Fallback: sum by tenant_id for API keys belonging to this org
+        cur.execute(
+            """SELECT
+                 COALESCE(SUM(ul.request_count), 0) as total_requests,
+                 COALESCE(SUM(ul.cache_hits), 0)    as total_hits,
+                 COALESCE(SUM(ul.cache_misses), 0)  as total_misses,
+                 COALESCE(SUM(ul.tokens_used), 0)   as total_tokens,
+                 COALESCE(SUM(ul.cost_estimate), 0)  as total_cost
+               FROM usage_logs ul
+               JOIN api_keys ak ON ul.api_key = ak.api_key AND ak.org_id = %s
+               WHERE ul.logged_at >= NOW() - INTERVAL '1 day' * %s""",
+            (org_id, days)
         )
         row = cur.fetchone()
         return dict(row) if row else {

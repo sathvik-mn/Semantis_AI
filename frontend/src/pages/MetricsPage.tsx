@@ -1,4 +1,5 @@
 import { KpiCards } from '../components/KpiCards';
+import { SavingsDashboard } from '../components/SavingsDashboard';
 import { useMetrics } from '../hooks/useSemanticCache';
 import { LightRays } from '../components/LightRays';
 
@@ -16,9 +17,18 @@ export function MetricsPage() {
           </p>
         </div>
 
+        <SavingsDashboard />
         <KpiCards metrics={metrics} isLoading={isLoading} />
 
-        {metrics && (
+        {!isLoading && metrics && metrics.total_requests === 0 && (
+          <div style={styles.emptyState}>
+            <p style={styles.emptyText}>
+              No requests yet. Run queries in the Playground to see metrics and cache performance.
+            </p>
+          </div>
+        )}
+
+        {metrics && metrics.total_requests > 0 && (
           <div style={styles.insightsSection}>
             <h2 style={styles.sectionTitle}>Insights</h2>
 
@@ -125,5 +135,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '15px',
     color: 'rgba(255, 255, 255, 0.8)',
     lineHeight: '1.6',
+  },
+  emptyState: {
+    padding: '32px',
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px dashed rgba(255, 255, 255, 0.2)',
+    borderRadius: '12px',
+    textAlign: 'center',
+    marginTop: '24px',
+  },
+  emptyText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: '15px',
+    margin: 0,
   },
 };

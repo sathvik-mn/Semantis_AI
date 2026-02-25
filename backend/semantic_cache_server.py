@@ -14,7 +14,7 @@ FastAPI service providing:
  - Audit logging, API key scoping, per-org rate limits
 """
 
-import os, time, re, logging, hashlib
+import os, time, re, logging, hashlib, json
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -25,6 +25,7 @@ import threading
 import numpy as np
 import faiss
 from fastapi import FastAPI, Request, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from fastapi.openapi.utils import get_openapi
@@ -175,6 +176,22 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
             f"text_len={len(text)} | time={embedding_time}ms | error={str(e)}"
         )
         raise
+
+def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None):
+    """OpenAI chat call with streaming. Yields SSE chunks."""
+    key = _resolve_openai_key(user_id)
+    client = _get_openai_client(key)
+    stream = client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=1024,
+        stream=True,
+    )
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+
 
 def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None) -> str:
     """OpenAI chat call (thread-safe, uses cached client)."""
@@ -581,6 +598,65 @@ class SemanticCacheService:
         elif hit_ratio > 0.85:
             T.sim_threshold = min(0.85, T.sim_threshold + 0.01)
 
+    def warmup(
+        self,
+        tenant_id: str,
+        entries: List[dict],
+        user_id: Optional[str] = None,
+        ttl_seconds: int = 7 * 24 * 3600,
+        skip_duplicates: bool = True,
+    ) -> dict:
+        """
+        Pre-populate cache with historical (prompt, response) pairs.
+        Each entry: {"prompt": str, "response": str, "model": str (optional)}
+        Returns: {"added": int, "skipped": int, "errors": int}
+        """
+        T = self.tenant(tenant_id)
+        added, skipped, errors = 0, 0, 0
+        for i, item in enumerate(entries):
+            try:
+                prompt = (item.get("prompt") or item.get("query") or "").strip()
+                response_text = (item.get("response") or item.get("answer") or item.get("content") or "").strip()
+                model = item.get("model") or CHAT_MODEL
+                if not prompt or not response_text:
+                    skipped += 1
+                    continue
+                prompt_norm = self.norm_text(prompt)
+                if skip_duplicates and prompt_norm in T.exact:
+                    skipped += 1
+                    continue
+                emb = get_embedding(prompt, user_id=user_id)
+                user_text = prompt
+                entry = CacheEntry(
+                    prompt_norm=prompt_norm,
+                    response_text=response_text,
+                    embedding=emb,
+                    model=model,
+                    ttl_seconds=ttl_seconds,
+                    domain=domain_hint(user_text),
+                    strategy="warmup",
+                )
+                with self._cache_lock:
+                    T.exact[prompt_norm] = entry
+                    T.rows.append(entry)
+                    self._faiss_add(T, emb)
+                added += 1
+                try:
+                    from redis_cache import store_exact_match, store_embedding
+                    prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()
+                    store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
+                    store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
+                except Exception:
+                    pass
+                if (i + 1) % 5 == 0:
+                    time.sleep(0.05)
+            except Exception as e:
+                errors += 1
+                error_log.warning(f"Warmup entry failed | tenant={tenant_id} | idx={i} | error={e}")
+        if added > 0:
+            threading.Thread(target=self._save_cache, daemon=True).start()
+        return {"added": added, "skipped": skipped, "errors": errors}
+
 svc = SemanticCacheService()
 
 # Save cache on shutdown
@@ -836,6 +912,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     temperature: float = 0.2
     ttl_seconds: int = 7 * 24 * 3600
+    stream: bool = False
 
 # -----------------------------
 # Endpoints
@@ -1018,6 +1095,90 @@ def get_settings(tenant: str = Depends(get_tenant_from_key)):
         "ttl_days": 7,
         "entries": len(T.rows),
     }
+
+class WarmupEntry(BaseModel):
+    prompt: str = ""
+    response: str = ""
+    model: Optional[str] = None
+
+
+class WarmupRequest(BaseModel):
+    entries: List[WarmupEntry]
+    tenant: Optional[str] = None
+    skip_duplicates: bool = True
+
+
+@app.post("/api/cache/warmup")
+@limiter.limit("10/hour")
+def cache_warmup(body: WarmupRequest, request: Request):
+    """
+    Pre-populate cache with historical (prompt, response) pairs.
+    Use your previous application queries to warm the cache for immediate semantic hits.
+    Requires Supabase JWT. Entries: [{"prompt": "...", "response": "...", "model": "gpt-4o-mini"}]
+    """
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs, get_api_key_info, list_api_keys
+        orgs = get_user_orgs(user["id"])
+        tenant = body.tenant
+        if not tenant and orgs:
+            tenant = orgs[0].get("slug")
+        if not tenant:
+            keys = list_api_keys(user_id=user["id"])
+            if keys:
+                tenant = keys[0].get("tenant_id", f"usr_{user['id'][:8]}")
+        if not tenant:
+            tenant = f"usr_{user['id'][:8]}"
+        entries = [
+            {"prompt": e.prompt, "response": e.response, "model": e.model}
+            for e in body.entries
+        ]
+        if len(entries) > 500:
+            raise HTTPException(status_code=400, detail="Maximum 500 entries per request")
+        result = svc.warmup(
+            tenant,
+            entries,
+            user_id=user["id"],
+            skip_duplicates=body.skip_duplicates,
+        )
+        app_log.info(f"Cache warmup | tenant={tenant} | added={result['added']} | skipped={result['skipped']} | errors={result['errors']}")
+        return {"message": "Warmup complete", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Cache warmup failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/cache/warmup")
+@limiter.limit("10/hour")
+def cache_warmup_api_key(body: WarmupRequest, request: Request, tenant: str = Depends(get_tenant_from_key)):
+    """
+    Pre-populate cache with historical (prompt, response) pairs. Uses API key auth.
+    Entries: [{"prompt": "...", "response": "...", "model": "gpt-4o-mini"}]
+    """
+    try:
+        _ctx = _current_api_key_var.get()
+        user_id = _ctx.get("user_id")
+        entries = [
+            {"prompt": e.prompt, "response": e.response, "model": e.model}
+            for e in body.entries
+        ]
+        if len(entries) > 500:
+            raise HTTPException(status_code=400, detail="Maximum 500 entries per request")
+        result = svc.warmup(
+            tenant,
+            entries,
+            user_id=user_id,
+            skip_duplicates=body.skip_duplicates,
+        )
+        return {"message": "Warmup complete", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Cache warmup failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.put("/settings")
 def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_key)):
@@ -1348,6 +1509,30 @@ def invite_member(org_id: str, body: InviteMemberRequest, request: Request):
         error_log.exception(f"Invite member failed | error={e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class OrgSettingsUpdate(BaseModel):
+    webhook_url: Optional[str] = None
+
+@app.patch("/api/orgs/{org_id}/settings")
+def update_org_settings_endpoint(org_id: str, body: OrgSettingsUpdate, request: Request):
+    """Update organization settings (e.g. webhook URL for cache events)."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import update_org_settings, get_user_orgs
+        orgs = get_user_orgs(user["id"])
+        if not any(str(o["id"]) == org_id for o in orgs):
+            raise HTTPException(status_code=403, detail="Not a member of this organization")
+        updates = {}
+        if body.webhook_url is not None:
+            updates["webhook_url"] = body.webhook_url.strip() or None
+        if updates:
+            update_org_settings(org_id, updates)
+        return {"message": "Settings updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Update org settings failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/orgs/{org_id}/audit")
 def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, le=500)):
     """Get audit logs for an organization."""
@@ -1372,6 +1557,18 @@ def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, l
         error_log.exception(f"Audit logs failed | error={e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def _sse_chunk(content: str, chunk_id: str) -> str:
+    """Format a content delta as OpenAI SSE chunk."""
+    obj = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": CHAT_MODEL,
+        "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+    }
+    return f"data: {json.dumps(obj)}\n\n"
+
+
 @app.post("/v1/chat/completions")
 @limiter.limit("60/minute")
 def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends(get_tenant_from_key)):
@@ -1379,6 +1576,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     
     Point your OpenAI client at this server:
         client = openai.OpenAI(base_url="https://api.semantis.ai/v1", api_key="sc-...")
+    Supports stream=True for streaming responses.
     """
     _ctx = _current_api_key_var.get()
     _require_scope(request, "read-write")
@@ -1388,10 +1586,65 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     )
     try:
         user_id = _ctx.get("user_id")
+        messages = [m.dict() for m in body.messages]
+        chunk_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}"
+
+        if body.stream:
+            def stream_generator():
+                ans, meta = svc.query(
+                    tenant,
+                    prompt_norm,
+                    messages,
+                    body.model,
+                    ttl_seconds=body.ttl_seconds,
+                    temperature=body.temperature,
+                    user_id=user_id,
+                )
+                _log_key = _ctx.get("key", "unknown")
+                _log_uid = _ctx.get("user_id")
+                _log_org = _ctx.get("org_id")
+                _log_hit = meta.get("hit")
+                def _bg_log():
+                    try:
+                        from database import log_usage
+                        log_usage(
+                            api_key=_log_key, tenant_id=tenant,
+                            endpoint="/v1/chat/completions", request_count=1,
+                            cache_hits=1 if _log_hit != "miss" else 0,
+                            cache_misses=1 if _log_hit == "miss" else 0,
+                            tokens_used=0, cost_estimate=0,
+                            user_id=_log_uid, org_id=_log_org,
+                        )
+                    except Exception:
+                        pass
+                threading.Thread(target=_bg_log, daemon=True).start()
+                access_log.info(f"{tenant} | /v1/chat/completions | stream | {meta['hit']} | {meta['latency_ms']}ms")
+                try:
+                    from webhooks import fire_cache_event
+                    fire_cache_event(
+                        _ctx.get("org_id"),
+                        tenant,
+                        "cache.decision",
+                        {"hit": meta["hit"], "similarity": meta["similarity"], "latency_ms": meta["latency_ms"]},
+                    )
+                except Exception:
+                    pass
+                for i in range(0, len(ans), 4):
+                    chunk = ans[i : i + 4]
+                    if chunk:
+                        yield _sse_chunk(chunk, chunk_id)
+                yield f"data: {json.dumps({'id': chunk_id, 'object': 'chat.completion.chunk', 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
+
+            return StreamingResponse(
+                stream_generator(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
         ans, meta = svc.query(
             tenant,
             prompt_norm,
-            [m.dict() for m in body.messages],
+            messages,
             body.model,
             ttl_seconds=body.ttl_seconds,
             temperature=body.temperature,
@@ -1400,15 +1653,15 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
         _log_key = _ctx.get("key", "unknown")
         _log_uid = _ctx.get("user_id")
         _log_org = _ctx.get("org_id")
-        _log_hit = meta.get('hit')
+        _log_hit = meta.get("hit")
         def _bg_log():
             try:
                 from database import log_usage
                 log_usage(
                     api_key=_log_key, tenant_id=tenant,
                     endpoint="/v1/chat/completions", request_count=1,
-                    cache_hits=1 if _log_hit != 'miss' else 0,
-                    cache_misses=1 if _log_hit == 'miss' else 0,
+                    cache_hits=1 if _log_hit != "miss" else 0,
+                    cache_misses=1 if _log_hit == "miss" else 0,
                     tokens_used=0, cost_estimate=0,
                     user_id=_log_uid, org_id=_log_org,
                 )
@@ -1416,13 +1669,22 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 pass
         threading.Thread(target=_bg_log, daemon=True).start()
         
-        # Estimate token counts for compatibility
         prompt_tokens = sum(len(m.content.split()) * 4 // 3 for m in body.messages)
         completion_tokens = len(ans.split()) * 4 // 3
         
         access_log.info(f"{tenant} | /v1/chat/completions | {meta['hit']} | sim={meta['similarity']:.3f} | {meta['latency_ms']}ms")
+        try:
+            from webhooks import fire_cache_event
+            fire_cache_event(
+                _ctx.get("org_id"),
+                tenant,
+                "cache.decision",
+                {"hit": meta["hit"], "similarity": meta["similarity"], "latency_ms": meta["latency_ms"]},
+            )
+        except Exception:
+            pass
         return {
-            "id": f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}",
+            "id": chunk_id,
             "object": "chat.completion",
             "created": int(time.time()),
             "model": body.model,
@@ -1473,7 +1735,7 @@ def get_billing_status(request: Request):
     """Get billing status for the current user's org."""
     try:
         user = _get_user_from_supabase_token(request)
-        from database import get_user_orgs, get_usage_stats
+        from database import get_user_orgs, get_usage_stats_by_org
         from billing import get_plan_limits
         orgs = get_user_orgs(user["id"])
         if not orgs:
@@ -1481,12 +1743,23 @@ def get_billing_status(request: Request):
         org = orgs[0]
         plan = org.get("plan", "free")
         
-        # Get current usage
+        # Get current usage by org_id (not slug)
         usage = {}
         try:
-            usage = get_usage_stats(org["slug"], days=30)
+            usage = get_usage_stats_by_org(str(org["id"]), days=30)
         except Exception:
             pass
+        
+        total_hits = int(usage.get("total_hits", 0))
+        total_requests = int(usage.get("total_requests", 0))
+        total_misses = int(usage.get("total_misses", 0))
+        total_cost = float(usage.get("total_cost", 0))
+        # Estimate savings: avg cost per miss * hits (cost we avoided)
+        if total_misses > 0 and total_cost > 0:
+            avg_cost_per_request = total_cost / total_misses
+            estimated_savings_usd = round(total_hits * avg_cost_per_request, 2)
+        else:
+            estimated_savings_usd = round(total_hits * 0.002, 2)  # fallback $0.002/hit
         
         limits = get_plan_limits(plan)
         return {
@@ -1496,9 +1769,9 @@ def get_billing_status(request: Request):
             "limits": limits,
             "usage_30d": usage,
             "savings_estimate": {
-                "cached_requests": usage.get("total_hits", 0),
-                "total_requests": usage.get("total_requests", 0),
-                "estimated_savings_usd": round(usage.get("total_hits", 0) * 0.002, 2),
+                "cached_requests": total_hits,
+                "total_requests": total_requests,
+                "estimated_savings_usd": estimated_savings_usd,
             },
         }
     except HTTPException:
@@ -1518,7 +1791,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
     """Start a plan upgrade via Stripe Checkout."""
     try:
         user = _get_user_from_supabase_token(request)
-        from billing import is_enabled, create_checkout_session, STRIPE_PRICE_PRO, STRIPE_PRICE_TEAM
+        from billing import is_enabled, create_customer, create_checkout_session, STRIPE_PRICE_PRO, STRIPE_PRICE_TEAM
         
         if not is_enabled():
             # If Stripe is not configured, just update the plan directly
@@ -1543,8 +1816,35 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         if not price_id:
             raise HTTPException(status_code=400, detail=f"Invalid plan: {body.plan}")
         
-        # For now, return a placeholder since full Stripe integration needs customer creation
-        return {"message": f"Stripe checkout for {body.plan}", "redirect_url": None}
+        from database import get_user_orgs, get_organization, update_org_settings
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            raise HTTPException(status_code=400, detail="No organization found")
+        org = orgs[0]
+        org_id = str(org["id"])
+        org_name = org.get("name", "Semantis")
+        user_email = user.get("email", "")
+        
+        org_full = get_organization(org_id)
+        settings = org_full.get("settings") or {}
+        customer_id = settings.get("stripe_customer_id")
+        
+        if not customer_id:
+            customer_id = create_customer(org_id, org_name, user_email)
+            if customer_id:
+                update_org_settings(org_id, {"stripe_customer_id": customer_id})
+        
+        if not customer_id:
+            raise HTTPException(status_code=500, detail="Failed to create Stripe customer")
+        
+        base_url = request.base_url
+        success_url = body.success_url or str(base_url) + "settings?billing=success"
+        cancel_url = body.cancel_url or str(base_url) + "settings?billing=cancel"
+        
+        redirect_url = create_checkout_session(
+            customer_id, price_id, success_url, cancel_url, org_id, body.plan
+        )
+        return {"message": f"Redirect to Stripe checkout for {body.plan}", "redirect_url": redirect_url}
     except HTTPException:
         raise
     except Exception as e:
@@ -1567,16 +1867,18 @@ async def stripe_webhook(request: Request):
         app_log.info(f"Stripe webhook | type={event_type}")
         
         if event_type == "checkout.session.completed":
-            data = event.get("data", {})
-            org_id = data.get("metadata", {}).get("org_id")
+            obj = event.get("data") or {}
+            metadata = obj.get("metadata", {}) if isinstance(obj, dict) else getattr(obj, "metadata", None) or {}
+            org_id = metadata.get("org_id") if isinstance(metadata, dict) else None
+            plan = metadata.get("plan", "pro") if isinstance(metadata, dict) else "pro"
             if org_id:
                 try:
                     from database import get_db_connection
                     with get_db_connection() as conn:
                         cur = conn.cursor()
                         cur.execute(
-                            "UPDATE organizations SET plan = 'pro' WHERE id = %s",
-                            (org_id,)
+                            "UPDATE organizations SET plan = %s WHERE id = %s",
+                            (plan, org_id)
                         )
                 except Exception as e:
                     error_log.error(f"Webhook plan update failed | org={org_id} | error={e}")

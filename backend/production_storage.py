@@ -269,7 +269,7 @@ class ProductionStorage:
                 cursor.execute('''
                     SELECT * FROM cache_entries
                     WHERE tenant_id = %s AND prompt_hash = %s
-                    AND (created_at + INTERVAL '%s seconds') > CURRENT_TIMESTAMP
+                    AND (created_at + INTERVAL '1 second' * %s) > CURRENT_TIMESTAMP
                 ''', (tenant_id, prompt_hash, 604800))
             else:
                 cursor.execute('''
@@ -361,7 +361,7 @@ class ProductionStorage:
                     cursor.execute('''
                         DELETE FROM cache_entries
                         WHERE tenant_id = %s
-                        AND (created_at + INTERVAL '%s seconds') < CURRENT_TIMESTAMP
+                        AND (created_at + INTERVAL '1 second' * %s) < CURRENT_TIMESTAMP
                     ''', (tenant_id, 604800))
                 else:
                     cursor.execute('''
@@ -373,7 +373,7 @@ class ProductionStorage:
                 if self.config.DB_BACKEND == "postgresql":
                     cursor.execute('''
                         DELETE FROM cache_entries
-                        WHERE (created_at + INTERVAL '%s seconds') < CURRENT_TIMESTAMP
+                        WHERE (created_at + INTERVAL '1 second' * %s) < CURRENT_TIMESTAMP
                     ''', (604800,))
                 else:
                     cursor.execute('''
