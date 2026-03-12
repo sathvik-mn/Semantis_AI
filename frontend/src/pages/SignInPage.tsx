@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, AlertCircle, ArrowLeft, Chrome } from 'lucide-react';
-import { Prism } from '../components/Prism';
+import { TubesBackground } from '../components/TubesBackground';
 import { useAuth } from '../contexts/AuthContext';
 
 export function SignInPage() {
@@ -47,96 +47,96 @@ export function SignInPage() {
   };
 
   return (
-    <div style={styles.container}>
-      <Prism />
+    <TubesBackground enableClickInteraction={false} className="min-h-screen">
+      <div style={styles.container}>
+        {/* Back Arrow */}
+        <Link to="/" style={styles.backButton} className="pointer-events-auto">
+          <ArrowLeft size={20} />
+        </Link>
 
-      {/* Back Arrow */}
-      <Link to="/" style={styles.backButton}>
-        <ArrowLeft size={20} />
-      </Link>
-
-      <div style={styles.content}>
-        <div style={styles.card}>
-          <div style={styles.header}>
-            <h1 style={styles.title}>Welcome Back</h1>
-            <p style={styles.subtitle}>Sign in to your Semantis AI account</p>
-          </div>
-
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <Mail size={16} />
-                <span>Email Address</span>
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                style={styles.input}
-                required
-                autoFocus
-              />
+        <div style={styles.content} className="pointer-events-auto">
+          <div style={styles.card}>
+            <div style={styles.header}>
+              <h1 style={styles.title}>Welcome Back</h1>
+              <p style={styles.subtitle}>Sign in to your Semantis AI account</p>
             </div>
 
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <Lock size={16} />
-                <span>Password</span>
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                style={styles.input}
-                required
-              />
-            </div>
-
-            {error && (
-              <div style={styles.error}>
-                <AlertCircle size={16} />
-                <span>{error}</span>
+            <form onSubmit={handleSubmit} style={styles.form}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Mail size={16} />
+                  <span>Email Address</span>
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  style={styles.input}
+                  required
+                  autoFocus
+                />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                ...styles.submitButton,
-                opacity: loading ? 0.7 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Lock size={16} />
+                  <span>Password</span>
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  style={styles.input}
+                  required
+                />
+              </div>
+
+              {error && (
+                <div style={styles.error}>
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  ...styles.submitButton,
+                  opacity: loading ? 0.7 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+
+            <div style={styles.divider}>
+              <span style={styles.dividerLine} />
+              <span style={styles.dividerText}>OR</span>
+              <span style={styles.dividerLine} />
+            </div>
+
+            <button onClick={handleGoogleSignIn} style={styles.googleButton}>
+              <Chrome size={20} />
+              <span>Continue with Google</span>
             </button>
-          </form>
 
-          <div style={styles.divider}>
-            <span style={styles.dividerLine} />
-            <span style={styles.dividerText}>OR</span>
-            <span style={styles.dividerLine} />
-          </div>
-
-          <button onClick={handleGoogleSignIn} style={styles.googleButton}>
-            <Chrome size={20} />
-            <span>Continue with Google</span>
-          </button>
-
-          <div style={styles.footer}>
-            <Link to="/forgot-password" style={{ ...styles.link, display: 'block', marginBottom: '12px' }}>
-              Forgot your password?
-            </Link>
-            Don't have an account?{' '}
-            <Link to="/signup" style={styles.link}>
-              Sign up
-            </Link>
+            <div style={styles.footer}>
+              <Link to="/forgot-password" style={{ ...styles.link, display: 'block', marginBottom: '12px' }}>
+                Forgot your password?
+              </Link>
+              Don't have an account?{' '}
+              <Link to="/signup" style={styles.link}>
+                Sign up
+              </Link>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </TubesBackground>
   );
 }
 

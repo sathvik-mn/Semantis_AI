@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Prism } from '../components/Prism';
+import { TubesBackground } from '../components/TubesBackground';
 import { Mail, Lock, User, AlertCircle, ArrowRight, Check, X } from 'lucide-react';
 
 export function SignUpPage() {
@@ -58,173 +58,172 @@ export function SignUpPage() {
   };
 
   return (
-    <div style={styles.container}>
-      <Prism />
-
-      <nav style={styles.nav}>
-        <div style={styles.navContent}>
-          <Link to="/" style={styles.logo}>
-            <span style={styles.logoText}>Semantis AI</span>
-          </Link>
-        </div>
-      </nav>
-
-      <div style={styles.content}>
-        <div style={styles.card}>
-          {signupComplete ? (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>&#9993;</div>
-              <h2 style={styles.cardTitle}>Check your email</h2>
-              <p style={{ ...styles.cardSubtitle, marginBottom: '24px' }}>
-                We sent a verification link to <strong style={{ color: '#fff' }}>{email}</strong>.
-                Click the link to activate your account, then sign in.
-              </p>
-              <Link to="/signin" style={{ ...styles.link, fontSize: '16px' }}>
-                Go to Sign In
-              </Link>
-            </div>
-          ) : (
-          <>
-          <h2 style={styles.cardTitle}>Create Account</h2>
-          <p style={styles.cardSubtitle}>
-            Get started with Semantis AI for free
-          </p>
-
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <User size={16} style={{ marginRight: '8px' }} />
-                Name (Optional)
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your name"
-                style={styles.input}
-                autoFocus
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <Mail size={16} style={{ marginRight: '8px' }} />
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                style={styles.input}
-                required
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <Lock size={16} style={{ marginRight: '8px' }} />
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Create a strong password"
-                style={styles.input}
-                required
-              />
-
-              {/* Password strength indicator */}
-              {password && (
-                <div style={styles.passwordStrength}>
-                  <div style={styles.strengthItem}>
-                    {passwordChecks.length ? (
-                      <Check size={14} style={{ color: '#10b981' }} />
-                    ) : (
-                      <X size={14} style={{ color: '#ef4444' }} />
-                    )}
-                    <span style={{ fontSize: '13px', color: passwordChecks.length ? '#10b981' : '#ef4444' }}>
-                      At least 8 characters
-                    </span>
-                  </div>
-                  <div style={styles.strengthItem}>
-                    {passwordChecks.hasLetter ? (
-                      <Check size={14} style={{ color: '#10b981' }} />
-                    ) : (
-                      <X size={14} style={{ color: '#ef4444' }} />
-                    )}
-                    <span style={{ fontSize: '13px', color: passwordChecks.hasLetter ? '#10b981' : '#ef4444' }}>
-                      Contains a letter
-                    </span>
-                  </div>
-                  <div style={styles.strengthItem}>
-                    {passwordChecks.hasNumber ? (
-                      <Check size={14} style={{ color: '#10b981' }} />
-                    ) : (
-                      <X size={14} style={{ color: '#ef4444' }} />
-                    )}
-                    <span style={{ fontSize: '13px', color: passwordChecks.hasNumber ? '#10b981' : '#ef4444' }}>
-                      Contains a number
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <Lock size={16} style={{ marginRight: '8px' }} />
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
-                style={styles.input}
-                required
-              />
-            </div>
-
-            {error && (
-              <div style={styles.error}>
-                <AlertCircle size={16} style={{ marginRight: '8px' }} />
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                ...styles.button,
-                opacity: loading ? 0.6 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {loading ? 'Creating account...' : 'Create Account'}
-              {!loading && <ArrowRight size={18} style={{ marginLeft: '8px' }} />}
-            </button>
-          </form>
-
-          <div style={styles.divider}>
-            <span style={styles.dividerLine} />
-            <span style={styles.dividerText}>OR</span>
-            <span style={styles.dividerLine} />
-          </div>
-
-          <div style={styles.footer}>
-            Already have an account?{' '}
-            <Link to="/signin" style={styles.link}>
-              Sign in
+    <TubesBackground enableClickInteraction={false} className="min-h-screen">
+      <div style={styles.container}>
+        <nav style={styles.nav} className="pointer-events-auto">
+          <div style={styles.navContent}>
+            <Link to="/" style={styles.logo}>
+              <span style={styles.logoText}>Semantis AI</span>
             </Link>
           </div>
-          </>
-          )}
+        </nav>
+
+        <div style={styles.content} className="pointer-events-auto">
+          <div style={styles.card}>
+            {signupComplete ? (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>&#9993;</div>
+                <h2 style={styles.cardTitle}>Check your email</h2>
+                <p style={{ ...styles.cardSubtitle, marginBottom: '24px' }}>
+                  We sent a verification link to <strong style={{ color: '#fff' }}>{email}</strong>.
+                  Click the link to activate your account, then sign in.
+                </p>
+                <Link to="/signin" style={{ ...styles.link, fontSize: '16px' }}>
+                  Go to Sign In
+                </Link>
+              </div>
+            ) : (
+            <>
+            <h2 style={styles.cardTitle}>Create Account</h2>
+            <p style={styles.cardSubtitle}>
+              Get started with Semantis AI for free
+            </p>
+
+            <form onSubmit={handleSubmit} style={styles.form}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <User size={16} style={{ marginRight: '8px' }} />
+                  Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                  style={styles.input}
+                  autoFocus
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Mail size={16} style={{ marginRight: '8px' }} />
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  style={styles.input}
+                  required
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Lock size={16} style={{ marginRight: '8px' }} />
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a strong password"
+                  style={styles.input}
+                  required
+                />
+
+                {password && (
+                  <div style={styles.passwordStrength}>
+                    <div style={styles.strengthItem}>
+                      {passwordChecks.length ? (
+                        <Check size={14} style={{ color: '#10b981' }} />
+                      ) : (
+                        <X size={14} style={{ color: '#ef4444' }} />
+                      )}
+                      <span style={{ fontSize: '13px', color: passwordChecks.length ? '#10b981' : '#ef4444' }}>
+                        At least 8 characters
+                      </span>
+                    </div>
+                    <div style={styles.strengthItem}>
+                      {passwordChecks.hasLetter ? (
+                        <Check size={14} style={{ color: '#10b981' }} />
+                      ) : (
+                        <X size={14} style={{ color: '#ef4444' }} />
+                      )}
+                      <span style={{ fontSize: '13px', color: passwordChecks.hasLetter ? '#10b981' : '#ef4444' }}>
+                        Contains a letter
+                      </span>
+                    </div>
+                    <div style={styles.strengthItem}>
+                      {passwordChecks.hasNumber ? (
+                        <Check size={14} style={{ color: '#10b981' }} />
+                      ) : (
+                        <X size={14} style={{ color: '#ef4444' }} />
+                      )}
+                      <span style={{ fontSize: '13px', color: passwordChecks.hasNumber ? '#10b981' : '#ef4444' }}>
+                        Contains a number
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  <Lock size={16} style={{ marginRight: '8px' }} />
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter your password"
+                  style={styles.input}
+                  required
+                />
+              </div>
+
+              {error && (
+                <div style={styles.error}>
+                  <AlertCircle size={16} style={{ marginRight: '8px' }} />
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  ...styles.button,
+                  opacity: loading ? 0.6 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {loading ? 'Creating account...' : 'Create Account'}
+                {!loading && <ArrowRight size={18} style={{ marginLeft: '8px' }} />}
+              </button>
+            </form>
+
+            <div style={styles.divider}>
+              <span style={styles.dividerLine} />
+              <span style={styles.dividerText}>OR</span>
+              <span style={styles.dividerLine} />
+            </div>
+
+            <div style={styles.footer}>
+              Already have an account?{' '}
+              <Link to="/signin" style={styles.link}>
+                Sign in
+              </Link>
+            </div>
+            </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </TubesBackground>
   );
 }
 
