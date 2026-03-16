@@ -575,6 +575,10 @@ def list_cache_entries(org_id: str, limit: int = 50) -> List[Dict]:
 
 def init_database():
     """Test database connection on startup. Schema is managed via Supabase SQL Editor."""
+    if not DATABASE_URL:
+        print("WARNING: DATABASE_URL is not set. Database features will be unavailable.")
+        print("Get it from Supabase: Settings > Database > Connection string (URI)")
+        return
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
@@ -582,7 +586,7 @@ def init_database():
         print("Database connected successfully (Supabase Postgres)")
     except Exception as e:
         print(f"WARNING: Database connection failed: {e}")
-        print("Make sure DATABASE_URL is set in your .env file.")
-        print("Get it from Supabase: Settings > Database > Connection string (URI)")
+        print("Cache and semantic matching will still work without the database.")
+        print("Auth, API key management, and billing require a database connection.")
 
 init_database()

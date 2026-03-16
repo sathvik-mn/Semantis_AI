@@ -45,8 +45,18 @@ if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-REPLACE_ME":
 import openai
 openai.api_key = OPENAI_API_KEY
 
-EMBED_MODEL = "text-embedding-3-large"
-CHAT_MODEL  = "gpt-4o-mini"
+EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
+EMBED_DIMENSIONS = int(os.getenv("EMBED_DIMENSIONS", "1024"))
+CHAT_MODEL  = os.getenv("CHAT_MODEL", "gpt-4o-mini")
+
+# Local model config — lazy-loaded to avoid startup cost when not needed
+LOCAL_MODEL_NAME = os.getenv("LOCAL_EMBED_MODEL", "all-MiniLM-L6-v2")
+LOCAL_MODEL_ENABLED = os.getenv("LOCAL_EMBED_ENABLED", "true").lower() == "true"
+CROSS_ENCODER_MODEL = os.getenv("CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+CROSS_ENCODER_ENABLED = os.getenv("CROSS_ENCODER_ENABLED", "false").lower() == "true"
+
+# IVF threshold — switch from brute-force to IVF when tenant has more entries
+IVF_UPGRADE_THRESHOLD = int(os.getenv("IVF_UPGRADE_THRESHOLD", "10000"))
 
 # -----------------------------
 # Logging setup (rotating)
@@ -102,6 +112,60 @@ def domain_hint(text: str) -> str:
     return best
 
 # -----------------------------
+# Query normalization for better matching
+# -----------------------------
+_CONTRACTIONS = {
+    "won't": "will not", "can't": "cannot", "n't": " not",
+    "'re": " are", "'ve": " have", "'ll": " will", "'d": " would",
+    "'m": " am", "let's": "let us", "it's": "it is", "i'm": "i am",
+    "he's": "he is", "she's": "she is", "that's": "that is",
+    "what's": "what is", "there's": "there is", "here's": "here is",
+    "who's": "who is", "how's": "how is", "where's": "where is",
+}
+_CONTRACTION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in sorted(_CONTRACTIONS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+_FILLER_RE = re.compile(
+    r"\b(please|pls|plz|hey|hi|hello|um|uh|like|just|actually|basically|literally|ok|okay|thanks|thank you|thx)\b",
+    re.IGNORECASE,
+)
+_MULTI_SPACE_RE = re.compile(r"\s+")
+_PUNCT_NOISE_RE = re.compile(r"[.!?,;:]+$")
+
+def normalize_query(text: str) -> str:
+    """Light normalization for hash-index lookups: expand contractions, strip
+    filler words, collapse whitespace. Does NOT expand abbreviations — the
+    embedding model handles semantic equivalence (ML≈machine learning, typos, etc.)."""
+    t = text.strip().lower()
+    t = _CONTRACTION_RE.sub(lambda m: _CONTRACTIONS.get(m.group(0).lower(), m.group(0)), t)
+    t = _FILLER_RE.sub("", t)
+    t = _PUNCT_NOISE_RE.sub("", t)
+    t = _MULTI_SPACE_RE.sub(" ", t).strip()
+    return t
+
+def _tokenize(text: str) -> set:
+    """Simple word-level tokenizer for overlap scoring."""
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+def token_overlap_score(query: str, candidate: str) -> float:
+    """Jaccard token overlap. Returns 0.0..1.0."""
+    q_tokens = _tokenize(query)
+    c_tokens = _tokenize(candidate)
+    if not q_tokens:
+        return 0.0
+    union = q_tokens | c_tokens
+    if not union:
+        return 0.0
+    return len(q_tokens & c_tokens) / len(union)
+
+def hybrid_score(cosine_sim: float, token_sim: float) -> float:
+    """Cosine-dominant scoring. Token overlap is only a minor tiebreaker
+    so it never blocks valid semantic matches (typos, abbreviations,
+    paraphrases all have low token overlap but high cosine similarity)."""
+    return 0.97 * cosine_sim + 0.03 * token_sim
+
+# -----------------------------
 # Embeddings & LLM
 # -----------------------------
 def _get_user_openai_key(user_id: Optional[str]) -> Optional[str]:
@@ -136,7 +200,7 @@ def _resolve_openai_key(user_id: Optional[str] = None) -> str:
 
 EMBEDDING_PREFIX = "Semantic meaning: "
 
-# Reusable OpenAI client pool — avoids expensive per-call client construction
+# Reusable OpenAI client pool
 _openai_clients: Dict[str, "openai.OpenAI"] = {}
 _client_lock = threading.Lock()
 
@@ -148,25 +212,85 @@ def _get_openai_client(api_key: str):
             _openai_clients[api_key] = OpenAI(api_key=api_key, timeout=30.0, max_retries=1)
         return _openai_clients[api_key]
 
+# ── Local model singletons (lazy-loaded) ──
+_local_model = None
+_local_model_lock = threading.Lock()
+_cross_encoder = None
+_cross_encoder_lock = threading.Lock()
+
+def _get_local_model():
+    """Lazy-load the local sentence-transformer for fast pre-filtering."""
+    global _local_model
+    if _local_model is not None:
+        return _local_model
+    with _local_model_lock:
+        if _local_model is not None:
+            return _local_model
+        try:
+            from sentence_transformers import SentenceTransformer
+            _local_model = SentenceTransformer(LOCAL_MODEL_NAME)
+            system_log.info(f"Local embed model loaded | model={LOCAL_MODEL_NAME}")
+        except Exception as e:
+            system_log.warning(f"Local embed model unavailable: {e}. Falling back to OpenAI-only.")
+            _local_model = False  # sentinel: tried and failed
+    return _local_model
+
+def _get_cross_encoder():
+    """Lazy-load the cross-encoder for re-ranking."""
+    global _cross_encoder
+    if _cross_encoder is not None:
+        return _cross_encoder
+    with _cross_encoder_lock:
+        if _cross_encoder is not None:
+            return _cross_encoder
+        try:
+            from sentence_transformers import CrossEncoder
+            _cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
+            system_log.info(f"Cross-encoder loaded | model={CROSS_ENCODER_MODEL}")
+        except Exception as e:
+            system_log.warning(f"Cross-encoder unavailable: {e}. Skipping re-ranking.")
+            _cross_encoder = False
+    return _cross_encoder
+
+def get_local_embedding(text: str) -> Optional[np.ndarray]:
+    """Fast local embedding (~5ms). Returns None if local model unavailable."""
+    if not LOCAL_MODEL_ENABLED:
+        return None
+    model = _get_local_model()
+    if model is False or model is None:
+        return None
+    v = model.encode(text, normalize_embeddings=True)
+    return np.array(v, dtype="float32")
+
+def cross_encoder_score(query: str, candidates: List[str]) -> Optional[List[float]]:
+    """Score query-candidate pairs with cross-encoder. Returns None if unavailable."""
+    if not CROSS_ENCODER_ENABLED or not candidates:
+        return None
+    encoder = _get_cross_encoder()
+    if encoder is False or encoder is None:
+        return None
+    pairs = [[query, c] for c in candidates]
+    scores = encoder.predict(pairs)
+    return [float(s) for s in scores]
+
 def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
-    """Return L2-normalized embedding vector (thread-safe).
-    
-    Prefixes with 'Semantic meaning: ' so the model focuses on intent,
-    producing much higher cosine similarity for paraphrases and typos.
-    """
+    """Return L2-normalized embedding vector from OpenAI (thread-safe).
+    Uses reduced dimensions (default 1024) for faster search and lower memory."""
     start_time = time.time()
     key = _resolve_openai_key(user_id)
     prefixed = f"{EMBEDDING_PREFIX}{text.strip().lower()}"
-    
+
     try:
         client = _get_openai_client(key)
-        resp = client.embeddings.create(model=EMBED_MODEL, input=prefixed)
+        resp = client.embeddings.create(
+            model=EMBED_MODEL, input=prefixed, dimensions=EMBED_DIMENSIONS
+        )
         v = np.array(resp.data[0].embedding, dtype="float32")
         v /= (np.linalg.norm(v) + 1e-12)
         embedding_time = round((time.time() - start_time) * 1000, 2)
         performance_log.debug(
-            f"Embedding generated | model={EMBED_MODEL} | user_id={user_id} | "
-            f"text_len={len(text)} | time={embedding_time}ms"
+            f"Embedding generated | model={EMBED_MODEL} | dims={EMBED_DIMENSIONS} | "
+            f"user_id={user_id} | text_len={len(text)} | time={embedding_time}ms"
         )
         return v
     except Exception as e:
@@ -241,6 +365,9 @@ class CacheEntry:
     use_count: int = 0
     domain: str = "general"
     strategy: str = "miss"  # exact | semantic | miss
+    response_embedding: Optional[np.ndarray] = None  # Tier 2: response validation
+    local_embedding: Optional[np.ndarray] = None      # Tier 2: fast local pre-filter
+    cluster_id: int = -1                               # Tier 3: cluster routing
 
     def fresh(self) -> bool:
         return (time.time() - self.created_at) < self.ttl_seconds
@@ -253,8 +380,8 @@ class CacheEvent:
     decision: str  # "exact", "semantic", "miss"
     similarity: float
     latency_ms: float
-    confidence: float = 0.0  # Confidence score for semantic matches
-    hybrid_score: float = 0.0  # Hybrid similarity score
+    confidence: float = 0.0
+    hybrid_score: float = 0.0
 
 @dataclass
 class TenantState:
@@ -262,16 +389,21 @@ class TenantState:
     index: Optional[faiss.IndexFlatIP] = None
     rows: List[CacheEntry] = field(default_factory=list)
     dim: Optional[int] = None
+    # Tier 1: normalized-text hash index for O(1) deep-norm lookups
+    norm_hash_index: Dict[str, CacheEntry] = field(default_factory=dict)
+    # Tier 2: local model FAISS index for fast pre-filtering
+    local_index: Optional[faiss.IndexFlatIP] = None
+    local_dim: Optional[int] = None
+    # Tier 3: cluster centroids for routing
+    cluster_centroids: Optional[np.ndarray] = None
+    n_clusters: int = 0
     # metrics
     hits: int = 0
     misses: int = 0
     semantic_hits: int = 0
     latencies_ms: List[float] = field(default_factory=list)
-    # adaptive similarity threshold (aggressively lowered for maximum hit rate)
-    sim_threshold: float = 0.75
-    # domain-specific thresholds
-    domain_thresholds: Dict[str, float] = field(default_factory=dict)  # domain -> threshold
-    # events log
+    sim_threshold: float = 0.55
+    domain_thresholds: Dict[str, float] = field(default_factory=dict)
     events: List[CacheEvent] = field(default_factory=list)
 
 # -----------------------------
@@ -286,24 +418,61 @@ class SemanticCacheService:
         self._load_cache()
     
     def _load_cache(self):
-        """Load cache from pickle (local fallback), then warm from Redis if available."""
+        """Load cache from pickle then warm from Redis. Handles dimension migration."""
         try:
             from cache_persistence import load_cache
             start_time = time.time()
             loaded_tenants = load_cache()
             load_time = round((time.time() - start_time) * 1000, 2)
             if loaded_tenants:
-                total_entries = sum(len(t.rows) for t in loaded_tenants.values())
+                total_entries = 0
+                migrated = 0
+                for tid, tstate in loaded_tenants.items():
+                    # Dimension migration: if existing embeddings don't match
+                    # EMBED_DIMENSIONS, invalidate the FAISS index and old embeddings
+                    # so they get re-computed lazily on next hit.
+                    needs_rebuild = False
+                    for row in tstate.rows:
+                        if row.embedding is not None and row.embedding.shape[0] != EMBED_DIMENSIONS:
+                            needs_rebuild = True
+                            break
+
+                    if needs_rebuild:
+                        system_log.info(
+                            f"Dimension migration needed for tenant={tid} | "
+                            f"old_dim={tstate.rows[0].embedding.shape[0] if tstate.rows else '?'} | "
+                            f"new_dim={EMBED_DIMENSIONS} | clearing FAISS index and embeddings"
+                        )
+                        tstate.index = None
+                        tstate.dim = None
+                        tstate.local_index = None
+                        tstate.local_dim = None
+                        for row in tstate.rows:
+                            row.embedding = None
+                            row.response_embedding = None
+                            row.local_embedding = None
+                        migrated += len(tstate.rows)
+
+                    # Rebuild norm_hash_index from loaded entries
+                    if not hasattr(tstate, 'norm_hash_index') or not tstate.norm_hash_index:
+                        tstate.norm_hash_index = {}
+                    for key, entry in tstate.exact.items():
+                        norm_key = normalize_query(key)
+                        if norm_key:
+                            tstate.norm_hash_index[norm_key] = entry
+
+                    total_entries += len(tstate.rows)
+
                 self.tenants.update(loaded_tenants)
                 system_log.info(
                     f"Cache loaded from disk | tenants={len(loaded_tenants)} | "
-                    f"entries={total_entries} | time={load_time}ms"
+                    f"entries={total_entries} | migrated={migrated} | time={load_time}ms"
                 )
             else:
                 system_log.info(f"Cache load | no local cache found | time={load_time}ms")
         except Exception as e:
             error_log.exception(f"Cache load failed | error={str(e)}")
-        
+
         # Check Redis availability
         try:
             from redis_cache import is_available
@@ -341,24 +510,28 @@ class SemanticCacheService:
         return " ".join(s.strip().split()).lower()
 
     def _get_embedding_for_query(self, messages: List[dict], user_id: Optional[str] = None) -> Tuple[np.ndarray, str]:
-        """Get embedding for the user's query. Uses raw user text for best semantic fidelity."""
+        """Get embedding for the user's raw query text. We embed the original
+        text (lowercased) rather than the normalized version so the embedding
+        model can leverage its own understanding of abbreviations, typos, and
+        paraphrases — it's far better at this than hand-coded normalization."""
         user_messages = [m["content"] for m in messages if m.get("role") == "user"]
-        text = user_messages[-1] if user_messages else ""
-        text = text.strip()
-        if not text:
+        raw_text = user_messages[-1] if user_messages else ""
+        raw_text = raw_text.strip()
+        if not raw_text:
             raise ValueError("Empty query")
 
-        text_key = text.lower()
-        if text_key in self._embedding_cache:
-            self._embedding_cache.move_to_end(text_key)
-            return self._embedding_cache[text_key], text
+        text_for_embed = raw_text.lower()
 
-        emb = get_embedding(text, user_id=user_id)
-        self._embedding_cache[text_key] = emb
+        if text_for_embed in self._embedding_cache:
+            self._embedding_cache.move_to_end(text_for_embed)
+            return self._embedding_cache[text_for_embed], raw_text
+
+        emb = get_embedding(text_for_embed, user_id=user_id)
+        self._embedding_cache[text_for_embed] = emb
         if len(self._embedding_cache) > self._embedding_cache_max_size:
             self._embedding_cache.popitem(last=False)
 
-        return emb, text
+        return emb, raw_text
 
     def _append_event(self, T: TenantState, tenant_id: str, prompt_hash: str, decision: str, similarity: float, latency_ms: float):
         T.events.append(CacheEvent(
@@ -379,35 +552,63 @@ class SemanticCacheService:
             T.dim = v.shape[1]
             T.index = faiss.IndexFlatIP(T.dim)
         T.index.add(v)
+        # Tier 2b: auto-upgrade to IVF when cache grows large
+        if len(T.rows) == IVF_UPGRADE_THRESHOLD and T.dim is not None:
+            self._upgrade_to_ivf(T)
 
-    def _faiss_search(self, T: TenantState, emb: np.ndarray, k: int = 1) -> Tuple[int, float]:
-        """Search FAISS index. Returns (index, similarity)."""
-        q = emb.astype("float32").reshape(1, -1)
-        faiss.normalize_L2(q)
-        k = min(k, len(T.rows))  # Don't search more than available
-        sims, idxs = T.index.search(q, k)
-        if k == 1:
-            return int(idxs[0][0]), float(sims[0][0])
-        # Return best match
-        best_idx = int(idxs[0][0])
-        best_sim = float(sims[0][0])
-        return best_idx, best_sim
-    
-    def _faiss_search_top_k(self, T: TenantState, emb: np.ndarray, k: int = 3) -> List[Tuple[int, float]]:
-        """Search FAISS index and return top k matches. Returns list of (index, similarity)."""
-        q = emb.astype("float32").reshape(1, -1)
-        faiss.normalize_L2(q)
-        search_k = min(k, len(T.rows))
-        if search_k == 0:
-            return []
-        sims, idxs = T.index.search(q, search_k)
-        results = []
-        for i in range(search_k):
-            idx_val = int(idxs[0][i])
-            sim_val = float(sims[0][i])
-            if idx_val >= 0 and idx_val < len(T.rows):  # Valid index
-                results.append((idx_val, sim_val))
-        return results
+    def _local_faiss_add(self, T: TenantState, local_emb: np.ndarray):
+        """Add to the local-model FAISS index for fast pre-filtering."""
+        v = local_emb.astype("float32").reshape(1, -1)
+        faiss.normalize_L2(v)
+        if T.local_index is None:
+            T.local_dim = v.shape[1]
+            T.local_index = faiss.IndexFlatIP(T.local_dim)
+        T.local_index.add(v)
+
+    def _upgrade_to_ivf(self, T: TenantState):
+        """Upgrade from IndexFlatIP to IndexIVFFlat for O(sqrt(n)) search."""
+        try:
+            n = len(T.rows)
+            nlist = max(4, int(np.sqrt(n)))
+            quantizer = faiss.IndexFlatIP(T.dim)
+            ivf_index = faiss.IndexIVFFlat(quantizer, T.dim, nlist, faiss.METRIC_INNER_PRODUCT)
+            all_vecs = np.vstack([
+                r.embedding.astype("float32").reshape(1, -1) for r in T.rows
+            ])
+            faiss.normalize_L2(all_vecs)
+            ivf_index.train(all_vecs)
+            ivf_index.add(all_vecs)
+            ivf_index.nprobe = max(1, nlist // 4)
+            T.index = ivf_index
+            semantic_log.info(
+                f"FAISS upgraded to IVFFlat | entries={n} | nlist={nlist} | nprobe={ivf_index.nprobe}"
+            )
+        except Exception as e:
+            error_log.warning(f"IVF upgrade failed, keeping flat index: {e}")
+
+    def _rebuild_clusters(self, T: TenantState, n_clusters: int = 0):
+        """Tier 3: build cluster centroids from cached embeddings for routing."""
+        if len(T.rows) < 50:
+            return
+        if n_clusters == 0:
+            n_clusters = max(4, int(np.sqrt(len(T.rows)) / 2))
+        all_vecs = np.vstack([
+            r.embedding.astype("float32").reshape(1, -1) for r in T.rows
+        ])
+        faiss.normalize_L2(all_vecs)
+        d = all_vecs.shape[1]
+        kmeans = faiss.Kmeans(d, n_clusters, niter=20, verbose=False, gpu=False)
+        kmeans.train(all_vecs)
+        T.cluster_centroids = kmeans.centroids.copy()
+        T.n_clusters = n_clusters
+        # Assign cluster IDs to entries
+        _, assignments = kmeans.index.search(all_vecs, 1)
+        for i, row in enumerate(T.rows):
+            row.cluster_id = int(assignments[i][0])
+
+    def _resolve_threshold(self, T: TenantState, domain: str) -> float:
+        """Per-domain threshold if configured, else tenant default."""
+        return T.domain_thresholds.get(domain, T.sim_threshold)
 
     def query(
         self,
@@ -420,19 +621,20 @@ class SemanticCacheService:
         user_id: Optional[str] = None,
     ) -> Tuple[str, dict]:
         """
-        Two-tier cache lookup:
-          1. Exact match on lowercased text (sub-ms).
-          2. FAISS cosine similarity on OpenAI embeddings — the embedding model
-             inherently handles spelling errors, synonyms, rephrasing, and
-             question-vs-statement variations. A single threshold (0.80) is all
-             that is needed; no Jaccard/word-overlap heuristics.
-        On miss: LLM + embedding run in parallel to minimize latency.
+        Multi-tier cache lookup pipeline:
+          1. Exact match on original text (sub-ms).
+          2. Normalized-hash O(1) lookup (sub-ms).
+          3. Local model pre-filter gate — skip expensive OpenAI call if
+             local similarity < 0.5 (Tier 2c).
+          4. OpenAI semantic search: FAISS cosine top-k → cross-encoder
+             re-rank (Tier 3a) → hybrid scoring → confidence tiers.
+        On miss: LLM call + async embed/store.
         """
         T = self.tenant(tenant_id)
         t0 = time.time()
         prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()
 
-        # ── 1) Exact match (sub-millisecond) ──
+        # ── 1) Exact match on original normalized text (sub-ms) ──
         if prompt_norm in T.exact:
             entry = T.exact[prompt_norm]
             if entry.fresh() and entry.model == model:
@@ -446,106 +648,254 @@ class SemanticCacheService:
                 self._append_event(T, tenant_id, prompt_hash, "exact", 1.0, latency)
                 return entry.response_text, meta
 
-        # ── 2) Semantic search via FAISS cosine similarity ──
+        # ── 2) Normalized-hash O(1) lookup (Tier 1b) ──
+        deep_norm = normalize_query(prompt_norm)
+        if deep_norm and deep_norm in T.norm_hash_index:
+            entry = T.norm_hash_index[deep_norm]
+            if entry.fresh() and entry.model == model:
+                entry.use_count += 1
+                entry.last_used_at = time.time()
+                T.hits += 1
+                latency = round((time.time() - t0) * 1000, 2)
+                T.latencies_ms.append(latency)
+                meta = {"hit": "exact", "similarity": 1.0, "latency_ms": latency, "strategy": "normalized_hash"}
+                semantic_log.info(f"{tenant_id} | normalized_hash | key={prompt_norm[:80]}")
+                self._append_event(T, tenant_id, prompt_hash, "exact", 1.0, latency)
+                return entry.response_text, meta
+
+        # ── 3) Local model pre-filter gate (Tier 2c) ──
+        # Use normalized text (with abbreviation expansion) for the local gate
+        # so "Explain ML" gets expanded to "Explain machine learning" before
+        # comparing to cached embeddings.
+        local_gate_passed = True
+        if T.local_index is not None and len(T.rows) > 0 and LOCAL_MODEL_ENABLED:
+            try:
+                local_emb = get_local_embedding(prompt_norm)
+                if local_emb is not None:
+                    lq = local_emb.astype("float32").reshape(1, -1)
+                    faiss.normalize_L2(lq)
+                    local_k = min(3, T.local_index.ntotal)
+                    if local_k > 0:
+                        local_sims, _ = T.local_index.search(lq, local_k)
+                        best_local_sim = float(local_sims[0][0])
+                        if best_local_sim < 0.25:
+                            local_gate_passed = False
+                            semantic_log.debug(
+                                f"{tenant_id} | local_gate_reject | best_local_sim={best_local_sim:.3f} | "
+                                f"key={prompt_norm[:80]}"
+                            )
+            except Exception as e:
+                error_log.debug(f"Local pre-filter error (non-fatal): {e}")
+
+        # ── 4) Semantic search with hybrid re-ranking + cross-encoder ──
         query_emb = None
         query_text = prompt_norm
-        SIM_THRESHOLD = T.sim_threshold  # default 0.65, but embedding quality makes 0.80+ reliable
 
-        if T.index is not None and len(T.rows) > 0:
+        if local_gate_passed and T.index is not None and len(T.rows) > 0:
             query_emb, query_text = self._get_embedding_for_query(messages, user_id=user_id)
+            query_domain = domain_hint(query_text)
 
-            k = min(5, len(T.rows))
+            # Tier 3b: cluster routing — narrow search to nearest clusters
+            search_rows_mask = None
+            if T.cluster_centroids is not None and T.n_clusters >= 4:
+                cq = query_emb.astype("float32").reshape(1, -1)
+                faiss.normalize_L2(cq)
+                centroid_index = faiss.IndexFlatIP(T.cluster_centroids.shape[1])
+                centroid_index.add(T.cluster_centroids)
+                n_probe_clusters = max(1, T.n_clusters // 3)
+                _, cluster_ids = centroid_index.search(cq, n_probe_clusters)
+                target_clusters = set(int(c) for c in cluster_ids[0] if c >= 0)
+                search_rows_mask = set(
+                    i for i, r in enumerate(T.rows) if r.cluster_id in target_clusters
+                )
+
+            k = min(10, len(T.rows))
             q = query_emb.astype("float32").reshape(1, -1)
             faiss.normalize_L2(q)
             sims, idxs = T.index.search(q, k)
 
-            best_entry = None
-            best_sim = 0.0
-
+            candidates = []
             for i in range(k):
                 idx = int(idxs[0][i])
-                sim = float(sims[0][i])
+                cosine_sim = float(sims[0][i])
                 if idx < 0 or idx >= len(T.rows):
+                    continue
+                if search_rows_mask is not None and idx not in search_rows_mask:
                     continue
                 entry = T.rows[idx]
                 if not entry.fresh() or entry.model != model:
                     continue
-                if sim > best_sim:
-                    best_sim = sim
-                    best_entry = entry
 
-            if best_entry is not None and best_sim >= SIM_THRESHOLD:
-                best_entry.use_count += 1
-                best_entry.last_used_at = time.time()
-                T.hits += 1
-                T.semantic_hits += 1
-                latency = round((time.time() - t0) * 1000, 2)
-                T.latencies_ms.append(latency)
-                meta = {
-                    "hit": "semantic",
-                    "similarity": round(best_sim, 4),
-                    "latency_ms": latency,
-                    "strategy": "semantic",
-                    "threshold_used": round(SIM_THRESHOLD, 3),
-                }
+                tok_sim = token_overlap_score(query_text, entry.prompt_norm)
+                h_score = hybrid_score(cosine_sim, tok_sim)
+                candidates.append((entry, cosine_sim, tok_sim, h_score, idx))
+
+            # Tier 3a: cross-encoder re-ranking on top candidates
+            if len(candidates) >= 2 and CROSS_ENCODER_ENABLED:
+                try:
+                    cand_texts = [c[0].prompt_norm for c in candidates[:5]]
+                    ce_scores = cross_encoder_score(query_text, cand_texts)
+                    if ce_scores is not None:
+                        for j, score in enumerate(ce_scores):
+                            entry, cosine_sim, tok_sim, h_score, idx = candidates[j]
+                            # Blend: 60% hybrid, 40% cross-encoder (CE is more accurate)
+                            ce_norm = max(0.0, min(1.0, (score + 5) / 10))  # normalize ~[-5,5] to [0,1]
+                            blended = 0.60 * h_score + 0.40 * ce_norm
+                            candidates[j] = (entry, cosine_sim, tok_sim, blended, idx)
+                except Exception as e:
+                    error_log.debug(f"Cross-encoder error (non-fatal): {e}")
+
+            candidates.sort(key=lambda c: c[3], reverse=True)
+
+            if candidates:
+                best_entry, best_cosine, best_tok, best_hybrid, _ = candidates[0]
+                threshold = self._resolve_threshold(T, query_domain)
+
+                is_match = False
+                confidence_tier = "none"
+
+                # Primary decision: trust the cosine similarity from the
+                # embedding model. It already understands abbreviations (ML),
+                # typos ("artifical inteligence"), and paraphrases.
+                if best_cosine >= threshold + 0.10:
+                    is_match = True
+                    confidence_tier = "high"
+                elif best_cosine >= threshold:
+                    is_match = True
+                    confidence_tier = "medium"
+                elif best_cosine >= threshold - 0.08:
+                    is_match = True
+                    confidence_tier = "low"
+
+                # Response embedding sanity check — only reject if the
+                # response is truly unrelated (very low threshold).
+                if is_match and best_entry.response_embedding is not None and query_emb is not None:
+                    resp_sim = float(np.dot(
+                        query_emb / (np.linalg.norm(query_emb) + 1e-12),
+                        best_entry.response_embedding / (np.linalg.norm(best_entry.response_embedding) + 1e-12),
+                    ))
+                    if resp_sim < 0.10:
+                        is_match = False
+                        confidence_tier = "response_mismatch"
+                        semantic_log.info(
+                            f"{tenant_id} | response_mismatch | query_resp_sim={resp_sim:.3f} | "
+                            f"key={prompt_norm[:80]}"
+                        )
+
+                if is_match:
+                    best_entry.use_count += 1
+                    best_entry.last_used_at = time.time()
+                    T.hits += 1
+                    T.semantic_hits += 1
+                    latency = round((time.time() - t0) * 1000, 2)
+                    T.latencies_ms.append(latency)
+                    meta = {
+                        "hit": "semantic",
+                        "similarity": round(best_cosine, 4),
+                        "hybrid_score": round(best_hybrid, 4),
+                        "token_overlap": round(best_tok, 4),
+                        "confidence": confidence_tier,
+                        "latency_ms": latency,
+                        "strategy": "hybrid_semantic",
+                        "threshold_used": round(threshold, 3),
+                        "domain": query_domain,
+                    }
+                    semantic_log.info(
+                        f"{tenant_id} | semantic | cosine={best_cosine:.3f} | "
+                        f"hybrid={best_hybrid:.3f} | token_overlap={best_tok:.3f} | "
+                        f"confidence={confidence_tier} | threshold={threshold:.3f} | "
+                        f"domain={query_domain} | key={prompt_norm[:80]}"
+                    )
+                    self._append_event(T, tenant_id, prompt_hash, "semantic",
+                                       round(best_cosine, 4), latency)
+                    if T.events:
+                        T.events[-1].confidence = best_hybrid
+                        T.events[-1].hybrid_score = best_hybrid
+                    return best_entry.response_text, meta
+
                 semantic_log.info(
-                    f"{tenant_id} | semantic | sim={best_sim:.3f} | "
-                    f"threshold={SIM_THRESHOLD:.3f} | key={prompt_norm[:80]}"
+                    f"{tenant_id} | near-miss | cosine={best_cosine:.3f} | "
+                    f"hybrid={best_hybrid:.3f} | token_overlap={best_tok:.3f} | "
+                    f"threshold={threshold:.3f} | domain={query_domain} | "
+                    f"key={prompt_norm[:80]}"
                 )
-                self._append_event(T, tenant_id, prompt_hash, "semantic", round(best_sim, 4), latency)
-                return best_entry.response_text, meta
+                if not hasattr(T, '_near_misses'):
+                    T._near_misses = []
+                T._near_misses.append(best_hybrid)
+                if len(T._near_misses) > 100:
+                    T._near_misses = T._near_misses[-100:]
 
-            if best_entry is not None:
-                semantic_log.info(
-                    f"{tenant_id} | near-miss | best_sim={best_sim:.3f} | "
-                    f"threshold={SIM_THRESHOLD:.3f} | key={prompt_norm[:80]}"
-                )
-
-        # ── 3) Cache miss — LLM call (embedding runs async for storage) ──
+        # ── 5) Cache miss — LLM call + async storage ──
         T.misses += 1
-
         response_text = call_llm(messages, temperature, user_id)
 
         latency = round((time.time() - t0) * 1000, 2)
         T.latencies_ms.append(latency)
         semantic_log.debug(f"{tenant_id} | miss | total={latency}ms | key={prompt_norm[:80]}")
-        
+
         meta = {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "miss"}
         self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, latency)
 
-        # Store in cache asynchronously — embedding + storage in background
+        # Store immediately with query embedding (fast path)
         _cached_emb = query_emb
-        def _store():
+        def _store_fast():
+            """Store entry in cache ASAP with just the query embedding."""
             try:
                 emb = _cached_emb
                 if emb is None:
                     emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
                 user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
+                entry_domain = domain_hint(user_text)
+
                 entry = CacheEntry(
                     prompt_norm=prompt_norm,
                     response_text=response_text,
                     embedding=emb,
                     model=model,
                     ttl_seconds=ttl_seconds,
-                    domain=domain_hint(user_text),
+                    domain=entry_domain,
                     strategy="miss",
                 )
                 with self._cache_lock:
                     T.exact[prompt_norm] = entry
+                    norm_key = normalize_query(prompt_norm)
+                    if norm_key:
+                        T.norm_hash_index[norm_key] = entry
                     T.rows.append(entry)
                     self._faiss_add(T, emb)
                     if len(T.rows) % 10 == 0:
                         threading.Thread(target=self._save_cache, daemon=True).start()
-                # Write-through to Redis L2 and PostgreSQL L3
                 try:
                     from redis_cache import store_exact_match, store_embedding
                     store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
                     store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
+
+                # Enrich asynchronously: response embedding, local embedding, clusters
+                def _enrich():
+                    try:
+                        resp_emb = None
+                        try:
+                            resp_emb = get_embedding(response_text[:500], user_id=user_id)
+                        except Exception:
+                            pass
+                        local_emb = get_local_embedding(prompt_norm) if LOCAL_MODEL_ENABLED else None
+
+                        with self._cache_lock:
+                            entry.response_embedding = resp_emb
+                            entry.local_embedding = local_emb
+                            if local_emb is not None:
+                                self._local_faiss_add(T, local_emb)
+                            if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
+                                self._rebuild_clusters(T)
+                    except Exception as e:
+                        error_log.debug(f"Enrich failed (non-fatal) | tenant={tenant_id} | {e}")
+                threading.Thread(target=_enrich, daemon=True).start()
+
             except Exception as e:
                 error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
-        threading.Thread(target=_store, daemon=True).start()
+        threading.Thread(target=_store_fast, daemon=True).start()
 
         return response_text, meta
 
@@ -556,14 +906,18 @@ class SemanticCacheService:
         p95 = np.percentile(T.latencies_ms, 95) if T.latencies_ms else 0
         avg_latency = np.mean(T.latencies_ms) if T.latencies_ms else 0
         semantic_hit_ratio = (T.semantic_hits / total) if total > 0 else 0.0
-        
+
         semantic_events = [e for e in T.events if e.decision == "semantic"]
-        avg_confidence = np.mean([e.similarity for e in semantic_events]) if semantic_events else 0.0
-        avg_hybrid_score = avg_confidence
-        high_confidence_hits = len([e for e in semantic_events if e.similarity >= 0.8])
-        
-        # Estimate tokens saved (rough estimate: 100 tokens per miss saved)
-        tokens_saved_est = T.hits * 100  # Rough estimate
+        avg_cosine = np.mean([e.similarity for e in semantic_events]) if semantic_events else 0.0
+        avg_hybrid = np.mean([e.hybrid_score for e in semantic_events if e.hybrid_score > 0]) if semantic_events else 0.0
+        high_confidence_hits = len([e for e in semantic_events if e.hybrid_score >= 0.85])
+
+        near_misses = getattr(T, '_near_misses', [])
+        tokens_saved_est = T.hits * 100
+        entries_with_resp_emb = sum(1 for r in T.rows if r.response_embedding is not None)
+        entries_with_local_emb = sum(1 for r in T.rows if r.local_embedding is not None)
+        index_type = type(T.index).__name__ if T.index else "none"
+
         return {
             "tenant": tenant_id,
             "requests": total,
@@ -579,24 +933,58 @@ class SemanticCacheService:
             "entries": len(T.rows),
             "p50_latency_ms": round(float(p50), 2),
             "p95_latency_ms": round(float(p95), 2),
-            # Enhanced quality metrics
-            "avg_confidence": round(avg_confidence, 3),
-            "avg_hybrid_score": round(avg_hybrid_score, 3),
+            "avg_confidence": round(avg_cosine, 3),
+            "avg_hybrid_score": round(avg_hybrid, 3),
             "high_confidence_hits": high_confidence_hits,
             "high_confidence_ratio": round((high_confidence_hits / len(semantic_events)) if semantic_events else 0.0, 3),
+            "near_miss_count": len(near_misses),
+            "domain_thresholds": {k: round(v, 3) for k, v in T.domain_thresholds.items()},
+            # Engine info
+            "embed_model": EMBED_MODEL,
+            "embed_dimensions": EMBED_DIMENSIONS,
+            "index_type": index_type,
+            "local_model": LOCAL_MODEL_NAME if LOCAL_MODEL_ENABLED else "disabled",
+            "cross_encoder": CROSS_ENCODER_MODEL if CROSS_ENCODER_ENABLED else "disabled",
+            "entries_with_response_embedding": entries_with_resp_emb,
+            "entries_with_local_embedding": entries_with_local_emb,
+            "norm_hash_index_size": len(T.norm_hash_index),
+            "n_clusters": T.n_clusters,
         }
 
     def adapt_threshold(self, tenant_id: str):
-        """Gently adapt threshold based on observed hit ratio."""
+        """Adapt threshold using both hit ratio and near-miss distribution.
+
+        Strategy:
+        - If many near-misses cluster just below threshold → lower threshold
+          to capture them (they're likely valid matches).
+        - If hit ratio is very high → raise threshold to improve precision.
+        - Near-miss data provides a direct signal the old approach lacked.
+        """
         T = self.tenant(tenant_id)
         total = T.hits + T.misses
-        if total < 20:
+        if total < 10:
             return
+
         hit_ratio = T.hits / total
-        if hit_ratio < 0.30:
-            T.sim_threshold = max(0.70, T.sim_threshold - 0.01)
-        elif hit_ratio > 0.85:
-            T.sim_threshold = min(0.85, T.sim_threshold + 0.01)
+        near_misses = getattr(T, '_near_misses', [])
+
+        # Near-miss pull: if many near-misses are within 0.05 of threshold,
+        # there's a cluster of queries being needlessly rejected.
+        if len(near_misses) >= 5:
+            close_misses = [s for s in near_misses if s >= T.sim_threshold - 0.05]
+            close_ratio = len(close_misses) / len(near_misses)
+            if close_ratio > 0.5:
+                T.sim_threshold = max(0.40, T.sim_threshold - 0.02)
+                semantic_log.info(
+                    f"{tenant_id} | threshold_adapted_down | "
+                    f"close_miss_ratio={close_ratio:.2f} | new={T.sim_threshold:.3f}"
+                )
+                return
+
+        if hit_ratio < 0.25:
+            T.sim_threshold = max(0.40, T.sim_threshold - 0.015)
+        elif hit_ratio > 0.80:
+            T.sim_threshold = min(0.75, T.sim_threshold + 0.01)
 
     def warmup(
         self,
@@ -627,6 +1015,13 @@ class SemanticCacheService:
                     continue
                 emb = get_embedding(prompt, user_id=user_id)
                 user_text = prompt
+                resp_emb = None
+                try:
+                    resp_emb = get_embedding(response_text[:500], user_id=user_id)
+                except Exception:
+                    pass
+                local_emb = get_local_embedding(prompt_norm) if LOCAL_MODEL_ENABLED else None
+
                 entry = CacheEntry(
                     prompt_norm=prompt_norm,
                     response_text=response_text,
@@ -635,11 +1030,18 @@ class SemanticCacheService:
                     ttl_seconds=ttl_seconds,
                     domain=domain_hint(user_text),
                     strategy="warmup",
+                    response_embedding=resp_emb,
+                    local_embedding=local_emb,
                 )
                 with self._cache_lock:
                     T.exact[prompt_norm] = entry
+                    norm_key = normalize_query(prompt_norm)
+                    if norm_key:
+                        T.norm_hash_index[norm_key] = entry
                     T.rows.append(entry)
                     self._faiss_add(T, emb)
+                    if local_emb is not None:
+                        self._local_faiss_add(T, local_emb)
                 added += 1
                 try:
                     from redis_cache import store_exact_match, store_embedding
@@ -944,7 +1346,13 @@ def health():
         health_status = {
             "status": "ok",
             "service": "semantic-cache",
-            "version": "2.0.0",
+            "version": "3.0.0",
+            "engine": {
+                "embed_model": EMBED_MODEL,
+                "embed_dimensions": EMBED_DIMENSIONS,
+                "local_model": LOCAL_MODEL_NAME if LOCAL_MODEL_ENABLED else "disabled",
+                "cross_encoder": CROSS_ENCODER_MODEL if CROSS_ENCODER_ENABLED else "disabled",
+            },
             "cache": {
                 "tenants": total_tenants,
                 "total_entries": total_entries,
@@ -1085,6 +1493,7 @@ def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get
 class SettingsUpdate(BaseModel):
     sim_threshold: Optional[float] = None
     ttl_days: Optional[int] = None
+    domain_thresholds: Optional[Dict[str, float]] = None
 
 @app.get("/settings")
 def get_settings(tenant: str = Depends(get_tenant_from_key)):
@@ -1094,6 +1503,16 @@ def get_settings(tenant: str = Depends(get_tenant_from_key)):
         "sim_threshold": round(T.sim_threshold, 3),
         "ttl_days": 7,
         "entries": len(T.rows),
+        "domain_thresholds": {k: round(v, 3) for k, v in T.domain_thresholds.items()},
+        "available_domains": list(DOMAIN_MAP.keys()),
+        "embed_model": EMBED_MODEL,
+        "embed_dimensions": EMBED_DIMENSIONS,
+        "local_model": LOCAL_MODEL_NAME if LOCAL_MODEL_ENABLED else "disabled",
+        "cross_encoder": CROSS_ENCODER_MODEL if CROSS_ENCODER_ENABLED else "disabled",
+        "ivf_upgrade_threshold": IVF_UPGRADE_THRESHOLD,
+        "index_type": type(T.index).__name__ if T.index else "none",
+        "norm_hash_index_size": len(T.norm_hash_index),
+        "n_clusters": T.n_clusters,
     }
 
 class WarmupEntry(BaseModel):
@@ -1186,13 +1605,23 @@ def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_
     T = svc.tenant(tenant)
     changed = {}
     if body.sim_threshold is not None:
-        clamped = max(0.50, min(0.99, body.sim_threshold))
+        clamped = max(0.40, min(0.99, body.sim_threshold))
         T.sim_threshold = clamped
         changed["sim_threshold"] = round(clamped, 3)
     if body.ttl_days is not None:
         changed["ttl_days"] = max(1, min(90, body.ttl_days))
+    if body.domain_thresholds is not None:
+        valid_domains = set(DOMAIN_MAP.keys()) | {"general"}
+        for domain, thresh in body.domain_thresholds.items():
+            if domain in valid_domains:
+                T.domain_thresholds[domain] = max(0.40, min(0.99, thresh))
+        changed["domain_thresholds"] = {k: round(v, 3) for k, v in T.domain_thresholds.items()}
     access_log.info(f"{tenant} | /settings | updated={changed}")
-    return {"status": "ok", "settings": {**changed, "sim_threshold": round(T.sim_threshold, 3)}}
+    return {"status": "ok", "settings": {
+        **changed,
+        "sim_threshold": round(T.sim_threshold, 3),
+        "domain_thresholds": {k: round(v, 3) for k, v in T.domain_thresholds.items()},
+    }}
 
 def _get_user_from_supabase_token(request: Request) -> dict:
     """Extract and verify Supabase JWT from Authorization header. Returns user profile dict."""
@@ -1586,7 +2015,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     )
     try:
         user_id = _ctx.get("user_id")
-        messages = [m.dict() for m in body.messages]
+        messages = [m.model_dump() for m in body.messages]
         chunk_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}"
 
         if body.stream:

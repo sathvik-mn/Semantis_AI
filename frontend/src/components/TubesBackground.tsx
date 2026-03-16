@@ -28,6 +28,7 @@ export function TubesBackground({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tubesRef = useRef<any>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -59,6 +60,7 @@ export function TubesBackground({
         setIsLoaded(true);
       } catch (error) {
         console.error('Failed to load TubesCursor:', error);
+        if (mounted) setLoadFailed(true);
       }
     };
 
@@ -68,7 +70,7 @@ export function TubesBackground({
       mounted = false;
       tubesRef.current = null;
     };
-  }, []);
+  }, [tubeColors, lightColors, lightIntensity]);
 
   const handleClick = useCallback(() => {
     if (!enableClickInteraction || !tubesRef.current) return;
@@ -96,10 +98,10 @@ export function TubesBackground({
         }}
       />
 
-      {/* Fade transition while loading */}
+      {/* Fade transition while loading — hidden once loaded or if CDN fails */}
       <div
         className="absolute inset-0 bg-surface transition-opacity duration-1000 pointer-events-none"
-        style={{ opacity: isLoaded ? 0 : 1 }}
+        style={{ opacity: isLoaded || loadFailed ? 0 : 1 }}
       />
 
       {/* Content overlay */}

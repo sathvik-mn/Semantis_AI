@@ -51,13 +51,11 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
                     "vectors": None  # Will be handled separately
                 }
         
-        # Serialize cache entries
-        entries_data = []
-        for entry in tenant_state.rows:
-            entry_dict = {
+        def _serialize_entry(entry):
+            d = {
                 "prompt_norm": entry.prompt_norm,
                 "response_text": entry.response_text,
-                "embedding": entry.embedding.tolist(),  # Convert numpy array to list
+                "embedding": entry.embedding.tolist() if entry.embedding is not None else None,
                 "model": entry.model,
                 "ttl_seconds": entry.ttl_seconds,
                 "created_at": entry.created_at,
@@ -65,24 +63,16 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
                 "use_count": entry.use_count,
                 "domain": entry.domain,
                 "strategy": entry.strategy,
+                "cluster_id": getattr(entry, 'cluster_id', -1),
             }
-            entries_data.append(entry_dict)
-        
-        # Serialize exact cache
-        exact_cache_data = {}
-        for key, entry in tenant_state.exact.items():
-            exact_cache_data[key] = {
-                "prompt_norm": entry.prompt_norm,
-                "response_text": entry.response_text,
-                "embedding": entry.embedding.tolist(),
-                "model": entry.model,
-                "ttl_seconds": entry.ttl_seconds,
-                "created_at": entry.created_at,
-                "last_used_at": entry.last_used_at,
-                "use_count": entry.use_count,
-                "domain": entry.domain,
-                "strategy": entry.strategy,
-            }
+            resp_emb = getattr(entry, 'response_embedding', None)
+            d["response_embedding"] = resp_emb.tolist() if resp_emb is not None else None
+            local_emb = getattr(entry, 'local_embedding', None)
+            d["local_embedding"] = local_emb.tolist() if local_emb is not None else None
+            return d
+
+        entries_data = [_serialize_entry(e) for e in tenant_state.rows]
+        exact_cache_data = {key: _serialize_entry(e) for key, e in tenant_state.exact.items()}
         
         cache_data["tenants"][tenant_id] = {
             "exact": exact_cache_data,
@@ -132,94 +122,91 @@ def load_cache(filepath: str = CACHE_FILE):
         # Reconstruct tenant states
         from semantic_cache_server import TenantState, CacheEntry, CacheEvent
         
+        def _deserialize_entry(entry_data):
+            emb_data = entry_data.get("embedding")
+            emb = np.array(emb_data, dtype="float32") if emb_data is not None else None
+            resp_emb_data = entry_data.get("response_embedding")
+            resp_emb = np.array(resp_emb_data, dtype="float32") if resp_emb_data is not None else None
+            local_emb_data = entry_data.get("local_embedding")
+            local_emb = np.array(local_emb_data, dtype="float32") if local_emb_data is not None else None
+            return CacheEntry(
+                prompt_norm=entry_data["prompt_norm"],
+                response_text=entry_data["response_text"],
+                embedding=emb,
+                model=entry_data["model"],
+                ttl_seconds=entry_data["ttl_seconds"],
+                created_at=entry_data["created_at"],
+                last_used_at=entry_data.get("last_used_at", time.time()),
+                use_count=entry_data.get("use_count", 0),
+                domain=entry_data.get("domain", "general"),
+                strategy=entry_data.get("strategy", "miss"),
+                response_embedding=resp_emb,
+                local_embedding=local_emb,
+                cluster_id=entry_data.get("cluster_id", -1),
+            )
+
         tenants = {}
         for tenant_id, tenant_data in cache_data.get("tenants", {}).items():
-            # Reconstruct exact cache
-            exact_cache = {}
-            for key, entry_data in tenant_data.get("exact", {}).items():
-                entry = CacheEntry(
-                    prompt_norm=entry_data["prompt_norm"],
-                    response_text=entry_data["response_text"],
-                    embedding=np.array(entry_data["embedding"]),
-                    model=entry_data["model"],
-                    ttl_seconds=entry_data["ttl_seconds"],
-                    created_at=entry_data["created_at"],
-                    last_used_at=entry_data.get("last_used_at", time.time()),
-                    use_count=entry_data.get("use_count", 0),
-                    domain=entry_data.get("domain", "general"),
-                    strategy=entry_data.get("strategy", "miss"),
-                )
-                exact_cache[key] = entry
-            
-            # Reconstruct rows
-            rows = []
-            for entry_data in tenant_data.get("rows", []):
-                entry = CacheEntry(
-                    prompt_norm=entry_data["prompt_norm"],
-                    response_text=entry_data["response_text"],
-                    embedding=np.array(entry_data["embedding"]),
-                    model=entry_data["model"],
-                    ttl_seconds=entry_data["ttl_seconds"],
-                    created_at=entry_data["created_at"],
-                    last_used_at=entry_data.get("last_used_at", time.time()),
-                    use_count=entry_data.get("use_count", 0),
-                    domain=entry_data.get("domain", "general"),
-                    strategy=entry_data.get("strategy", "miss"),
-                )
-                rows.append(entry)
-            
-            # Reconstruct FAISS index
+            exact_cache = {
+                key: _deserialize_entry(ed) for key, ed in tenant_data.get("exact", {}).items()
+            }
+            rows = [_deserialize_entry(ed) for ed in tenant_data.get("rows", [])]
+
+            # Reconstruct main FAISS index
             index = None
             dim = tenant_data.get("dim")
             if dim and len(rows) > 0:
-                # Create FAISS index
-                index = faiss.IndexFlatIP(dim)
-                # Add embeddings to index (must match order of rows)
-                embeddings_list = []
-                for entry in rows:
-                    if entry.embedding is not None:
-                        embeddings_list.append(entry.embedding)
-                
+                embeddings_list = [r.embedding for r in rows if r.embedding is not None]
                 if embeddings_list:
-                    embeddings = np.array(embeddings_list).astype('float32')
-                    # Ensure embeddings are normalized
+                    index = faiss.IndexFlatIP(dim)
+                    embeddings = np.vstack(embeddings_list).astype('float32')
                     faiss.normalize_L2(embeddings)
-                    # Add to index
                     index.add(embeddings)
                     print(f"Reconstructed FAISS index with {len(embeddings_list)} vectors for tenant {tenant_id}")
-            
-            # Reconstruct events
+
+            # Reconstruct local FAISS index
+            local_index = None
+            local_dim = None
+            local_embs = [r.local_embedding for r in rows if r.local_embedding is not None]
+            if local_embs:
+                local_dim = local_embs[0].shape[0]
+                local_index = faiss.IndexFlatIP(local_dim)
+                local_vecs = np.vstack(local_embs).astype('float32')
+                faiss.normalize_L2(local_vecs)
+                local_index.add(local_vecs)
+
             events = []
             for event_data in tenant_data.get("events", []):
-                event = CacheEvent(
+                events.append(CacheEvent(
                     timestamp=event_data["timestamp"],
                     tenant_id=event_data["tenant_id"],
                     prompt_hash=event_data["prompt_hash"],
                     decision=event_data["decision"],
                     similarity=event_data["similarity"],
                     latency_ms=event_data["latency_ms"],
-                    confidence=event_data.get("confidence", 0.0),  # Backward compatible
-                    hybrid_score=event_data.get("hybrid_score", 0.0),  # Backward compatible
-                )
-                events.append(event)
-            
-            # Create tenant state
+                    confidence=event_data.get("confidence", 0.0),
+                    hybrid_score=event_data.get("hybrid_score", 0.0),
+                ))
+
             tenant_state = TenantState(
                 exact=exact_cache,
                 index=index,
                 rows=rows,
                 dim=dim,
+                norm_hash_index={},
+                local_index=local_index,
+                local_dim=local_dim,
                 hits=tenant_data.get("hits", 0),
                 misses=tenant_data.get("misses", 0),
                 semantic_hits=tenant_data.get("semantic_hits", 0),
                 latencies_ms=tenant_data.get("latencies_ms", []),
-                sim_threshold=tenant_data.get("sim_threshold", 0.72),
-                domain_thresholds=tenant_data.get("domain_thresholds", {}),  # Backward compatible
+                sim_threshold=tenant_data.get("sim_threshold", 0.55),
+                domain_thresholds=tenant_data.get("domain_thresholds", {}),
                 events=events,
             )
-            
+
             tenants[tenant_id] = tenant_state
-        
+
         print(f"Cache loaded from {filepath}")
         return tenants
     

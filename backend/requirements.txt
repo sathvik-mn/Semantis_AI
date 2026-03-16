@@ -13,4 +13,5 @@ psycopg2-binary
 slowapi
 redis>=5.0.0
 stripe
-
+prometheus-client
+sentence-transformers

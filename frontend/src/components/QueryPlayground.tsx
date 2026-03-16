@@ -1,9 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useSemanticCache } from '../hooks/useSemanticCache';
 import { ChatResponse } from '../api/semanticAPI';
 import { setApiKey, hasApiKey } from '../api/semanticAPI';
-import { Key, ExternalLink, Copy, Check } from 'lucide-react';
+import { Key, ExternalLink, Copy, Check, Trash2, Clock } from 'lucide-react';
+
+const HISTORY_KEY = 'semantis_chat_history';
+const MAX_HISTORY = 50;
+
+interface HistoryEntry {
+  id: string;
+  prompt: string;
+  response: ChatResponse;
+  timestamp: number;
+}
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveHistory(entries: HistoryEntry[]) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY)));
+}
 
 interface QueryPlaygroundProps {
   onQueryComplete?: () => void;
@@ -17,6 +38,8 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey());
   const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
+  const [showHistory, setShowHistory] = useState(false);
   const { sendQuery, isLoading, error } = useSemanticCache();
 
   const copyResponse = () => {
@@ -26,6 +49,31 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  const addToHistory = useCallback((prompt: string, resp: ChatResponse) => {
+    const entry: HistoryEntry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      prompt,
+      response: resp,
+      timestamp: Date.now(),
+    };
+    setHistory(prev => {
+      const next = [entry, ...prev].slice(0, MAX_HISTORY);
+      saveHistory(next);
+      return next;
+    });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+    localStorage.removeItem(HISTORY_KEY);
+  }, []);
+
+  const loadFromHistory = useCallback((entry: HistoryEntry) => {
+    setPrompt(entry.prompt);
+    setResponse(entry.response);
+    setShowHistory(false);
+  }, []);
 
   useEffect(() => {
     const storedKey = localStorage.getItem('semantic_api_key');
@@ -74,6 +122,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       });
 
       setResponse(result);
+      addToHistory(prompt.trim(), result);
       if (onQueryComplete) onQueryComplete();
     } catch (err: any) {
       console.error('Query failed:', err);
@@ -132,12 +181,66 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
           </div>
         </div>
 
-        <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey()} style={styles.button}>
-          {isLoading ? 'Processing...' : 'Run Query'}
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey()} style={{ ...styles.button, flex: 1 }}>
+            {isLoading ? 'Processing...' : 'Run Query'}
+          </button>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistory(!showHistory)}
+              style={styles.historyToggle}
+            >
+              <Clock size={16} />
+              {history.length}
+            </button>
+          )}
+        </div>
 
         {error && <div style={styles.error}>{error}</div>}
       </form>
+
+      {showHistory && history.length > 0 && (
+        <div style={styles.historyPanel}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ fontSize: '16px', color: '#fff', fontWeight: '600', margin: 0 }}>
+              Query History ({history.length})
+            </h3>
+            <button onClick={clearHistory} style={styles.clearButton}>
+              <Trash2 size={14} /> Clear All
+            </button>
+          </div>
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {history.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => loadFromHistory(entry)}
+                style={styles.historyItem}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '14px', color: '#fff', flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.prompt}
+                  </span>
+                  <span
+                    style={{
+                      ...styles.badge,
+                      backgroundColor: getBadgeColor(entry.response.meta.hit),
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {entry.response.meta.hit.toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', textAlign: 'left', marginTop: '4px' }}>
+                  {new Date(entry.timestamp).toLocaleString()} · {entry.response.meta.latency_ms.toFixed(0)}ms
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showApiKeyInput && (
         <div style={styles.apiKeySection}>
@@ -464,5 +567,53 @@ const styles: Record<string, React.CSSProperties> = {
   },
   linkIcon: {
     display: 'inline-block',
+  },
+  historyToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '14px 18px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  historyPanel: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '12px',
+    padding: '20px',
+    marginBottom: '20px',
+    backdropFilter: 'blur(10px)',
+  },
+  historyItem: {
+    display: 'block',
+    width: '100%',
+    padding: '12px',
+    marginBottom: '8px',
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'background 0.15s, border-color 0.15s',
+    textDecoration: 'none',
+    fontFamily: 'inherit',
+  },
+  clearButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    fontSize: '12px',
+    background: 'rgba(239, 68, 68, 0.15)',
+    border: '1px solid rgba(239, 68, 68, 0.3)',
+    borderRadius: '6px',
+    color: '#fca5a5',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   },
 };
