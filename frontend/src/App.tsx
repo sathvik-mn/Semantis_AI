@@ -14,6 +14,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { DocsPageWrapper } from './pages/DocsPageWrapper';
 import { StatusPage } from './pages/StatusPage';
 import { SecurityPage } from './pages/SecurityPage';
+import { PrivacyPage } from './pages/PrivacyPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { Layout } from './components/Layout';
 import AdminLayout from './components/AdminLayout';
@@ -72,6 +73,8 @@ function AppRoutes() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/status" element={<StatusPage />} />
       <Route path="/security" element={<SecurityPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/docs" element={<DocsPageWrapper />} />
       <Route
         element={
           <ProtectedRoute>
@@ -84,7 +87,6 @@ function AppRoutes() {
         <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/docs" element={<DocsPageWrapper />} />
       </Route>
       <Route path="/admin/login" element={<AdminLoginPage />} />
       <Route

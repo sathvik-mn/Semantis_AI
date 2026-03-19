@@ -79,8 +79,9 @@ function semanticCacheMiddleware(options) {
         const response = await cache.query(prompt, req.body.model || 'gpt-4o-mini');
 
         // If cache hit, return cached response
-        if (response.cacheHit === 'exact' || response.cacheHit === 'semantic') {
-          // Format as OpenAI response
+        // The API returns snake_case: meta.hit, meta.similarity, meta.latency_ms
+        const hit = response.meta && response.meta.hit;
+        if (hit === 'exact' || hit === 'semantic') {
           const cachedResponse = {
             id: `chatcmpl-cached-${hashCode(prompt)}`,
             object: 'chat.completion',
@@ -99,11 +100,7 @@ function semanticCacheMiddleware(options) {
               completion_tokens: 0,
               total_tokens: 0,
             },
-            meta: {
-              hit: response.cacheHit,
-              similarity: response.similarity,
-              latency_ms: response.latencyMs,
-            },
+            meta: response.meta,
           };
 
           return res.json(cachedResponse);

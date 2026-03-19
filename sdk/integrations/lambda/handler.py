@@ -23,7 +23,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         ...     return lambda_handler(event, context)
     """
     try:
-        from semantis_cache import SemanticCache
+        from semantis import SemantisCache as SemanticCache
         
         # Get API key from environment
         api_key = os.getenv('SEMANTIS_API_KEY')

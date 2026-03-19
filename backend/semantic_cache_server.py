@@ -37,7 +37,7 @@ from dotenv import load_dotenv
 # -----------------------------
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-REPLACE_ME")
-ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if o.strip()]
 if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-REPLACE_ME":
     print("WARNING: OPENAI_API_KEY is not set. Set it in backend/.env or OS env.")
 
@@ -402,7 +402,7 @@ class TenantState:
     misses: int = 0
     semantic_hits: int = 0
     latencies_ms: List[float] = field(default_factory=list)
-    sim_threshold: float = 0.55
+    sim_threshold: float = 0.72
     domain_thresholds: Dict[str, float] = field(default_factory=dict)
     events: List[CacheEvent] = field(default_factory=list)
 
@@ -678,7 +678,7 @@ class SemanticCacheService:
                     if local_k > 0:
                         local_sims, _ = T.local_index.search(lq, local_k)
                         best_local_sim = float(local_sims[0][0])
-                        if best_local_sim < 0.25:
+                        if best_local_sim < 0.40:
                             local_gate_passed = False
                             semantic_log.debug(
                                 f"{tenant_id} | local_gate_reject | best_local_sim={best_local_sim:.3f} | "
@@ -763,7 +763,10 @@ class SemanticCacheService:
                 elif best_cosine >= threshold:
                     is_match = True
                     confidence_tier = "medium"
-                elif best_cosine >= threshold - 0.08:
+                elif best_cosine >= threshold - 0.05 and best_tok >= 0.3:
+                    # Low-confidence match only if there's also meaningful
+                    # token overlap — prevents false positives on unrelated
+                    # queries that happen to be close in embedding space.
                     is_match = True
                     confidence_tier = "low"
 
@@ -774,7 +777,7 @@ class SemanticCacheService:
                         query_emb / (np.linalg.norm(query_emb) + 1e-12),
                         best_entry.response_embedding / (np.linalg.norm(best_entry.response_embedding) + 1e-12),
                     ))
-                    if resp_sim < 0.10:
+                    if resp_sim < 0.20:
                         is_match = False
                         confidence_tier = "response_mismatch"
                         semantic_log.info(
@@ -974,7 +977,7 @@ class SemanticCacheService:
             close_misses = [s for s in near_misses if s >= T.sim_threshold - 0.05]
             close_ratio = len(close_misses) / len(near_misses)
             if close_ratio > 0.5:
-                T.sim_threshold = max(0.40, T.sim_threshold - 0.02)
+                T.sim_threshold = max(0.55, T.sim_threshold - 0.02)
                 semantic_log.info(
                     f"{tenant_id} | threshold_adapted_down | "
                     f"close_miss_ratio={close_ratio:.2f} | new={T.sim_threshold:.3f}"
@@ -982,7 +985,7 @@ class SemanticCacheService:
                 return
 
         if hit_ratio < 0.25:
-            T.sim_threshold = max(0.40, T.sim_threshold - 0.015)
+            T.sim_threshold = max(0.55, T.sim_threshold - 0.015)
         elif hit_ratio > 0.80:
             T.sim_threshold = min(0.75, T.sim_threshold + 0.01)
 
@@ -1081,58 +1084,100 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-limiter = Limiter(key_func=get_remote_address)
+
+def _get_rate_limit_key(request: Request) -> str:
+    """Use API key tenant as rate limit key when available, else fall back to IP."""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer sc-"):
+        parts = auth[len("Bearer sc-"):].split("-", 1)
+        if parts:
+            return f"tenant:{parts[0]}"
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_get_rate_limit_key)
 app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def structured_http_error(request: Request, exc: StarletteHTTPException):
+    rid = getattr(request.state, "request_id", None) if hasattr(request, "state") else None
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {"message": str(exc.detail), "status": exc.status_code, "request_id": rid},
+        },
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    rid = getattr(request.state, "request_id", None) if hasattr(request, "state") else None
+    error_log.exception(f"Unhandled exception | request_id={rid} | path={request.url.path} | error={exc}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {"message": "Internal server error", "status": 500, "request_id": rid},
+        },
+    )
+
+
+# Prometheus metrics integration
+try:
+    from prometheus_metrics import CacheMetrics as _prom
+except Exception:
+    _prom = None
+
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests with detailed information."""
+    """Log all requests with timing, access logging, and Prometheus metrics."""
     import uuid
     start_time = time.time()
     request_id = str(uuid.uuid4())[:8]
-    
-    # Get client IP
+    request.state.request_id = request_id
+
     client_ip = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "unknown")
-    
-    # Log request
+
     access_log.info(
         f"{request_id} | REQ | {request.method} {request.url.path} | "
-        f"tenant=extracting | ip={client_ip} | ua={user_agent[:100]}"
+        f"ip={client_ip} | ua={user_agent[:100]}"
     )
-    
+
     try:
         response = await call_next(request)
-        process_time = round((time.time() - start_time) * 1000, 2)
-        response_size = 0
-        if hasattr(response, 'body'):
-            try:
-                response_size = len(response.body) if response.body else 0
-            except:
-                pass
-        
+        latency_s = time.time() - start_time
+        process_time = round(latency_s * 1000, 2)
+
         access_log.info(
             f"{request_id} | RESP | {request.method} {request.url.path} | "
-            f"status={response.status_code} | time={process_time}ms | size={response_size}B"
+            f"status={response.status_code} | time={process_time}ms"
         )
-        
-        # Log slow requests
-        if process_time > 5000:  # > 5 seconds
+
+        if _prom:
+            _prom.record_api_request(request.url.path, request.method, response.status_code, latency_s)
+
+        if process_time > 5000:
             performance_log.warning(
                 f"{request_id} | SLOW_REQUEST | {request.method} {request.url.path} | "
                 f"time={process_time}ms | ip={client_ip}"
             )
-        
+
         return response
     except Exception as e:
-        process_time = round((time.time() - start_time) * 1000, 2)
+        latency_s = time.time() - start_time
+        process_time = round(latency_s * 1000, 2)
         error_log.exception(
             f"{request_id} | REQ_ERROR | {request.method} {request.url.path} | "
             f"ip={client_ip} | time={process_time}ms | error={str(e)}"
         )
+        if _prom:
+            _prom.record_api_request(request.url.path, request.method, 500, latency_s)
         raise
 
 app.add_middleware(
@@ -1252,7 +1297,7 @@ def get_tenant_from_key(request: Request) -> str:
         if key_info:
             # Check expiration
             exp = key_info.get("expires_at")
-            if exp and str(exp) < time.strftime("%Y-%m-%d %H:%M:%S"):
+            if exp and str(exp)[:19] < time.strftime("%Y-%m-%d %H:%M:%S"):
                 raise HTTPException(status_code=401, detail="API key expired")
             # Check IP allowlist
             allowed = key_info.get("allowed_ips")
@@ -1605,7 +1650,7 @@ def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_
     T = svc.tenant(tenant)
     changed = {}
     if body.sim_threshold is not None:
-        clamped = max(0.40, min(0.99, body.sim_threshold))
+        clamped = max(0.50, min(0.99, body.sim_threshold))
         T.sim_threshold = clamped
         changed["sim_threshold"] = round(clamped, 3)
     if body.ttl_days is not None:
@@ -1614,7 +1659,7 @@ def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_
         valid_domains = set(DOMAIN_MAP.keys()) | {"general"}
         for domain, thresh in body.domain_thresholds.items():
             if domain in valid_domains:
-                T.domain_thresholds[domain] = max(0.40, min(0.99, thresh))
+                T.domain_thresholds[domain] = max(0.50, min(0.99, thresh))
         changed["domain_thresholds"] = {k: round(v, 3) for k, v in T.domain_thresholds.items()}
     access_log.info(f"{tenant} | /settings | updated={changed}")
     return {"status": "ok", "settings": {
@@ -1836,7 +1881,13 @@ def get_user_openai_key_status(auth_request: Request):
 
         encrypted_key = get_user_openai_key_encrypted(user["id"])
         if encrypted_key:
-            return {"key_set": True, "key_preview": "sk-..." + encrypted_key[-4:] if len(encrypted_key) > 4 else "sk-***"}
+            try:
+                from encryption import decrypt_api_key
+                decrypted = decrypt_api_key(encrypted_key)
+                preview = "sk-..." + decrypted[-4:] if len(decrypted) > 4 else "sk-***"
+            except Exception:
+                preview = "sk-***"
+            return {"key_set": True, "key_preview": preview}
         return {"key_set": False, "message": "No OpenAI API key configured"}
     except HTTPException:
         raise
@@ -2009,7 +2060,25 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     """
     _ctx = _current_api_key_var.get()
     _require_scope(request, "read-write")
-    
+
+    # Enforce plan limits
+    try:
+        from billing import check_plan_limit
+        from database import get_usage_stats
+        plan = _ctx.get("plan", "free")
+        usage = get_usage_stats(tenant, days=30)
+        current_requests = int(usage.get("total_requests", 0))
+        if not check_plan_limit(plan, "max_requests_month", current_requests):
+            raise HTTPException(
+                status_code=429,
+                detail=f"Monthly request limit reached for your '{plan}' plan. "
+                       f"Upgrade at /settings to continue.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If billing check fails, allow the request through
+
     prompt_norm = SemanticCacheService.norm_text(
         " ".join([m.content for m in body.messages if m.role == "user"]) or ""
     )
@@ -2063,6 +2132,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     if chunk:
                         yield _sse_chunk(chunk, chunk_id)
                 yield f"data: {json.dumps({'id': chunk_id, 'object': 'chat.completion.chunk', 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
+                yield "data: [DONE]\n\n"
 
             return StreamingResponse(
                 stream_generator(),
@@ -2079,10 +2149,18 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
             temperature=body.temperature,
             user_id=user_id,
         )
+        prompt_tokens = sum(len(m.content.split()) * 4 // 3 for m in body.messages)
+        completion_tokens = len(ans.split()) * 4 // 3
+        total_tokens = prompt_tokens + completion_tokens
+        # Estimate cost: $0.15/1M input, $0.60/1M output for gpt-4o-mini
+        cost_est = round((prompt_tokens * 0.00000015) + (completion_tokens * 0.0000006), 6) if meta.get("hit") == "miss" else 0.0
+
         _log_key = _ctx.get("key", "unknown")
         _log_uid = _ctx.get("user_id")
         _log_org = _ctx.get("org_id")
         _log_hit = meta.get("hit")
+        _log_tokens = total_tokens
+        _log_cost = cost_est
         def _bg_log():
             try:
                 from database import log_usage
@@ -2091,17 +2169,21 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     endpoint="/v1/chat/completions", request_count=1,
                     cache_hits=1 if _log_hit != "miss" else 0,
                     cache_misses=1 if _log_hit == "miss" else 0,
-                    tokens_used=0, cost_estimate=0,
+                    tokens_used=_log_tokens, cost_estimate=_log_cost,
                     user_id=_log_uid, org_id=_log_org,
                 )
             except Exception:
                 pass
         threading.Thread(target=_bg_log, daemon=True).start()
         
-        prompt_tokens = sum(len(m.content.split()) * 4 // 3 for m in body.messages)
-        completion_tokens = len(ans.split()) * 4 // 3
-        
         access_log.info(f"{tenant} | /v1/chat/completions | {meta['hit']} | sim={meta['similarity']:.3f} | {meta['latency_ms']}ms")
+
+        if _prom:
+            _prom.record_cache_request(tenant, meta.get("hit", "miss"), meta["latency_ms"] / 1000)
+            _prom.record_tokens(tenant, body.model, prompt_tokens, completion_tokens)
+            if meta.get("hit") != "miss":
+                _prom.record_tokens_saved(tenant, prompt_tokens + completion_tokens)
+
         try:
             from webhooks import fire_cache_event
             fire_cache_event(
@@ -2281,9 +2363,38 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/billing/portal")
+def billing_portal(request: Request):
+    """Create a Stripe Customer Portal session for managing subscriptions."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from billing import is_enabled, create_portal_session
+        if not is_enabled():
+            raise HTTPException(status_code=400, detail="Billing not configured")
+        from database import get_user_orgs, get_organization
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            raise HTTPException(status_code=400, detail="No organization found")
+        org_full = get_organization(str(orgs[0]["id"]))
+        settings = org_full.get("settings") or {}
+        customer_id = settings.get("stripe_customer_id")
+        if not customer_id:
+            raise HTTPException(status_code=400, detail="No active subscription found")
+        origin = request.headers.get("origin", "http://localhost:3000")
+        url = create_portal_session(customer_id, f"{origin}/settings")
+        if not url:
+            raise HTTPException(status_code=500, detail="Failed to create portal session")
+        return {"portal_url": url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Billing portal failed | error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/billing/webhook")
 async def stripe_webhook(request: Request):
-    """Handle Stripe webhook events."""
+    """Handle Stripe webhook events for subscription lifecycle."""
     try:
         from billing import handle_webhook
         payload = await request.body()
@@ -2291,27 +2402,60 @@ async def stripe_webhook(request: Request):
         event = handle_webhook(payload, sig)
         if not event:
             raise HTTPException(status_code=400, detail="Invalid webhook")
-        
+
         event_type = event.get("type")
+        obj = event.get("data") or {}
         app_log.info(f"Stripe webhook | type={event_type}")
-        
+
+        def _extract_org_id(data):
+            metadata = data.get("metadata", {}) if isinstance(data, dict) else getattr(data, "metadata", None) or {}
+            return metadata.get("org_id") if isinstance(metadata, dict) else None
+
+        def _update_org_plan(org_id, plan):
+            from database import get_db_connection
+            with get_db_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE organizations SET plan = %s WHERE id = %s", (plan, org_id))
+
         if event_type == "checkout.session.completed":
-            obj = event.get("data") or {}
-            metadata = obj.get("metadata", {}) if isinstance(obj, dict) else getattr(obj, "metadata", None) or {}
-            org_id = metadata.get("org_id") if isinstance(metadata, dict) else None
+            org_id = _extract_org_id(obj)
+            metadata = obj.get("metadata", {}) if isinstance(obj, dict) else {}
             plan = metadata.get("plan", "pro") if isinstance(metadata, dict) else "pro"
             if org_id:
+                try:
+                    _update_org_plan(org_id, plan)
+                    app_log.info(f"Webhook | plan upgraded to {plan} | org={org_id}")
+                except Exception as e:
+                    error_log.error(f"Webhook plan update failed | org={org_id} | error={e}")
+
+        elif event_type in ("customer.subscription.deleted", "customer.subscription.canceled"):
+            customer_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            if customer_id:
                 try:
                     from database import get_db_connection
                     with get_db_connection() as conn:
                         cur = conn.cursor()
                         cur.execute(
-                            "UPDATE organizations SET plan = %s WHERE id = %s",
-                            (plan, org_id)
+                            "UPDATE organizations SET plan = 'free' WHERE settings->>'stripe_customer_id' = %s",
+                            (customer_id,)
                         )
+                    app_log.info(f"Webhook | subscription canceled | customer={customer_id}")
                 except Exception as e:
-                    error_log.error(f"Webhook plan update failed | org={org_id} | error={e}")
-        
+                    error_log.error(f"Webhook subscription cancel failed | error={e}")
+
+        elif event_type == "customer.subscription.updated":
+            sub_status = obj.get("status") if isinstance(obj, dict) else getattr(obj, "status", None)
+            cancel_at_end = obj.get("cancel_at_period_end") if isinstance(obj, dict) else False
+            customer_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            if sub_status == "past_due" and customer_id:
+                app_log.warning(f"Webhook | subscription past_due | customer={customer_id}")
+            if cancel_at_end and customer_id:
+                app_log.info(f"Webhook | subscription will cancel at period end | customer={customer_id}")
+
+        elif event_type == "invoice.payment_failed":
+            customer_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            app_log.warning(f"Webhook | invoice payment failed | customer={customer_id}")
+
         return {"received": True}
     except HTTPException:
         raise

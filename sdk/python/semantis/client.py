@@ -130,8 +130,10 @@ class SemantisCache:
         try:
             import openai as _openai
             payload = kwargs.get("json", {})
+            # Remove Semantis-specific params that OpenAI doesn't accept
+            openai_payload = {k: v for k, v in payload.items() if k not in ("ttl_seconds",)}
             client = _openai.OpenAI()
-            resp = client.chat.completions.create(**payload)
+            resp = client.chat.completions.create(**openai_payload)
             return {
                 "id": resp.id,
                 "object": resp.object,
@@ -164,7 +166,9 @@ class SemantisCache:
 
     def query(self, prompt: str, model: str = "gpt-4o-mini") -> dict:
         """Simple query interface (non-OpenAI-compatible)."""
-        return self._post(f"/query?prompt={httpx.QueryParams({'prompt': prompt, 'model': model})}")
+        resp = self._http.get("/query", params={"prompt": prompt, "model": model})
+        resp.raise_for_status()
+        return resp.json()
 
     def health(self) -> dict:
         """Check Semantis API health."""

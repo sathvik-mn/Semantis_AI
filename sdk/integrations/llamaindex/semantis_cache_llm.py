@@ -50,7 +50,7 @@ class SemantisCacheLLM(CustomLLM):
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
         """Complete a prompt with caching."""
         try:
-            from semantis_cache import SemanticCache
+            from semantis import SemantisCache as SemanticCache
             
             # Initialize cache client
             cache = SemanticCache(

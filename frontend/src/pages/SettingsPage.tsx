@@ -1,4 +1,5 @@
 import { SettingsPanel } from '../components/SettingsPanel';
+import { BillingSection } from '../components/BillingSection';
 import { LightRays } from '../components/LightRays';
 
 export function SettingsPage() {
@@ -9,10 +10,12 @@ export function SettingsPage() {
         <div style={styles.header}>
           <h1 style={styles.title}>Settings</h1>
           <p style={styles.subtitle}>
-            Configure cache behavior and performance parameters
+            Configure cache behavior, billing, and performance parameters
           </p>
         </div>
 
+        <BillingSection />
+        <div style={{ height: '24px' }} />
         <SettingsPanel />
       </div>
     </div>

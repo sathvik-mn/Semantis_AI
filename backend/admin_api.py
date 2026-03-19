@@ -27,9 +27,15 @@ def get_svc():
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "admin-secret-key-change-me")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+if not ADMIN_API_KEY:
+    system_log.warning("ADMIN_API_KEY is not set. Admin endpoints are disabled.")
+
 
 def verify_admin_key(api_key: str = Query(...)):
+    if not ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Admin API is not configured. Set ADMIN_API_KEY env var.")
     if api_key != ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid admin API key")
     return True

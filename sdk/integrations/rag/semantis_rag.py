@@ -4,7 +4,7 @@ RAG-optimized caching for Semantis Cache
 Provides specialized caching for RAG applications that combine context and questions.
 """
 from typing import List, Optional, Dict, Any
-from semantis_cache import SemanticCache
+from semantis import SemantisCache as SemanticCache
 
 
 class SemantisRAG:

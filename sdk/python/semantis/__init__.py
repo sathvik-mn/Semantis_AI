@@ -19,6 +19,7 @@ from semantis.models import (
     ChatCompletion,
     ChatCompletionMessage,
     ChatCompletionChoice,
+    CacheMeta,
     Usage,
 )
 
@@ -28,5 +29,6 @@ __all__ = [
     "ChatCompletion",
     "ChatCompletionMessage",
     "ChatCompletionChoice",
+    "CacheMeta",
     "Usage",
 ]

@@ -12,7 +12,7 @@ export function LandingPage() {
             <div className="hidden md:flex gap-8">
               <Link to="/docs" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Docs</Link>
               <Link to="/pricing" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Pricing</Link>
-              <Link to="/playground" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Playground</Link>
+              <Link to="/signup" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Try It Free</Link>
             </div>
             <div className="flex gap-3">
               <Link to="/signin" className="btn-ghost no-underline">Sign In</Link>
@@ -132,18 +132,21 @@ export function LandingPage() {
               <span className="text-xs text-white/40 font-mono">Python</span>
             </div>
             <pre className="p-6 overflow-auto">
-              <code className="text-sm text-white/80 font-mono leading-relaxed">{`from semantis_ai import SemantisClient
+              <code className="text-sm text-white/80 font-mono leading-relaxed">{`import openai
 
-# Initialize client
-client = SemantisClient(api_key="your_api_key")
-
-# Make cached LLM call
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Hello!"}]
+# Just point your existing OpenAI client at Semantis
+client = openai.OpenAI(
+    base_url="https://api.semantis.ai/v1",
+    api_key="sc-your-api-key"
 )
 
-print(response.content)  # Lightning fast response!`}</code>
+# Same API — now with semantic caching
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "What is machine learning?"}]
+)
+
+print(response.choices[0].message.content)  # Instant on cache hit!`}</code>
             </pre>
           </div>
         </section>

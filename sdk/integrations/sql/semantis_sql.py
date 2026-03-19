@@ -4,7 +4,7 @@ SQL/BI Caching Integration for Semantis Cache
 Provides specialized caching for natural-language SQL queries and BI applications.
 """
 from typing import Optional, Dict, Any
-from semantis_cache import SemanticCache
+from semantis import SemantisCache as SemanticCache
 
 
 class SemantisSQL:

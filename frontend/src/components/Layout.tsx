@@ -90,6 +90,7 @@ export function Layout() {
           Semantis AI &mdash; Semantic Caching Platform
           <Link to="/status" className="ml-2 text-white/40 hover:text-white/60 no-underline">Status</Link>
           <Link to="/security" className="ml-2 text-white/40 hover:text-white/60 no-underline">Security</Link>
+          <Link to="/privacy" className="ml-2 text-white/40 hover:text-white/60 no-underline">Privacy</Link>
         </p>
       </footer>
     </div>

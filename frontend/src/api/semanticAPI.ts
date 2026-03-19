@@ -435,3 +435,16 @@ export async function upgradePlan(
   }
   return res.json();
 }
+
+export async function getBillingPortalUrl(): Promise<{ portal_url: string }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/billing/portal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to open billing portal' }));
+    throw new Error(err.detail || 'Failed to open billing portal');
+  }
+  return res.json();
+}

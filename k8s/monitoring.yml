@@ -1,0 +1,80 @@
+# Prometheus scrape config for Semantis backend
+# Deploy alongside your Prometheus Operator or standalone Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: semantis-backend-monitor
+  namespace: semantis
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: semantis-backend
+  endpoints:
+    - port: "8000"
+      path: /prometheus/metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: semantis-alerts
+  namespace: semantis
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: semantis.rules
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            sum(rate(api_requests_total{status_code=~"5.."}[5m])) /
+            sum(rate(api_requests_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High 5xx error rate (>5%)"
+            description: "Semantis API returning >5% server errors over last 5 minutes."
+
+        - alert: HighLatency
+          expr: |
+            histogram_quantile(0.95, rate(api_latency_seconds_bucket[5m])) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "P95 latency above 10s"
+            description: "API P95 latency has exceeded 10 seconds for 5 minutes."
+
+        - alert: LowCacheHitRatio
+          expr: |
+            cache_hit_ratio < 0.3
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cache hit ratio below 30%"
+            description: "Cache hit ratio has been below 30% for 30 minutes. Check if cache was recently cleared."
+
+        - alert: HighMemoryUsage
+          expr: |
+            system_memory_usage_bytes > 3e9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Backend using >3GB memory"
+            description: "Consider scaling up or reviewing cache entry count."
+
+        - alert: BackendDown
+          expr: up{job="semantis-backend"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Semantis backend is down"
+            description: "Backend has been unreachable for 2 minutes."
