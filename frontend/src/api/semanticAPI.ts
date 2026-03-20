@@ -139,6 +139,15 @@ export async function checkHealth(): Promise<HealthStatus> {
   return res.json();
 }
 
+function extractErrorDetail(err: any, status: number): string {
+  const raw = err?.detail || err?.error || err?.message || '';
+  const detail = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  if (status === 429) {
+    return detail || 'Monthly request limit reached for your plan. Go to Settings → Billing to upgrade.';
+  }
+  return detail || `Request failed (${status})`;
+}
+
 export async function sendChatCompletion(request: ChatRequest): Promise<ChatResponse> {
   const res = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
     method: 'POST',
@@ -146,8 +155,8 @@ export async function sendChatCompletion(request: ChatRequest): Promise<ChatResp
     body: JSON.stringify(request),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(err.detail || `HTTP error! status: ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractErrorDetail(err, res.status));
   }
   return res.json();
 }
@@ -162,8 +171,8 @@ export async function* sendChatCompletionStream(
     body: JSON.stringify({ ...request, stream: true }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(err.detail || `HTTP error! status: ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractErrorDetail(err, res.status));
   }
   const reader = res.body?.getReader();
   if (!reader) throw new Error('No response body');

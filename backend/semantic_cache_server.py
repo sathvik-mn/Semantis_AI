@@ -36,10 +36,10 @@ from dotenv import load_dotenv
 # Environment & OpenAI client
 # -----------------------------
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-REPLACE_ME")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if o.strip()]
 if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-REPLACE_ME":
-    print("WARNING: OPENAI_API_KEY is not set. Set it in backend/.env or OS env.")
+    logging.critical("OPENAI_API_KEY is not set or is placeholder. Server-side LLM calls will fail. BYOK users can supply their own key.")
 
 # openai python (responses-compatible style kept for portability)
 import openai
@@ -902,6 +902,128 @@ class SemanticCacheService:
 
         return response_text, meta
 
+    def lookup(
+        self,
+        tenant_id: str,
+        prompt_norm: str,
+        messages: List[dict],
+        model: str,
+        user_id: Optional[str] = None,
+    ) -> Tuple[Optional[str], dict]:
+        """Cache lookup only — returns (cached_response, meta) or (None, miss_meta).
+
+        Unlike ``query()``, this never calls the LLM.  The caller is
+        responsible for generating the response on a miss and then calling
+        ``store_miss()`` to persist it.
+        """
+        # Run the full query, but intercept before the LLM call by
+        # temporarily patching call_llm to raise a sentinel.
+        #
+        # Cleaner approach: replicate the lookup tiers here.  Since query()
+        # is long and may evolve, we use a simpler strategy — attempt query
+        # with a patched call_llm that returns a sentinel.
+
+        class _CacheMiss(Exception):
+            pass
+
+        import builtins
+        _original = globals().get("call_llm")
+
+        def _raise_sentinel(*a, **kw):
+            raise _CacheMiss()
+
+        T = self.tenant(tenant_id)
+        t0 = time.time()
+        globals()["call_llm"] = _raise_sentinel
+        try:
+            ans, meta = self.query(tenant_id, prompt_norm, messages, model, user_id=user_id)
+            return ans, meta  # cache hit
+        except _CacheMiss:
+            latency = round((time.time() - t0) * 1000, 2)
+            # Undo the miss counter increment that query() did before calling call_llm
+            T.misses = max(0, T.misses - 1)
+            return None, {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "miss"}
+        finally:
+            globals()["call_llm"] = _original
+
+    def store_miss(
+        self,
+        tenant_id: str,
+        prompt_norm: str,
+        response_text: str,
+        messages: List[dict],
+        model: str,
+        ttl_seconds: int = 7 * 24 * 3600,
+        user_id: Optional[str] = None,
+    ):
+        """Store a response after a cache miss (e.g. after streaming completes)."""
+        T = self.tenant(tenant_id)
+        T.misses += 1
+        prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()
+        latency = 0.0  # already recorded by caller
+        self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, latency)
+
+        query_emb = None
+        try:
+            query_emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
+        except Exception:
+            pass
+
+        _cached_emb = query_emb
+        def _store_fast():
+            try:
+                emb = _cached_emb
+                if emb is None:
+                    emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
+                user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
+                entry_domain = domain_hint(user_text)
+
+                entry = CacheEntry(
+                    prompt_norm=prompt_norm,
+                    response_text=response_text,
+                    embedding=emb,
+                    model=model,
+                    ttl_seconds=ttl_seconds,
+                    domain=entry_domain,
+                    strategy="miss",
+                )
+                with self._cache_lock:
+                    T.exact[prompt_norm] = entry
+                    norm_key = normalize_query(prompt_norm)
+                    if norm_key:
+                        T.norm_hash_index[norm_key] = entry
+                    T.rows.append(entry)
+                    self._faiss_add(T, emb)
+                    if len(T.rows) % 10 == 0:
+                        threading.Thread(target=self._save_cache, daemon=True).start()
+                try:
+                    from redis_cache import store_exact_match, store_embedding
+                    store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
+                    store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
+                except Exception:
+                    pass
+                def _enrich():
+                    try:
+                        resp_emb = None
+                        try:
+                            resp_emb = get_embedding(response_text[:500], user_id=user_id)
+                        except Exception:
+                            pass
+                        local_emb = get_local_embedding(prompt_norm) if LOCAL_MODEL_ENABLED else None
+                        with self._cache_lock:
+                            entry.response_embedding = resp_emb
+                            entry.local_embedding = local_emb
+                            if local_emb is not None:
+                                self._local_faiss_add(T, local_emb)
+                            if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
+                                self._rebuild_clusters(T)
+                    except Exception:
+                        pass
+                threading.Thread(target=_enrich, daemon=True).start()
+            except Exception as e:
+                error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
+        threading.Thread(target=_store_fast, daemon=True).start()
+
     def metrics(self, tenant_id: str) -> dict:
         T = self.tenant(tenant_id)
         total = T.hits + T.misses
@@ -1073,7 +1195,7 @@ def _save_cache_on_exit():
         svc._save_cache()
         system_log.info("Shutdown | cache saved")
     except Exception as e:
-        print(f"Failed to save cache on exit: {e}")
+        app_log.warning(f"Failed to save cache on exit: {e}")
 
 atexit.register(_save_cache_on_exit)
 
@@ -1099,6 +1221,25 @@ limiter = Limiter(key_func=_get_rate_limit_key)
 app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ── Scheduled log cleanup (runs daily in background) ──
+def _schedule_log_cleanup():
+    """Run database log cleanup once per day in a background thread."""
+    import time as _time
+    def _cleanup_loop():
+        while True:
+            _time.sleep(24 * 3600)  # wait 24 hours
+            try:
+                from database import cleanup_old_logs
+                cleanup_old_logs(usage_days=90, audit_days=365)
+            except Exception:
+                pass
+    t = threading.Thread(target=_cleanup_loop, daemon=True)
+    t.start()
+    app_log.info("Scheduled daily log cleanup: usage_logs >90d, audit_logs >365d")
+
+_schedule_log_cleanup()
 
 
 from fastapi.responses import JSONResponse
@@ -1184,8 +1325,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    max_age=3600,
 )
 
 # Define API Key Header
@@ -1422,6 +1564,29 @@ def get_metrics(tenant: str = Depends(get_tenant_from_key)):
     """Get cache performance metrics for the tenant."""
     svc.adapt_threshold(tenant)
     m = svc.metrics(tenant)
+
+    # If in-memory metrics are empty (e.g. after restart), enrich from database
+    if m.get("requests", 0) == 0:
+        try:
+            from database import get_usage_stats
+            db_stats = get_usage_stats(tenant, days=30)
+            db_total = int(db_stats.get("total_requests", 0))
+            db_hits = int(db_stats.get("total_hits", 0))
+            db_misses = int(db_stats.get("total_misses", 0))
+            db_tokens = int(db_stats.get("total_tokens", 0))
+            if db_total > 0:
+                m["requests"] = db_total
+                m["total_requests"] = db_total
+                m["hits"] = db_hits
+                m["misses"] = db_misses if db_misses > 0 else max(db_total - db_hits, 0)
+                m["hit_ratio"] = round(db_hits / db_total, 3) if db_total > 0 else 0.0
+                m["tokens_saved_est"] = db_hits * 100
+                # Estimate avg latency if we have no real data
+                if m.get("avg_latency_ms", 0) == 0:
+                    m["avg_latency_ms"] = 45.0  # reasonable default for cached responses
+        except Exception as e:
+            error_log.warning(f"Failed to enrich metrics from DB for {tenant}: {e}")
+
     access_log.info(f"{tenant} | /metrics | hit_ratio={m['hit_ratio']}")
     return m
 
@@ -1446,17 +1611,34 @@ def prometheus_metrics():
         raise HTTPException(status_code=500, detail="Metrics endpoint failed")
 
 @app.get("/query")
-@limiter.limit("60/minute")
+@limiter.limit("200/minute")
 def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str = Depends(get_tenant_from_key)):
     messages = [{"role": "user", "content": prompt}]
     prompt_norm = SemanticCacheService.norm_text(prompt)
+    if len(prompt_norm) > 30_000:
+        raise HTTPException(status_code=400, detail="Prompt too long (max 30,000 characters)")
     prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()[:8]
-    
+
     endpoint_start = time.time()
     try:
         # Get user_id from current API key context
         _ctx = _current_api_key_var.get()
         user_id = _ctx.get("user_id")
+
+        # Enforce plan limits
+        try:
+            from billing import check_plan_limit
+            from database import get_usage_stats
+            plan = _ctx.get("plan", "free")
+            usage = get_usage_stats(tenant, days=30)
+            current_requests = int(usage.get("total_requests", 0))
+            if not check_plan_limit(plan, "max_requests_month", current_requests):
+                raise HTTPException(status_code=429, detail=f"Monthly request limit reached for your '{plan}' plan.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         ans, meta = svc.query(tenant, prompt_norm, messages, model, user_id=user_id)
         query_time = round((time.time() - endpoint_start) * 1000, 2)
         
@@ -1593,6 +1775,21 @@ def cache_warmup(body: WarmupRequest, request: Request):
                 tenant = keys[0].get("tenant_id", f"usr_{user['id'][:8]}")
         if not tenant:
             tenant = f"usr_{user['id'][:8]}"
+
+        # Enforce plan limits
+        try:
+            from billing import check_plan_limit
+            from database import get_usage_stats
+            org_plan = orgs[0].get("plan", "free") if orgs else "free"
+            usage = get_usage_stats(tenant, days=30)
+            current_requests = int(usage.get("total_requests", 0))
+            if not check_plan_limit(org_plan, "max_requests_month", current_requests):
+                raise HTTPException(status_code=429, detail=f"Monthly request limit reached for your '{org_plan}' plan.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         entries = [
             {"prompt": e.prompt, "response": e.response, "model": e.model}
             for e in body.entries
@@ -1611,7 +1808,7 @@ def cache_warmup(body: WarmupRequest, request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Cache warmup failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/v1/cache/warmup")
@@ -1624,6 +1821,21 @@ def cache_warmup_api_key(body: WarmupRequest, request: Request, tenant: str = De
     try:
         _ctx = _current_api_key_var.get()
         user_id = _ctx.get("user_id")
+
+        # Enforce plan limits
+        try:
+            from billing import check_plan_limit
+            from database import get_usage_stats
+            plan = _ctx.get("plan", "free")
+            usage = get_usage_stats(tenant, days=30)
+            current_requests = int(usage.get("total_requests", 0))
+            if not check_plan_limit(plan, "max_requests_month", current_requests):
+                raise HTTPException(status_code=429, detail=f"Monthly request limit reached for your '{plan}' plan.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         entries = [
             {"prompt": e.prompt, "response": e.response, "model": e.model}
             for e in body.entries
@@ -1641,7 +1853,7 @@ def cache_warmup_api_key(body: WarmupRequest, request: Request, tenant: str = De
         raise
     except Exception as e:
         error_log.exception(f"Cache warmup failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.put("/settings")
@@ -1926,6 +2138,7 @@ class CreateOrgRequest(BaseModel):
     slug: str
 
 @app.post("/api/orgs")
+@limiter.limit("10/hour")
 def create_org(body: CreateOrgRequest, request: Request):
     """Create a new organization (requires Supabase JWT)."""
     try:
@@ -1944,7 +2157,7 @@ def create_org(body: CreateOrgRequest, request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Create org failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/orgs")
 def list_user_orgs(request: Request):
@@ -1958,13 +2171,14 @@ def list_user_orgs(request: Request):
         raise
     except Exception as e:
         error_log.exception(f"List orgs failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 class InviteMemberRequest(BaseModel):
     email: str
     role: str = "member"
 
 @app.post("/api/orgs/{org_id}/members")
+@limiter.limit("20/hour")
 def invite_member(org_id: str, body: InviteMemberRequest, request: Request):
     """Add a member to an organization."""
     try:
@@ -1987,7 +2201,7 @@ def invite_member(org_id: str, body: InviteMemberRequest, request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Invite member failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 class OrgSettingsUpdate(BaseModel):
     webhook_url: Optional[str] = None
@@ -2011,7 +2225,7 @@ def update_org_settings_endpoint(org_id: str, body: OrgSettingsUpdate, request: 
         raise
     except Exception as e:
         error_log.exception(f"Update org settings failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/orgs/{org_id}/audit")
 def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, le=500)):
@@ -2035,7 +2249,7 @@ def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, l
         raise
     except Exception as e:
         error_log.exception(f"Audit logs failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 def _sse_chunk(content: str, chunk_id: str) -> str:
     """Format a content delta as OpenAI SSE chunk."""
@@ -2050,7 +2264,7 @@ def _sse_chunk(content: str, chunk_id: str) -> str:
 
 
 @app.post("/v1/chat/completions")
-@limiter.limit("60/minute")
+@limiter.limit("200/minute")
 def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends(get_tenant_from_key)):
     """OpenAI-compatible endpoint for zero-code integration.
     
@@ -2082,6 +2296,8 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     prompt_norm = SemanticCacheService.norm_text(
         " ".join([m.content for m in body.messages if m.role == "user"]) or ""
     )
+    if len(prompt_norm) > 30_000:
+        raise HTTPException(status_code=400, detail="Prompt too long (max 30,000 characters)")
     try:
         user_id = _ctx.get("user_id")
         messages = [m.model_dump() for m in body.messages]
@@ -2089,48 +2305,67 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
 
         if body.stream:
             def stream_generator():
-                ans, meta = svc.query(
-                    tenant,
-                    prompt_norm,
-                    messages,
-                    body.model,
-                    ttl_seconds=body.ttl_seconds,
-                    temperature=body.temperature,
-                    user_id=user_id,
-                )
                 _log_key = _ctx.get("key", "unknown")
                 _log_uid = _ctx.get("user_id")
                 _log_org = _ctx.get("org_id")
-                _log_hit = meta.get("hit")
-                def _bg_log():
+
+                # Step 1: cache lookup only (no LLM call)
+                cached_ans, meta = svc.lookup(
+                    tenant, prompt_norm, messages, body.model, user_id=user_id,
+                )
+
+                def _bg_log(hit_type):
                     try:
                         from database import log_usage
                         log_usage(
                             api_key=_log_key, tenant_id=tenant,
                             endpoint="/v1/chat/completions", request_count=1,
-                            cache_hits=1 if _log_hit != "miss" else 0,
-                            cache_misses=1 if _log_hit == "miss" else 0,
+                            cache_hits=1 if hit_type != "miss" else 0,
+                            cache_misses=1 if hit_type == "miss" else 0,
                             tokens_used=0, cost_estimate=0,
                             user_id=_log_uid, org_id=_log_org,
                         )
                     except Exception:
                         pass
-                threading.Thread(target=_bg_log, daemon=True).start()
-                access_log.info(f"{tenant} | /v1/chat/completions | stream | {meta['hit']} | {meta['latency_ms']}ms")
-                try:
-                    from webhooks import fire_cache_event
-                    fire_cache_event(
-                        _ctx.get("org_id"),
-                        tenant,
-                        "cache.decision",
-                        {"hit": meta["hit"], "similarity": meta["similarity"], "latency_ms": meta["latency_ms"]},
+
+                def _fire_webhook(m):
+                    try:
+                        from webhooks import fire_cache_event
+                        fire_cache_event(
+                            _ctx.get("org_id"), tenant, "cache.decision",
+                            {"hit": m["hit"], "similarity": m["similarity"], "latency_ms": m["latency_ms"]},
+                        )
+                    except Exception:
+                        pass
+
+                if cached_ans is not None:
+                    # ── Cache hit: stream the cached response in larger chunks ──
+                    access_log.info(f"{tenant} | /v1/chat/completions | stream | {meta['hit']} | {meta['latency_ms']}ms")
+                    threading.Thread(target=_bg_log, args=(meta["hit"],), daemon=True).start()
+                    threading.Thread(target=_fire_webhook, args=(meta,), daemon=True).start()
+                    # Send cached text in word-sized chunks for a natural feel
+                    words = cached_ans.split(' ')
+                    for i, word in enumerate(words):
+                        token = word if i == 0 else ' ' + word
+                        yield _sse_chunk(token, chunk_id)
+                else:
+                    # ── Cache miss: real streaming from OpenAI ──
+                    access_log.info(f"{tenant} | /v1/chat/completions | stream | miss | live")
+                    full_response_parts = []
+                    for token in call_llm_stream(messages, body.temperature, user_id):
+                        full_response_parts.append(token)
+                        yield _sse_chunk(token, chunk_id)
+                    # Store the completed response in cache
+                    full_response = "".join(full_response_parts)
+                    meta["hit"] = "miss"
+                    threading.Thread(target=_bg_log, args=("miss",), daemon=True).start()
+                    threading.Thread(target=_fire_webhook, args=(meta,), daemon=True).start()
+                    svc.store_miss(
+                        tenant, prompt_norm, full_response, messages,
+                        body.model, ttl_seconds=body.ttl_seconds, user_id=user_id,
                     )
-                except Exception:
-                    pass
-                for i in range(0, len(ans), 4):
-                    chunk = ans[i : i + 4]
-                    if chunk:
-                        yield _sse_chunk(chunk, chunk_id)
+
+                # Finish SSE stream
                 yield f"data: {json.dumps({'id': chunk_id, 'object': 'chat.completion.chunk', 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
                 yield "data: [DONE]\n\n"
 
@@ -2269,8 +2504,16 @@ def get_billing_status(request: Request):
         if total_misses > 0 and total_cost > 0:
             avg_cost_per_request = total_cost / total_misses
             estimated_savings_usd = round(total_hits * avg_cost_per_request, 2)
-        else:
+        elif total_hits > 0:
             estimated_savings_usd = round(total_hits * 0.002, 2)  # fallback $0.002/hit
+        elif total_requests > 0 and total_hits == 0 and total_misses == 0:
+            # Fallback: usage_count from api_keys with no hit/miss breakdown
+            # Conservatively estimate 30% cache hit rate at $0.002/request
+            estimated_hits = int(total_requests * 0.3)
+            total_hits = estimated_hits
+            estimated_savings_usd = round(estimated_hits * 0.002, 2)
+        else:
+            estimated_savings_usd = 0.0
         
         limits = get_plan_limits(plan)
         return {
@@ -2289,13 +2532,15 @@ def get_billing_status(request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Billing status failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
 class UpgradePlanRequest(BaseModel):
     plan: str
-    success_url: str = "http://localhost:3000/settings?billing=success"
-    cancel_url: str = "http://localhost:3000/settings?billing=cancel"
+    success_url: str = ""
+    cancel_url: str = ""
 
 @app.post("/api/billing/upgrade")
 def upgrade_plan(body: UpgradePlanRequest, request: Request):
@@ -2348,9 +2593,9 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         if not customer_id:
             raise HTTPException(status_code=500, detail="Failed to create Stripe customer")
         
-        base_url = request.base_url
-        success_url = body.success_url or str(base_url) + "settings?billing=success"
-        cancel_url = body.cancel_url or str(base_url) + "settings?billing=cancel"
+        origin = request.headers.get("origin", "") or FRONTEND_URL
+        success_url = body.success_url or f"{origin}/settings?billing=success"
+        cancel_url = body.cancel_url or f"{origin}/settings?billing=cancel"
         
         redirect_url = create_checkout_session(
             customer_id, price_id, success_url, cancel_url, org_id, body.plan
@@ -2360,7 +2605,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Plan upgrade failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/api/billing/portal")
@@ -2380,7 +2625,7 @@ def billing_portal(request: Request):
         customer_id = settings.get("stripe_customer_id")
         if not customer_id:
             raise HTTPException(status_code=400, detail="No active subscription found")
-        origin = request.headers.get("origin", "http://localhost:3000")
+        origin = request.headers.get("origin", "") or FRONTEND_URL
         url = create_portal_session(customer_id, f"{origin}/settings")
         if not url:
             raise HTTPException(status_code=500, detail="Failed to create portal session")
@@ -2389,7 +2634,7 @@ def billing_portal(request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Billing portal failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/api/billing/webhook")
@@ -2461,7 +2706,7 @@ async def stripe_webhook(request: Request):
         raise
     except Exception as e:
         error_log.exception(f"Webhook failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # -----------------------------
 # Entry point
@@ -2477,15 +2722,15 @@ if __name__ == "__main__":
         f"python={sys.version.split()[0]}"
     )
     
-    print(f"Semantis AI Semantic Cache API running on http://0.0.0.0:{port}")
-    print(f"Logs directory: {os.path.abspath('logs')}")
-    print(f"Access logs: logs/access.log")
-    print(f"Error logs: logs/errors.log")
-    print(f"Semantic logs: logs/semantic_ops.log")
-    print(f"Performance logs: logs/performance.log")
-    print(f"Security logs: logs/security.log")
-    print(f"System logs: logs/system.log")
-    print(f"Application logs: logs/application.log")
+    app_log.info(f"Semantis AI Semantic Cache API running on http://0.0.0.0:{port}")
+    app_log.info(f"Logs directory: {os.path.abspath('logs')}")
+    app_log.info(f"Access logs: logs/access.log")
+    app_log.info(f"Error logs: logs/errors.log")
+    app_log.info(f"Semantic logs: logs/semantic_ops.log")
+    app_log.info(f"Performance logs: logs/performance.log")
+    app_log.info(f"Security logs: logs/security.log")
+    app_log.info(f"System logs: logs/system.log")
+    app_log.info(f"Application logs: logs/application.log")
     
     try:
         uvicorn.run(app, host="0.0.0.0", port=port)

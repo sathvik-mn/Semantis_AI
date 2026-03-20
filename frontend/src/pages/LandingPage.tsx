@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { TubesBackground } from '../components/TubesBackground';
 
 export function LandingPage() {
+  const { isAuthenticated } = useAuth();
   return (
     <TubesBackground className="min-h-screen" enableClickInteraction>
       <div className="pointer-events-auto">
@@ -15,8 +17,14 @@ export function LandingPage() {
               <Link to="/signup" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Try It Free</Link>
             </div>
             <div className="flex gap-3">
-              <Link to="/signin" className="btn-ghost no-underline">Sign In</Link>
-              <Link to="/signup" className="btn-primary no-underline">Get Started</Link>
+              {isAuthenticated ? (
+                <Link to="/playground" className="btn-primary no-underline">Go to Playground</Link>
+              ) : (
+                <>
+                  <Link to="/signin" className="btn-ghost no-underline">Sign In</Link>
+                  <Link to="/signup" className="btn-primary no-underline">Get Started</Link>
+                </>
+              )}
             </div>
           </div>
         </nav>
@@ -41,12 +49,20 @@ export function LandingPage() {
             </p>
 
             <div className="flex gap-4 justify-center flex-wrap mb-20 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-              <Link to="/signup" className="btn-primary text-lg px-8 py-4 no-underline">
-                Start Saving Now &rarr;
-              </Link>
-              <Link to="/docs" className="btn-ghost text-lg px-8 py-4 no-underline">
-                View Documentation
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/playground" className="btn-primary text-lg px-8 py-4 no-underline">
+                  Go to Playground &rarr;
+                </Link>
+              ) : (
+                <>
+                  <Link to="/signup" className="btn-primary text-lg px-8 py-4 no-underline">
+                    Start Saving Now &rarr;
+                  </Link>
+                  <Link to="/docs" className="btn-ghost text-lg px-8 py-4 no-underline">
+                    View Documentation
+                  </Link>
+                </>
+              )}
             </div>
 
             {/* Stats */}
@@ -178,8 +194,9 @@ print(response.choices[0].message.content)  # Instant on cache hit!`}</code>
             </div>
             <div className="flex flex-col gap-2.5">
               <h4 className="text-sm font-semibold text-white mb-1">Resources</h4>
-              <a href="https://github.com" className="text-sm text-white/50 no-underline hover:text-white transition-colors" target="_blank" rel="noopener noreferrer">GitHub</a>
-              <Link to="/docs" className="text-sm text-white/50 no-underline hover:text-white transition-colors">API Reference</Link>
+              {/* TODO: Replace with actual GitHub org URL when available */}
+              <a href="#" className="text-sm text-white/50 no-underline hover:text-white transition-colors">GitHub</a>
+              <Link to="/docs#api" className="text-sm text-white/50 no-underline hover:text-white transition-colors">API Reference</Link>
             </div>
             <div className="flex flex-col gap-2.5">
               <h4 className="text-sm font-semibold text-white mb-1">Company</h4>

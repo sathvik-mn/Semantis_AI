@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Users, Activity, DollarSign, Key, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Users, Activity, DollarSign, Key, TrendingUp, TrendingDown, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -19,15 +19,18 @@ import {
 } from 'recharts';
 import { adminAPI, AnalyticsSummary, GrowthData, UsageData, PlanDistribution } from '../api/adminAPI';
 
+type TimePeriod = 7 | 30 | 90;
+
 interface KPICardProps {
   title: string;
   value: string | number;
+  subtitle?: string;
   icon: React.ElementType;
   trend?: number;
   color: string;
 }
 
-function KPICard({ title, value, icon: Icon, trend, color }: KPICardProps) {
+function KPICard({ title, value, subtitle, icon: Icon, trend, color }: KPICardProps) {
   return (
     <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-200 hover:shadow-xl">
       <div className="flex items-center justify-between mb-4">
@@ -44,6 +47,7 @@ function KPICard({ title, value, icon: Icon, trend, color }: KPICardProps) {
       <div>
         <p className="text-sm text-gray-400 mb-1">{title}</p>
         <p className="text-3xl font-bold text-white">{value}</p>
+        {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
       </div>
     </div>
   );
@@ -58,54 +62,84 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
+const TOOLTIP_STYLE = {
+  backgroundColor: '#1F2937',
+  border: '1px solid #374151',
+  borderRadius: '8px',
+  color: '#F9FAFB',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+};
+
 export default function AdminDashboard() {
   const [summary, setSummary] = useState<AnalyticsSummary>({
     total_users: 0,
     active_users: 0,
     total_requests: 0,
+    total_cache_hits: 0,
+    total_cache_misses: 0,
     cache_hit_ratio: 0,
-    total_revenue: 0,
-    active_api_keys: 0
+    total_cost_estimate: 0,
+    total_tokens_used: 0,
+    active_api_keys: 0,
   });
   const [growthData, setGrowthData] = useState<GrowthData[]>([]);
   const [usageData, setUsageData] = useState<UsageData[]>([]);
   const [planDist, setPlanDist] = useState<PlanDistribution[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState<TimePeriod>(30);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       const [summaryData, growth, usage, plans] = await Promise.all([
         adminAPI.getSummary(),
-        adminAPI.getGrowthData(30),
-        adminAPI.getUsageData(30),
-        adminAPI.getPlanDistribution()
+        adminAPI.getGrowthData(period),
+        adminAPI.getUsageData(period),
+        adminAPI.getPlanDistribution(),
       ]);
       setSummary(summaryData);
       setGrowthData(growth);
       setUsageData(usage);
       setPlanDist(plans);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error('Error loading dashboard data:', err);
       setError('Unable to load dashboard data. Please check your connection and try again.');
-      // Don't load sample data - show error instead
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, [period]);
+
+  // Load data on mount and when period changes
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      loadDashboardData(true);
+    }, 60_000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [loadDashboardData]);
+
+  const handleRefresh = () => {
+    loadDashboardData(true);
   };
 
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-
-  const revenueData = usageData.map(item => ({
-    date: item.date,
-    revenue: (item.requests * 0.001).toFixed(2)
-  }));
 
   if (loading) {
     return (
@@ -117,21 +151,61 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-4xl font-bold text-white mb-2">Admin Dashboard</h1>
           <p className="text-gray-400">
             Overview of Semantis AI platform metrics
           </p>
         </div>
-        {error && (
-          <div className="flex items-center px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm">
-            <AlertCircle className="w-4 h-4 mr-2" />
-            Demo Mode
+        <div className="flex items-center gap-3 flex-wrap">
+          {error && (
+            <div className="flex items-center px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm">
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Error loading data
+            </div>
+          )}
+
+          {/* Time Period Selector */}
+          <div className="flex items-center bg-gray-800 rounded-lg border border-gray-700 p-1">
+            {([7, 30, 90] as TimePeriod[]).map((days) => (
+              <button
+                type="button"
+                key={days}
+                onClick={() => setPeriod(days)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150 ${
+                  period === days
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                {days}d
+              </button>
+            ))}
           </div>
-        )}
+
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 hover:text-white hover:border-gray-600 transition-all duration-150 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="text-sm">Refresh</span>
+          </button>
+
+          {/* Last Updated */}
+          {lastUpdated && (
+            <span className="text-xs text-gray-500">
+              Updated {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
+        </div>
       </div>
 
+      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <KPICard
           title="Total Users"
@@ -148,18 +222,20 @@ export default function AdminDashboard() {
         <KPICard
           title="Total Requests"
           value={summary.total_requests.toLocaleString()}
+          subtitle={`${summary.total_tokens_used.toLocaleString()} tokens used`}
           icon={TrendingUp}
           color="bg-gradient-to-br from-purple-500 to-purple-600"
         />
         <KPICard
           title="Cache Hit Ratio"
           value={`${summary.cache_hit_ratio.toFixed(1)}%`}
-          icon={Activity}
+          subtitle={`${summary.total_cache_hits.toLocaleString()} hits / ${summary.total_cache_misses.toLocaleString()} misses`}
+          icon={Zap}
           color="bg-gradient-to-br from-teal-500 to-teal-600"
         />
         <KPICard
-          title="Est. Cost"
-          value={`$${summary.total_revenue.toLocaleString()}`}
+          title="Est. Cost Saved"
+          value={`$${summary.total_cost_estimate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           icon={DollarSign}
           color="bg-gradient-to-br from-orange-500 to-orange-600"
         />
@@ -171,10 +247,11 @@ export default function AdminDashboard() {
         />
       </div>
 
+      {/* Growth + Plan Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-lg p-6 border border-gray-700">
           <h2 className="text-xl font-bold text-white mb-6">
-            User Growth (30 Days)
+            User Growth ({period} Days)
           </h2>
           {growthData.length > 0 ? (
             <ResponsiveContainer width="100%" height={320}>
@@ -184,7 +261,7 @@ export default function AdminDashboard() {
                     <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
                     <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
                   </linearGradient>
-                  <linearGradient id="colorActiveUsers" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorNewApiKeys" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
                     <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
                   </linearGradient>
@@ -196,18 +273,10 @@ export default function AdminDashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                 <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '12px' }} />
                 <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1F2937',
-                    border: '1px solid #374151',
-                    borderRadius: '8px',
-                    color: '#F9FAFB',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
-                  }}
-                />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
                 <Line type="monotone" dataKey="new_users" stroke="#3B82F6" strokeWidth={3} name="New Users" dot={{ r: 4, fill: '#3B82F6' }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="active_users" stroke="#10B981" strokeWidth={3} name="Active Users" dot={{ r: 4, fill: '#10B981' }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="new_api_keys" stroke="#10B981" strokeWidth={3} name="New API Keys" dot={{ r: 4, fill: '#10B981' }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="total_users" stroke="#F59E0B" strokeWidth={3} name="Total Users" dot={{ r: 4, fill: '#F59E0B' }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -237,15 +306,7 @@ export default function AdminDashboard() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1F2937',
-                    border: '1px solid #374151',
-                    borderRadius: '8px',
-                    color: '#F9FAFB',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
-                  }}
-                />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -254,10 +315,11 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Usage Trends + Cost Trends */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-lg p-6 border border-gray-700">
           <h2 className="text-xl font-bold text-white mb-6">
-            Usage Trends
+            Usage Trends ({period} Days)
           </h2>
           {usageData.length > 0 ? (
             <ResponsiveContainer width="100%" height={320}>
@@ -271,22 +333,19 @@ export default function AdminDashboard() {
                     <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
                     <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
                   </linearGradient>
+                  <linearGradient id="colorCacheMisses" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0.1}/>
+                  </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                 <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '12px' }} />
                 <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1F2937',
-                    border: '1px solid #374151',
-                    borderRadius: '8px',
-                    color: '#F9FAFB',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
-                  }}
-                />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                <Area type="monotone" dataKey="requests" stackId="1" stroke="#3B82F6" fill="url(#colorRequests)" strokeWidth={2} name="Requests" />
-                <Area type="monotone" dataKey="cache_hits" stackId="1" stroke="#10B981" fill="url(#colorCacheHits)" strokeWidth={2} name="Cache Hits" />
+                <Area type="monotone" dataKey="requests" stroke="#3B82F6" fill="url(#colorRequests)" strokeWidth={2} name="Requests" />
+                <Area type="monotone" dataKey="cache_hits" stroke="#10B981" fill="url(#colorCacheHits)" strokeWidth={2} name="Cache Hits" />
+                <Area type="monotone" dataKey="cache_misses" stroke="#EF4444" fill="url(#colorCacheMisses)" strokeWidth={2} name="Cache Misses" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -296,34 +355,29 @@ export default function AdminDashboard() {
 
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-lg p-6 border border-gray-700">
           <h2 className="text-xl font-bold text-white mb-6">
-            Revenue Trends
+            Cost Trends ({period} Days)
           </h2>
-          {revenueData.length > 0 ? (
+          {usageData.length > 0 ? (
             <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={revenueData}>
+              <BarChart data={usageData}>
                 <defs>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#F59E0B" stopOpacity={1}/>
                     <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.6}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                 <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} />
+                <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} tickFormatter={(v) => `$${v}`} />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1F2937',
-                    border: '1px solid #374151',
-                    borderRadius: '8px',
-                    color: '#F9FAFB',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
-                  }}
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(value: number) => [`$${value.toFixed(4)}`, 'Cost Estimate']}
                 />
-                <Bar dataKey="revenue" fill="url(#colorRevenue)" name="Revenue ($)" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="cost_estimate" fill="url(#colorCost)" name="Cost Estimate ($)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyState message="No revenue data available" />
+            <EmptyState message="No cost data available" />
           )}
         </div>
       </div>

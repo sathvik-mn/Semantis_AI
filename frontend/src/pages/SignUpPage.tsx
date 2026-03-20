@@ -12,14 +12,9 @@ export function SignUpPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [signupComplete, setSignupComplete] = useState(false);
-  const { signup, isAuthenticated } = useAuth();
+  const { signup, logout, user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/playground', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
 
   // Password strength validation
   const passwordChecks = {
@@ -70,7 +65,29 @@ export function SignUpPage() {
 
         <div style={styles.content} className="pointer-events-auto">
           <div style={styles.card}>
-            {signupComplete ? (
+            {isAuthenticated && !switchingAccount ? (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <h2 style={styles.cardTitle}>Already Signed In</h2>
+                <p style={{ ...styles.cardSubtitle, marginBottom: '24px' }}>
+                  You're signed in as <strong style={{ color: '#fff' }}>{user?.email}</strong>
+                </p>
+                <button
+                  onClick={() => navigate('/playground')}
+                  style={{ ...styles.button, marginBottom: '12px' }}
+                >
+                  Continue to Playground
+                </button>
+                <button
+                  onClick={async () => {
+                    await logout();
+                    setSwitchingAccount(true);
+                  }}
+                  style={{ ...styles.button, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+                >
+                  Sign out and create a new account
+                </button>
+              </div>
+            ) : signupComplete ? (
               <div style={{ textAlign: 'center', padding: '20px 0' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>&#9993;</div>
                 <h2 style={styles.cardTitle}>Check your email</h2>

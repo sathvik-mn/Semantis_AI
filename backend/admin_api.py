@@ -109,7 +109,7 @@ def get_analytics_summary(
             )
     except Exception as e:
         error_log.exception(f"Admin analytics summary failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/analytics/user-growth")
@@ -167,7 +167,7 @@ def get_user_growth(
             return {"period": period, "days": days, "data": result}
     except Exception as e:
         error_log.exception(f"Admin user growth failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/analytics/plan-distribution")
@@ -207,7 +207,7 @@ def get_plan_distribution(admin: bool = Depends(require_admin)):
             return {"total_active_keys": total_active, "plans": result}
     except Exception as e:
         error_log.exception(f"Admin plan distribution failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/analytics/usage-trends")
@@ -260,7 +260,7 @@ def get_usage_trends(
             return {"period": period, "days": days, "data": trends}
     except Exception as e:
         error_log.exception(f"Admin usage trends failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/analytics/top-users")
@@ -329,7 +329,7 @@ def get_top_users(
             return {"limit": limit, "sort_by": sort_by, "days": days, "users": users}
     except Exception as e:
         error_log.exception(f"Admin top users failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/users")
@@ -398,7 +398,177 @@ def list_all_users(
             return {"total": total, "limit": limit, "offset": offset, "users": users}
     except Exception as e:
         error_log.exception(f"Admin list users failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@admin_router.get("/users/by-uid/{user_id}/details")
+def get_user_details_by_uid(user_id: str, admin: bool = Depends(require_admin)):
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+
+            # Get profile
+            cur.execute("SELECT id, email, name, is_admin, company, created_at, updated_at FROM profiles WHERE id = %s", (user_id,))
+            profile = cur.fetchone()
+            if not profile:
+                raise HTTPException(status_code=404, detail="User not found")
+            profile = dict(profile)
+
+            # Get all API keys for this user
+            cur.execute("""
+                SELECT id, api_key, tenant_id, plan, is_active, scope, label,
+                       usage_count, created_at, last_used_at, expires_at
+                FROM api_keys WHERE user_id = %s
+                ORDER BY created_at DESC
+            """, (user_id,))
+            api_keys = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d['api_key'] = d['api_key'][:12] + "..." + d['api_key'][-4:] if len(d['api_key']) > 16 else d['api_key']
+                d['created_at'] = str(d['created_at'])
+                d['last_used_at'] = str(d['last_used_at']) if d['last_used_at'] else None
+                d['expires_at'] = str(d['expires_at']) if d['expires_at'] else None
+                api_keys.append(d)
+
+            # Get org memberships
+            cur.execute("""
+                SELECT o.id as org_id, o.name as org_name, o.slug, o.plan as org_plan, om.role
+                FROM org_members om
+                JOIN organizations o ON om.org_id = o.id
+                WHERE om.user_id = %s
+            """, (user_id,))
+            orgs = [dict(row) for row in cur.fetchall()]
+            for org in orgs:
+                org['org_id'] = str(org['org_id'])
+
+            # Get usage stats (30d) aggregated across all user's keys
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(ul.request_count), 0) as total_requests,
+                    COALESCE(SUM(ul.cache_hits), 0) as total_hits,
+                    COALESCE(SUM(ul.cache_misses), 0) as total_misses,
+                    COALESCE(SUM(ul.tokens_used), 0) as total_tokens,
+                    COALESCE(SUM(ul.cost_estimate), 0) as total_cost
+                FROM usage_logs ul
+                JOIN api_keys ak ON ul.api_key = ak.api_key
+                WHERE ak.user_id = %s AND ul.logged_at >= NOW() - INTERVAL '30 days'
+            """, (user_id,))
+            usage_30d = dict(cur.fetchone())
+
+            # Get recent activity by endpoint (7d)
+            cur.execute("""
+                SELECT
+                    ul.endpoint,
+                    COALESCE(SUM(ul.request_count), 0) as requests,
+                    COALESCE(SUM(ul.cache_hits), 0) as hits,
+                    COALESCE(SUM(ul.cache_misses), 0) as misses,
+                    COALESCE(SUM(ul.cost_estimate), 0) as cost
+                FROM usage_logs ul
+                JOIN api_keys ak ON ul.api_key = ak.api_key
+                WHERE ak.user_id = %s AND ul.logged_at >= NOW() - INTERVAL '7 days'
+                GROUP BY ul.endpoint
+            """, (user_id,))
+            recent_activity = [dict(row) for row in cur.fetchall()]
+            for a in recent_activity:
+                a['cost'] = round(a['cost'] or 0, 4)
+
+            # Get recent audit logs for user's orgs
+            org_ids = [org['org_id'] for org in orgs]
+            audit_logs = []
+            if org_ids:
+                placeholders = ','.join(['%s'] * len(org_ids))
+                cur.execute(f"""
+                    SELECT id, action, resource_type, resource_id, details, created_at
+                    FROM audit_logs
+                    WHERE user_id = %s OR org_id IN ({placeholders})
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                """, (user_id, *org_ids))
+                audit_logs = [dict(row) for row in cur.fetchall()]
+                for log in audit_logs:
+                    log['created_at'] = str(log['created_at'])
+                    log['details'] = log['details'] or {}
+
+            return {
+                "id": str(profile['id']),
+                "email": profile['email'],
+                "name": profile['name'],
+                "is_admin": profile['is_admin'],
+                "company": profile['company'],
+                "created_at": str(profile['created_at']),
+                "updated_at": str(profile['updated_at']) if profile['updated_at'] else None,
+                "api_keys": api_keys,
+                "organizations": orgs,
+                "usage_stats_30d": {
+                    "total_requests": usage_30d['total_requests'] or 0,
+                    "total_hits": usage_30d['total_hits'] or 0,
+                    "total_misses": usage_30d['total_misses'] or 0,
+                    "total_tokens": usage_30d['total_tokens'] or 0,
+                    "total_cost": round(usage_30d['total_cost'] or 0, 4),
+                },
+                "recent_activity": recent_activity,
+                "audit_logs": audit_logs,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Admin user details by uid failed | user={user_id} | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@admin_router.post("/users/by-uid/{user_id}/update-plan")
+def update_user_plan_by_uid(
+    user_id: str,
+    plan: str = Query(...),
+    admin: bool = Depends(require_admin)
+):
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("UPDATE api_keys SET plan = %s WHERE user_id = %s RETURNING id", (plan, user_id))
+            rows = cur.fetchall()
+            if not rows:
+                raise HTTPException(status_code=404, detail="No API keys found for user")
+            return {"success": True, "message": f"Plan updated to {plan} for {len(rows)} key(s)", "updated_count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Admin plan update by uid failed | user={user_id} | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@admin_router.post("/users/by-uid/{user_id}/deactivate")
+def deactivate_user_by_uid(user_id: str, admin: bool = Depends(require_admin)):
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("UPDATE api_keys SET is_active = FALSE WHERE user_id = %s RETURNING id", (user_id,))
+            rows = cur.fetchall()
+            if not rows:
+                raise HTTPException(status_code=404, detail="No API keys found for user")
+            return {"success": True, "message": f"Deactivated {len(rows)} key(s)", "updated_count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Admin deactivate by uid failed | user={user_id} | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@admin_router.post("/users/by-uid/{user_id}/activate")
+def activate_user_by_uid(user_id: str, admin: bool = Depends(require_admin)):
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("UPDATE api_keys SET is_active = TRUE WHERE user_id = %s RETURNING id", (user_id,))
+            rows = cur.fetchall()
+            if not rows:
+                raise HTTPException(status_code=404, detail="No API keys found for user")
+            return {"success": True, "message": f"Activated {len(rows)} key(s)", "updated_count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Admin activate by uid failed | user={user_id} | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/users/{tenant_id}/details")
@@ -462,7 +632,7 @@ def get_user_details(tenant_id: str, admin: bool = Depends(require_admin)):
         raise
     except Exception as e:
         error_log.exception(f"Admin user details failed | tenant={tenant_id} | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.post("/users/{tenant_id}/update-plan")
@@ -481,7 +651,7 @@ def update_user_plan(
         raise
     except Exception as e:
         error_log.exception(f"Admin plan update failed | tenant={tenant_id} | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.post("/users/{tenant_id}/deactivate")
@@ -501,7 +671,7 @@ def deactivate_user(tenant_id: str, admin: bool = Depends(require_admin)):
         raise
     except Exception as e:
         error_log.exception(f"Admin deactivate user failed | tenant={tenant_id} | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @admin_router.get("/system/stats")
@@ -548,4 +718,134 @@ def get_system_stats(admin: bool = Depends(require_admin)):
         }
     except Exception as e:
         error_log.exception(f"Admin system stats failed | error={e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@admin_router.post("/users/{tenant_id}/activate")
+def activate_user(tenant_id: str, admin: bool = Depends(require_admin)):
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("UPDATE api_keys SET is_active = TRUE WHERE tenant_id = %s RETURNING api_key", (tenant_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Tenant not found")
+            return {"success": True, "message": f"API key activated for tenant {tenant_id}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Admin activate user failed | tenant={tenant_id} | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@admin_router.get("/health")
+def get_admin_health(admin: bool = Depends(require_admin)):
+    """Comprehensive health check for admin dashboard."""
+    import time
+    health = {"status": "healthy", "checks": {}}
+
+    # Database check
+    try:
+        start = time.time()
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        health["checks"]["database"] = {"status": "up", "latency_ms": round((time.time() - start) * 1000, 1)}
+    except Exception as e:
+        health["checks"]["database"] = {"status": "down", "error": str(type(e).__name__)}
+        health["status"] = "degraded"
+
+    # Cache engine check
+    try:
+        svc_instance = get_svc()
+        health["checks"]["cache_engine"] = {
+            "status": "up",
+            "tenants": len(svc_instance.tenants),
+            "total_entries": sum(len(t.rows) for t in svc_instance.tenants.values()),
+        }
+    except Exception as e:
+        health["checks"]["cache_engine"] = {"status": "down", "error": str(type(e).__name__)}
+        health["status"] = "degraded"
+
+    # Redis check
+    try:
+        from semantic_cache_server import redis_client
+        if redis_client:
+            start = time.time()
+            redis_client.ping()
+            health["checks"]["redis"] = {"status": "up", "latency_ms": round((time.time() - start) * 1000, 1)}
+        else:
+            health["checks"]["redis"] = {"status": "not_configured"}
+    except Exception as e:
+        health["checks"]["redis"] = {"status": "down", "error": str(type(e).__name__)}
+
+    # OpenAI check
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    health["checks"]["openai"] = {"status": "configured" if openai_key and not openai_key.startswith("sk-your") else "not_configured"}
+
+    # Stripe check
+    stripe_key = os.getenv("STRIPE_SECRET_KEY", "")
+    health["checks"]["stripe"] = {"status": "configured" if stripe_key and "PASTE" not in stripe_key else "not_configured"}
+
+    # Environment config
+    health["config"] = {
+        "encryption_key": bool(os.getenv("ENCRYPTION_KEY")),
+        "encryption_salt": bool(os.getenv("ENCRYPTION_SALT")),
+        "admin_api_key": bool(os.getenv("ADMIN_API_KEY")),
+        "frontend_url": os.getenv("FRONTEND_URL", "not set"),
+        "allowed_origins": os.getenv("ALLOWED_ORIGINS", "not set"),
+    }
+
+    return health
+
+
+@admin_router.get("/audit-logs")
+def list_audit_logs(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    action: Optional[str] = Query(None),
+    admin: bool = Depends(require_admin)
+):
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+
+            if action:
+                cur.execute("""
+                    SELECT al.*, p.email, p.name as user_name
+                    FROM audit_logs al
+                    LEFT JOIN profiles p ON al.user_id = p.id
+                    WHERE al.action = %s
+                    ORDER BY al.created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (action, limit, offset))
+            else:
+                cur.execute("""
+                    SELECT al.*, p.email, p.name as user_name
+                    FROM audit_logs al
+                    LEFT JOIN profiles p ON al.user_id = p.id
+                    ORDER BY al.created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (limit, offset))
+
+            logs = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d['created_at'] = str(d['created_at'])
+                d['user_id'] = str(d['user_id']) if d['user_id'] else None
+                d['org_id'] = str(d['org_id']) if d['org_id'] else None
+                d['details'] = d['details'] or {}
+                logs.append(d)
+
+            # Get total count
+            if action:
+                cur.execute("SELECT COUNT(*) as count FROM audit_logs WHERE action = %s", (action,))
+            else:
+                cur.execute("SELECT COUNT(*) as count FROM audit_logs")
+            total = cur.fetchone()['count']
+
+            return {"total": total, "limit": limit, "offset": offset, "logs": logs}
+    except Exception as e:
+        error_log.exception(f"Admin audit logs failed | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

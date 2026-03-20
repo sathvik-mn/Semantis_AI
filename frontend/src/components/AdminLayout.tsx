@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, NavLink, Link } from 'react-router-dom';
-import { LayoutDashboard, Users, Trophy, TrendingUp, Settings, Moon, Sun, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, Users, Trophy, TrendingUp, HeartPulse, Moon, Sun, ArrowLeft } from 'lucide-react';
 
 export default function AdminLayout() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -27,7 +27,7 @@ export default function AdminLayout() {
     { to: '/admin/users', icon: Users, label: 'Users' },
     { to: '/admin/top-users', icon: Trophy, label: 'Top Users' },
     { to: '/admin/analytics', icon: TrendingUp, label: 'Analytics' },
-    { to: '/admin/settings', icon: Settings, label: 'Settings' },
+    { to: '/admin/settings', icon: HeartPulse, label: 'System Health' },
   ];
 
   return (

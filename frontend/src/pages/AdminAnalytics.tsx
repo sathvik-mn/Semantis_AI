@@ -204,10 +204,10 @@ export default function AdminAnalytics() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="active_users"
+                    dataKey="new_api_keys"
                     stroke="#10B981"
                     strokeWidth={3}
-                    name="Active Users"
+                    name="New API Keys"
                     dot={{ r: 4, fill: '#10B981' }}
                     activeDot={{ r: 7, fill: '#10B981' }}
                   />
@@ -261,8 +261,22 @@ export default function AdminAnalytics() {
                       color: '#F9FAFB',
                       boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
                     }}
+                    formatter={(value: number, name: string) => {
+                      if (name === 'Cost Estimate') return [`$${value.toFixed(2)}`, name];
+                      return [value.toLocaleString(), name];
+                    }}
                   />
                   <Legend wrapperStyle={{ paddingTop: '24px' }} />
+                  <Area
+                    type="monotone"
+                    dataKey="cost_estimate"
+                    stackId="3"
+                    stroke="#F59E0B"
+                    fill="none"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    name="Cost Estimate"
+                  />
                   <Area
                     type="monotone"
                     dataKey="requests"
@@ -348,6 +362,12 @@ export default function AdminAnalytics() {
                       </div>
                       <div className="text-sm text-gray-400">
                         {plan.percentage.toFixed(1)}% of total users
+                      </div>
+                      <div className="text-sm text-gray-400 mt-1">
+                        {plan.total_requests.toLocaleString()} requests
+                      </div>
+                      <div className="text-sm text-gray-400 mt-1">
+                        ${plan.total_cost.toFixed(2)} cost
                       </div>
                       <div className="mt-3 w-full bg-gray-700 rounded-full h-2">
                         <div

@@ -1,11 +1,29 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ChatResponse, sendChatCompletion, hasApiKey, setApiKey } from '../api/semanticAPI';
+import { ChatResponse, sendChatCompletionStream, hasApiKey, setApiKey } from '../api/semanticAPI';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Key, ExternalLink, Copy, Check, Trash2, Clock, Send, Bot, User, Zap, Gauge, Layers, Sparkles } from 'lucide-react';
 
-const HISTORY_KEY = 'semantis_chat_history';
 const MAX_HISTORY = 50;
+const MESSAGES_KEY_PREFIX = 'semantis_chat_messages_';
+const HISTORY_KEY_PREFIX = 'semantis_chat_history_';
+
+/** Get a tenant-scoped storage key based on the current API key. */
+function getTenantSlug(): string {
+  const key = localStorage.getItem('semantic_api_key') || '';
+  // API key format: sc-{tenant}-{rest}
+  const parts = key.split('-');
+  if (parts.length >= 3) return parts[1];
+  return 'default';
+}
+
+function getHistoryKey(): string {
+  return HISTORY_KEY_PREFIX + getTenantSlug();
+}
+
+function getMessagesKey(): string {
+  return MESSAGES_KEY_PREFIX + getTenantSlug();
+}
 
 interface ChatMessage {
   id: string;
@@ -26,13 +44,26 @@ interface HistoryEntry {
 
 function loadHistory(): HistoryEntry[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(getHistoryKey());
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
 
 function saveHistory(entries: HistoryEntry[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY)));
+  localStorage.setItem(getHistoryKey(), JSON.stringify(entries.slice(0, MAX_HISTORY)));
+}
+
+function loadMessages(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(getMessagesKey());
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveMessages(msgs: ChatMessage[]) {
+  // Only persist completed messages (not currently streaming)
+  const completed = msgs.filter(m => !m.isStreaming);
+  localStorage.setItem(getMessagesKey(), JSON.stringify(completed.slice(-200)));
 }
 
 interface QueryPlaygroundProps {
@@ -41,9 +72,27 @@ interface QueryPlaygroundProps {
 
 export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [prompt, setPrompt] = useState('');
-  const [model, setModel] = useState('gpt-4o-mini');
-  const [temperature, setTemperature] = useState(0.2);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [model, setModelState] = useState(() => {
+    try { return localStorage.getItem('semantis_playground_model') || 'gpt-4o-mini'; }
+    catch { return 'gpt-4o-mini'; }
+  });
+  const [temperature, setTemperatureState] = useState(() => {
+    try {
+      const stored = localStorage.getItem('semantis_playground_temperature');
+      return stored !== null ? parseFloat(stored) : 0.2;
+    } catch { return 0.2; }
+  });
+
+  const setModel = useCallback((value: string) => {
+    setModelState(value);
+    try { localStorage.setItem('semantis_playground_model', value); } catch {}
+  }, []);
+
+  const setTemperature = useCallback((value: number) => {
+    setTemperatureState(value);
+    try { localStorage.setItem('semantis_playground_temperature', String(value)); } catch {}
+  }, []);
+  const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -52,13 +101,30 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const userIsNearBottomRef = useRef(true);
+
+  const isNearBottom = useCallback(() => {
+    const el = chatAreaRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (userIsNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+
+  // Persist messages to localStorage whenever they change (skip while streaming)
+  useEffect(() => {
+    if (!messages.some(m => m.isStreaming)) {
+      saveMessages(messages);
+    }
+  }, [messages]);
 
   useEffect(() => {
     const storedKey = localStorage.getItem('semantic_api_key');
@@ -90,7 +156,9 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
 
   const clearHistory = useCallback(() => {
     setHistory([]);
-    localStorage.removeItem(HISTORY_KEY);
+    setMessages([]);
+    localStorage.removeItem(getHistoryKey());
+    localStorage.removeItem(getMessagesKey());
   }, []);
 
   const loadFromHistory = useCallback((entry: HistoryEntry) => {
@@ -116,8 +184,8 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
     e.preventDefault();
     const key = apiKeyInput.trim();
     if (!key) return;
-    if (!key.startsWith('sc-')) {
-      alert('Invalid key format. Must start with "sc-".');
+    if (!key.startsWith('sc-') || key.split('-').length < 3 || key.length < 10) {
+      alert('Invalid key format. Key must start with "sc-", contain at least 3 parts separated by hyphens (e.g. sc-tenant-key), and be at least 10 characters long.');
       return;
     }
     setApiKey(key);
@@ -145,6 +213,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       timestamp: Date.now(),
     };
 
+    userIsNearBottomRef.current = true;
     setMessages(prev => [...prev, userMessage, assistantMessage]);
     setPrompt('');
     setIsLoading(true);
@@ -155,48 +224,67 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
     }
 
     try {
-      const result = await sendChatCompletion({
+      // Real SSE streaming — chunks appear as they arrive from the backend
+      let fullContent = '';
+      for await (const chunk of sendChatCompletionStream({
         model,
         messages: [{ role: 'user', content: userMessage.content }],
         temperature,
-      });
+      })) {
+        fullContent += chunk;
+        const snapshot = fullContent;
+        setMessages(prev =>
+          prev.map(m => m.id === assistantId ? { ...m, content: snapshot } : m)
+        );
+      }
 
-      const fullContent = result.choices[0]?.message.content || '';
-      addToHistory(userMessage.content, result);
-
-      // Animate typing effect
-      const CHARS_PER_TICK = 8;
-      const TICK_MS = 15;
-      let pos = 0;
-
-      await new Promise<void>((resolve) => {
-        const timer = setInterval(() => {
-          pos = Math.min(pos + CHARS_PER_TICK, fullContent.length);
-          setMessages(prev =>
-            prev.map(m => m.id === assistantId
-              ? { ...m, content: fullContent.slice(0, pos) }
-              : m
-            )
-          );
-          if (pos >= fullContent.length) {
-            clearInterval(timer);
-            resolve();
-          }
-        }, TICK_MS);
-      });
+      // Mark streaming complete — metadata comes from the next
+      // request which will be an instant cache hit.
+      const estimatedTokens = Math.ceil(fullContent.split(/\s+/).length * 1.3);
+      const streamUsage: ChatResponse['usage'] = {
+        prompt_tokens: 0,
+        completion_tokens: estimatedTokens,
+        total_tokens: estimatedTokens,
+      };
 
       setMessages(prev =>
         prev.map(m => m.id === assistantId
-          ? { ...m, content: fullContent, isStreaming: false, meta: result.meta, usage: result.usage }
+          ? { ...m, content: fullContent, isStreaming: false, usage: streamUsage }
           : m
         )
       );
 
+      // Save to history
+      addToHistory(userMessage.content, {
+        id: assistantId,
+        object: 'chat.completion',
+        created: Date.now(),
+        model,
+        choices: [{ index: 0, message: { role: 'assistant', content: fullContent }, finish_reason: 'stop' }],
+        usage: streamUsage,
+        meta: { hit: 'miss', similarity: 0, latency_ms: 0, strategy: 'stream' },
+      } as ChatResponse);
+
       if (onQueryComplete) onQueryComplete();
     } catch (err: any) {
-      const errorMsg = err?.message || 'Query failed';
+      let errorMsg = err?.message || 'Query failed';
+      // Make plan limit errors user-friendly
+      if (errorMsg.includes('429') && !errorMsg.includes('plan')) {
+        errorMsg = 'Monthly request limit reached for your plan. Go to Settings → Billing to upgrade.';
+      }
       setError(errorMsg);
-      setMessages(prev => prev.filter(m => m.id !== assistantId));
+      // If we received partial content, keep it visible with an error indicator
+      setMessages(prev => {
+        const assistantMsg = prev.find(m => m.id === assistantId);
+        if (assistantMsg && assistantMsg.content) {
+          return prev.map(m => m.id === assistantId
+            ? { ...m, isStreaming: false, content: m.content + '\n\n\u26a0 Response was interrupted' }
+            : m
+          );
+        }
+        // No content received — remove the empty assistant message
+        return prev.filter(m => m.id !== assistantId);
+      });
     } finally {
       setIsLoading(false);
     }
@@ -262,7 +350,11 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       )}
 
       {/* Chat Messages */}
-      <div style={styles.chatArea}>
+      <div
+        ref={chatAreaRef}
+        style={styles.chatArea}
+        onScroll={() => { userIsNearBottomRef.current = isNearBottom(); }}
+      >
         {messages.length === 0 && (
           <div style={styles.emptyState}>
             <Bot size={40} style={{ color: 'rgba(255,255,255,0.15)', marginBottom: '12px' }} />
@@ -404,7 +496,8 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
               <label style={styles.settingLabel}>Model</label>
               <select value={model} onChange={(e) => setModel(e.target.value)} style={styles.settingSelect}>
                 <option value="gpt-4o-mini">gpt-4o-mini</option>
-                <option value="gpt-4">gpt-4</option>
+                <option value="gpt-4o">gpt-4o</option>
+                <option value="gpt-4-turbo">gpt-4-turbo</option>
                 <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
               </select>
             </div>
@@ -420,7 +513,16 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
           </div>
         )}
 
-        {error && <div style={styles.errorBar}>{error}</div>}
+        {error && (
+          <div style={styles.errorBar}>
+            {error}
+            {(error.includes('plan') || error.includes('limit reached')) && (
+              <Link to="/settings" style={{ color: '#fbbf24', marginLeft: '8px', fontWeight: 600 }}>
+                Upgrade Plan →
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {/* History Panel */}

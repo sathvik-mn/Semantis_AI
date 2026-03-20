@@ -427,10 +427,21 @@ def get_usage_stats(tenant_id: str, days: int = 30) -> Dict:
             (tenant_id, days)
         )
         row = cur.fetchone()
-        return dict(row) if row else {
+        result = dict(row) if row else {
             "total_requests": 0, "total_hits": 0,
             "total_misses": 0, "total_tokens": 0, "total_cost": 0
         }
+        # Fallback to api_keys.usage_count if usage_logs is empty
+        if result.get('total_requests', 0) == 0:
+            cur.execute("""
+                SELECT COALESCE(SUM(usage_count), 0) as total_requests
+                FROM api_keys
+                WHERE tenant_id = %s AND is_active = TRUE
+            """, (tenant_id,))
+            fallback = cur.fetchone()
+            if fallback and (fallback['total_requests'] or 0) > 0:
+                result['total_requests'] = fallback['total_requests']
+        return result
 
 
 def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
@@ -450,8 +461,12 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
             (org_id, days)
         )
         row = cur.fetchone()
-        if row:
-            return dict(row)
+        result = dict(row) if row else {
+            "total_requests": 0, "total_hits": 0,
+            "total_misses": 0, "total_tokens": 0, "total_cost": 0
+        }
+        if result.get('total_requests', 0) > 0:
+            return result
         # Fallback: sum by tenant_id for API keys belonging to this org
         cur.execute(
             """SELECT
@@ -466,10 +481,23 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
             (org_id, days)
         )
         row = cur.fetchone()
-        return dict(row) if row else {
+        result = dict(row) if row else {
             "total_requests": 0, "total_hits": 0,
             "total_misses": 0, "total_tokens": 0, "total_cost": 0
         }
+        # Fallback to api_keys.usage_count if usage_logs is empty
+        if result.get('total_requests', 0) == 0:
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(usage_count), 0) as total_requests,
+                    MAX(last_used_at) as last_used
+                FROM api_keys
+                WHERE org_id = %s AND is_active = TRUE
+            """, (org_id,))
+            fallback = cur.fetchone()
+            if fallback and (fallback['total_requests'] or 0) > 0:
+                result['total_requests'] = fallback['total_requests']
+        return result
 
 
 # ==========================================================================
@@ -573,20 +601,66 @@ def list_cache_entries(org_id: str, limit: int = 50) -> List[Dict]:
 # Init (connection test)
 # ==========================================================================
 
+import logging
+
+_db_log = logging.getLogger("database")
+
+
+# ==========================================================================
+# Data Retention / Cleanup
+# ==========================================================================
+
+def cleanup_old_logs(usage_days: int = 90, audit_days: int = 365) -> dict:
+    """Delete usage_logs older than `usage_days` and audit_logs older than `audit_days`.
+
+    Returns dict with counts of deleted rows.  Safe to call from a cron job
+    or a scheduled background thread.
+    """
+    result = {"usage_deleted": 0, "audit_deleted": 0}
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM usage_logs WHERE logged_at < NOW() - INTERVAL '1 day' * %s",
+                (usage_days,)
+            )
+            result["usage_deleted"] = cur.rowcount
+            cur.execute(
+                "DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '1 day' * %s",
+                (audit_days,)
+            )
+            result["audit_deleted"] = cur.rowcount
+        _db_log.info(
+            f"Log cleanup: deleted {result['usage_deleted']} usage rows (>{usage_days}d), "
+            f"{result['audit_deleted']} audit rows (>{audit_days}d)"
+        )
+    except Exception as e:
+        _db_log.warning(f"Log cleanup failed: {e}")
+    return result
+
+
+# ==========================================================================
+# Init (connection test)
+# ==========================================================================
+
 def init_database():
     """Test database connection on startup. Schema is managed via Supabase SQL Editor."""
     if not DATABASE_URL:
-        print("WARNING: DATABASE_URL is not set. Database features will be unavailable.")
-        print("Get it from Supabase: Settings > Database > Connection string (URI)")
+        _db_log.warning(
+            "DATABASE_URL is not set. Database features will be unavailable. "
+            "Get it from Supabase: Settings > Database > Connection string (URI)"
+        )
         return
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
             cur.execute("SELECT 1")
-        print("Database connected successfully (Supabase Postgres)")
+        _db_log.info("Database connected successfully (Supabase Postgres)")
     except Exception as e:
-        print(f"WARNING: Database connection failed: {e}")
-        print("Cache and semantic matching will still work without the database.")
-        print("Auth, API key management, and billing require a database connection.")
+        _db_log.warning(
+            f"Database connection failed: {e}. "
+            "Cache and semantic matching will still work without the database. "
+            "Auth, API key management, and billing require a database connection."
+        )
 
 init_database()

@@ -26,7 +26,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
   const [userInfo, setUserInfo] = useState({
     email: user?.email || '',
     name: user?.name || user?.email?.split('@')[0] || 'User',
-    company: 'My Company'
+    company: ''
   });
 
   // Update userInfo when user changes
@@ -35,12 +35,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       setUserInfo({
         email: user.email || '',
         name: user.name || user.email?.split('@')[0] || 'User',
-        company: 'My Company'
+        company: ''
       });
       setEditedInfo({
         email: user.email || '',
         name: user.name || user.email?.split('@')[0] || 'User',
-        company: 'My Company'
+        company: ''
       });
     }
   }, [user]);
@@ -56,7 +56,16 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
   const [openaiKeyInput, setOpenaiKeyInput] = useState('');
   const [savingOpenAIKey, setSavingOpenAIKey] = useState(false);
   const [loadingOpenAIStatus, setLoadingOpenAIStatus] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<{text: string, type: 'success'|'error'} | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Auto-clear status message after 4 seconds
+  useEffect(() => {
+    if (statusMsg) {
+      const t = setTimeout(() => setStatusMsg(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [statusMsg]);
 
   // Load API keys from backend
   useEffect(() => {
@@ -174,12 +183,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
   const handleSaveOpenAIKey = async () => {
     if (!openaiKeyInput.trim()) {
-      alert('Please enter your OpenAI API key');
+      setStatusMsg({text: 'Please enter your OpenAI API key', type: 'error'});
       return;
     }
 
     if (!openaiKeyInput.trim().startsWith('sk-')) {
-      alert('Invalid OpenAI API key format. Must start with "sk-"');
+      setStatusMsg({text: 'Invalid OpenAI API key format. Must start with "sk-"', type: 'error'});
       return;
     }
 
@@ -190,9 +199,9 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       // Reload status
       const status = await getUserOpenAIKeyStatus();
       setOpenaiKeyStatus(status);
-      alert('OpenAI API key saved successfully!');
+      setStatusMsg({text: 'OpenAI API key saved successfully!', type: 'success'});
     } catch (err: any) {
-      alert(err.message || 'Failed to save OpenAI API key');
+      setStatusMsg({text: err.message || 'Failed to save OpenAI API key', type: 'error'});
     } finally {
       setSavingOpenAIKey(false);
     }
@@ -207,9 +216,9 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
     try {
       await removeUserOpenAIKey();
       setOpenaiKeyStatus({ key_set: false });
-      alert('OpenAI API key removed successfully');
+      setStatusMsg({text: 'OpenAI API key removed successfully', type: 'success'});
     } catch (err: any) {
-      alert(err.message || 'Failed to remove OpenAI API key');
+      setStatusMsg({text: err.message || 'Failed to remove OpenAI API key', type: 'error'});
     } finally {
       setSavingOpenAIKey(false);
     }
@@ -229,7 +238,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
   const handleDeleteKey = (id: string) => {
     if (apiKeys.length === 1) {
-      alert('You must have at least one API key');
+      setStatusMsg({text: 'You must have at least one API key', type: 'error'});
       return;
     }
     if (confirm('Are you sure you want to delete this API key?')) {
@@ -239,7 +248,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) {
-      alert('Please enter a name for the API key');
+      setStatusMsg({text: 'Please enter a name for the API key', type: 'error'});
       return;
     }
 
@@ -261,7 +270,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       setNewKeyName('');
       setShowNewKeyModal(false);
     } catch (err: any) {
-      alert(err.message || 'Failed to generate API key');
+      setStatusMsg({text: err.message || 'Failed to generate API key', type: 'error'});
     } finally {
       setGeneratingKey(false);
     }
@@ -271,6 +280,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
     <div style={styles.container} ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Account menu"
+        title="Account menu"
         style={{
           ...styles.triggerButton,
           ...(isOpen ? styles.triggerButtonActive : {}),
@@ -288,6 +299,28 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
           size={16}
         />
       </button>
+
+      {statusMsg && (
+        <div style={{
+          position: 'fixed',
+          top: '16px',
+          right: '16px',
+          zIndex: 3000,
+          padding: '12px 20px',
+          borderRadius: '10px',
+          fontSize: '14px',
+          fontWeight: '500',
+          color: '#fff',
+          background: statusMsg.type === 'success'
+            ? 'rgba(16, 185, 129, 0.9)'
+            : 'rgba(239, 68, 68, 0.9)',
+          backdropFilter: 'blur(8px)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+          animation: 'fadeIn 0.2s ease',
+        }}>
+          {statusMsg.text}
+        </div>
+      )}
 
       {isOpen && (
         <div style={styles.dropdown}>
@@ -311,6 +344,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 setShowSettings(true);
                 setIsOpen(false);
               }}
+              aria-label="Account Settings"
+              title="Account Settings"
               style={styles.menuItem}
             >
               <div style={{...styles.menuIconContainer, ...styles.menuIconContainerBlue}}>
@@ -324,6 +359,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 setShowApiKeys(true);
                 setIsOpen(false);
               }}
+              aria-label="API Keys"
+              title="API Keys"
               style={styles.menuItem}
             >
               <div style={{...styles.menuIconContainer, ...styles.menuIconContainerGreen}}>
@@ -336,6 +373,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
           <div style={styles.menuFooter}>
             <button
               onClick={onLogout}
+              aria-label="Sign Out"
+              title="Sign Out"
               style={styles.logoutButton}
             >
               <div style={styles.logoutIconContainer}>
@@ -348,9 +387,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showSettings && (
-        <div 
-          style={styles.overlay} 
+        <div
+          style={styles.overlay}
           onClick={(e) => handleOverlayClick(e, 'settings')}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Account Settings"
         >
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
@@ -363,6 +405,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               </div>
               <button
                 onClick={handleCloseSettings}
+                aria-label="Close settings"
+                title="Close settings"
                 style={styles.closeButton}
               >
                 <X size={20} />
@@ -371,11 +415,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
             <div style={styles.modalBody}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>
+                <label style={styles.label} htmlFor="account-name">
                   <User size={14} style={{ marginRight: '6px' }} />
                   Name
                 </label>
                 <input
+                  id="account-name"
                   type="text"
                   value={editMode ? editedInfo.name : userInfo.name}
                   onChange={(e) => setEditedInfo({ ...editedInfo, name: e.target.value })}
@@ -390,11 +435,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>
+                <label style={styles.label} htmlFor="account-email">
                   <Mail size={14} style={{ marginRight: '6px' }} />
                   Email
                 </label>
                 <input
+                  id="account-email"
                   type="email"
                   value={editMode ? editedInfo.email : userInfo.email}
                   onChange={(e) => setEditedInfo({ ...editedInfo, email: e.target.value })}
@@ -409,21 +455,23 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>
+                <label style={styles.label} htmlFor="account-company">
                   <Building2 size={14} style={{ marginRight: '6px' }} />
                   Company
                 </label>
                 <input
+                  id="account-company"
                   type="text"
-                  value={editMode ? editedInfo.company : userInfo.company}
+                  value={editMode ? editedInfo.company : (userInfo.company || 'Personal Account')}
                   onChange={(e) => setEditedInfo({ ...editedInfo, company: e.target.value })}
                   disabled={!editMode}
                   style={{
                     ...styles.input,
                     opacity: editMode ? 1 : 0.6,
                     cursor: editMode ? 'text' : 'not-allowed',
+                    fontStyle: !editMode && !userInfo.company ? 'italic' : 'normal',
                   }}
-                  placeholder="Your company name"
+                  placeholder="Your company name (leave empty for Personal Account)"
                 />
               </div>
 
@@ -437,7 +485,7 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               )}
 
               <div style={{ ...styles.inputGroup, marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <label style={styles.label}>
+                <label style={styles.label} htmlFor="openai-key">
                   <Key size={14} style={{ marginRight: '6px' }} />
                   OpenAI API Key (Optional — for BYOK privacy)
                 </label>
@@ -460,6 +508,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                       <button
                         onClick={handleRemoveOpenAIKey}
                         disabled={savingOpenAIKey}
+                        aria-label="Remove OpenAI API key"
+                        title="Remove OpenAI API key"
                         style={{
                           ...styles.cancelButton,
                           padding: '8px 16px',
@@ -479,10 +529,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 ) : (
                   <div>
                     <input
+                      id="openai-key"
                       type="password"
                       value={openaiKeyInput}
                       onChange={(e) => setOpenaiKeyInput(e.target.value)}
                       placeholder="sk-..."
+                      aria-label="OpenAI API Key"
                       style={{
                         ...styles.input,
                         fontFamily: 'monospace',
@@ -555,9 +607,12 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showApiKeys && (
-        <div 
-          style={styles.overlay} 
+        <div
+          style={styles.overlay}
           onClick={(e) => handleOverlayClick(e, 'apiKeys')}
+          role="dialog"
+          aria-modal="true"
+          aria-label="API Keys"
         >
           <div style={{...styles.modal, maxWidth: '700px'}} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
@@ -570,6 +625,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
               </div>
               <button
                 onClick={handleCloseApiKeys}
+                aria-label="Close API keys"
+                title="Close API keys"
                 style={styles.closeButton}
               >
                 <X size={20} />
@@ -586,6 +643,8 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
                 </div>
                 <button
                   onClick={() => setShowNewKeyModal(true)}
+                  aria-label="Create new API key"
+                  title="Create new API key"
                   style={styles.newKeyButton}
                 >
                   <Plus size={16} style={{ marginRight: '6px' }} />
@@ -655,15 +714,20 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
       )}
 
       {showNewKeyModal && (
-        <div 
-          style={styles.overlay} 
+        <div
+          style={styles.overlay}
           onClick={(e) => handleOverlayClick(e, 'newKey')}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create New API Key"
         >
           <div style={{...styles.modal, maxWidth: '450px'}} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Create New API Key</h2>
               <button
                 onClick={handleCloseNewKey}
+                aria-label="Close new key dialog"
+                title="Close"
                 style={styles.closeButton}
               >
                 <X size={20} />
@@ -672,12 +736,14 @@ export function AccountMenu({ onLogout }: AccountMenuProps) {
 
             <div style={styles.modalBody}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Key Name</label>
+                <label style={styles.label} htmlFor="new-key-name">Key Name</label>
                 <input
+                  id="new-key-name"
                   type="text"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                   placeholder="e.g., Production Key"
+                  aria-label="API key name"
                   style={styles.input}
                   autoFocus
                 />

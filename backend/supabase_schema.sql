@@ -358,3 +358,32 @@ CREATE TRIGGER on_auth_user_created
 
 -- NOTE: The backend uses the service_role key which bypasses RLS,
 -- so all admin and logging operations work without policy restrictions.
+
+-- =============================================================================
+-- 12. Data Retention Policy (auto-cleanup of old logs)
+-- =============================================================================
+
+-- Function: delete usage_logs older than 90 days and audit_logs older than 365 days
+CREATE OR REPLACE FUNCTION public.cleanup_old_logs()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM public.usage_logs WHERE logged_at < NOW() - INTERVAL '90 days';
+  DELETE FROM public.audit_logs WHERE created_at < NOW() - INTERVAL '365 days';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- To run this automatically, enable pg_cron in Supabase:
+--   1. Go to Database > Extensions > Enable pg_cron
+--   2. Run this SQL:
+--
+--   SELECT cron.schedule(
+--     'cleanup-old-logs',        -- job name
+--     '0 3 * * 0',               -- every Sunday at 3 AM UTC
+--     $$SELECT public.cleanup_old_logs()$$
+--   );
+--
+-- To verify it's running:
+--   SELECT * FROM cron.job;
+--
+-- To remove:
+--   SELECT cron.unschedule('cleanup-old-logs');

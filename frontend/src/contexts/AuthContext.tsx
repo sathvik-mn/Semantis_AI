@@ -161,6 +161,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     const { clearApiKey } = await import('../api/semanticAPI');
     clearApiKey();
+    // Clear all tenant-scoped chat data so the next user starts fresh
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('semantis_chat_messages_') || k.startsWith('semantis_chat_history_'))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
     await supabase.auth.signOut();
     setUser(null);
   };

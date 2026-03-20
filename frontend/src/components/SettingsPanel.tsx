@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { generateApiKey, setApiKey, hasApiKey, getApiKey, getSettings, updateSettings } from '../api/semanticAPI';
-import { Key, Copy, Check, AlertCircle, Save, Loader2, RefreshCw } from 'lucide-react';
+import { generateApiKey, setApiKey, hasApiKey, getApiKey, getSettings, updateSettings, getUserOpenAIKeyStatus, setUserOpenAIKey, removeUserOpenAIKey } from '../api/semanticAPI';
+import { Key, Copy, Check, AlertCircle, Save, Loader2, RefreshCw, Trash2, Shield } from 'lucide-react';
 import { CacheWarmup } from './CacheWarmup';
 
 export function SettingsPanel() {
@@ -19,6 +19,15 @@ export function SettingsPanel() {
   const [serverTtl, setServerTtl] = useState(7);
   const [entries, setEntries] = useState(0);
   const { user } = useAuth();
+
+  // BYOK OpenAI key state
+  const [openaiKeySet, setOpenaiKeySet] = useState(false);
+  const [openaiKeyPreview, setOpenaiKeyPreview] = useState<string | null>(null);
+  const [openaiKeyInput, setOpenaiKeyInput] = useState('');
+  const [openaiKeyLoading, setOpenaiKeyLoading] = useState(true);
+  const [openaiKeySaving, setOpenaiKeySaving] = useState(false);
+  const [openaiKeyRemoving, setOpenaiKeyRemoving] = useState(false);
+  const [openaiKeyError, setOpenaiKeyError] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
     if (!hasApiKey()) {
@@ -49,6 +58,59 @@ export function SettingsPanel() {
     setDirty(threshold !== serverThreshold || ttl !== serverTtl);
     setSaveSuccess(false);
   }, [threshold, ttl, serverThreshold, serverTtl]);
+
+  // Load OpenAI key status on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await getUserOpenAIKeyStatus();
+        if (cancelled) return;
+        setOpenaiKeySet(status.key_set);
+        setOpenaiKeyPreview(status.key_preview || null);
+      } catch {
+        // user may not be logged in yet — ignore
+      } finally {
+        if (!cancelled) setOpenaiKeyLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSaveOpenAIKey = async () => {
+    const trimmed = openaiKeyInput.trim();
+    if (!trimmed.startsWith('sk-')) {
+      setOpenaiKeyError('Key must start with "sk-"');
+      return;
+    }
+    setOpenaiKeySaving(true);
+    setOpenaiKeyError(null);
+    try {
+      await setUserOpenAIKey(trimmed);
+      const status = await getUserOpenAIKeyStatus();
+      setOpenaiKeySet(status.key_set);
+      setOpenaiKeyPreview(status.key_preview || null);
+      setOpenaiKeyInput('');
+    } catch (err: any) {
+      setOpenaiKeyError(err.message || 'Failed to save OpenAI key');
+    } finally {
+      setOpenaiKeySaving(false);
+    }
+  };
+
+  const handleRemoveOpenAIKey = async () => {
+    setOpenaiKeyRemoving(true);
+    setOpenaiKeyError(null);
+    try {
+      await removeUserOpenAIKey();
+      setOpenaiKeySet(false);
+      setOpenaiKeyPreview(null);
+    } catch (err: any) {
+      setOpenaiKeyError(err.message || 'Failed to remove OpenAI key');
+    } finally {
+      setOpenaiKeyRemoving(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -131,6 +193,92 @@ export function SettingsPanel() {
             <button onClick={handleGenerateApiKey} disabled={generating} style={styles.primaryButton}>
               {generating ? 'Generating...' : 'Generate API Key'}
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* OpenAI API Key (BYOK) */}
+      <div style={styles.byokContainer}>
+        <div style={styles.apiKeyHeader}>
+          <Shield size={20} style={{ color: '#f59e0b' }} />
+          <h3 style={styles.sectionTitle}>OpenAI API Key (BYOK)</h3>
+        </div>
+        <p style={styles.description}>
+          Bring your own OpenAI key for LLM calls.
+          Your key is encrypted at rest.
+        </p>
+
+        {openaiKeyLoading ? (
+          <div style={{ textAlign: 'center', padding: '16px', color: 'rgba(255,255,255,0.5)' }}>
+            <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{ margin: '8px 0 0', fontSize: '13px' }}>Checking key status...</p>
+          </div>
+        ) : openaiKeySet ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={styles.byokStatus}>
+              <span style={styles.byokDotSet} />
+              <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.9)' }}>
+                Key set: <code style={styles.apiKeyCode}>{openaiKeyPreview || 'sk-...'}</code>
+              </span>
+            </div>
+            <button
+              onClick={handleRemoveOpenAIKey}
+              disabled={openaiKeyRemoving}
+              style={{
+                ...styles.dangerButton,
+                opacity: openaiKeyRemoving ? 0.6 : 1,
+                cursor: openaiKeyRemoving ? 'default' : 'pointer',
+              }}
+            >
+              {openaiKeyRemoving ? (
+                <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Removing...</>
+              ) : (
+                <><Trash2 size={14} /> Remove Key</>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={styles.byokStatus}>
+              <span style={styles.byokDotUnset} />
+              <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}>No key set</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="password"
+                placeholder="sk-..."
+                value={openaiKeyInput}
+                onChange={(e) => {
+                  setOpenaiKeyInput(e.target.value);
+                  setOpenaiKeyError(null);
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveOpenAIKey(); }}
+                style={{ ...styles.numberInput, flex: 1, marginBottom: 0 }}
+              />
+              <button
+                onClick={handleSaveOpenAIKey}
+                disabled={openaiKeySaving || !openaiKeyInput.trim()}
+                style={{
+                  ...styles.primaryButton,
+                  opacity: (openaiKeySaving || !openaiKeyInput.trim()) ? 0.5 : 1,
+                  cursor: (openaiKeySaving || !openaiKeyInput.trim()) ? 'default' : 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {openaiKeySaving ? (
+                  <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
+                ) : (
+                  'Save Key'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {openaiKeyError && (
+          <div style={{ ...styles.errorMessage, marginTop: '12px' }}>
+            <AlertCircle size={14} />
+            {openaiKeyError}
           </div>
         )}
       </div>
@@ -453,6 +601,48 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#fff',
     cursor: 'pointer',
     transition: 'opacity 0.2s',
+  },
+  byokContainer: {
+    background: 'rgba(245, 158, 11, 0.08)',
+    border: '1px solid rgba(245, 158, 11, 0.25)',
+    borderRadius: '12px',
+    padding: '24px',
+  },
+  byokStatus: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px',
+    background: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: '8px',
+  },
+  byokDotSet: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    background: '#22c55e',
+    flexShrink: 0,
+  },
+  byokDotUnset: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    background: 'rgba(255, 255, 255, 0.3)',
+    flexShrink: 0,
+  },
+  dangerButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: 'rgba(239, 68, 68, 0.15)',
+    border: '1px solid rgba(239, 68, 68, 0.4)',
+    borderRadius: '8px',
+    color: '#fca5a5',
+    transition: 'background 0.2s',
   },
   secondaryButton: {
     padding: '10px 20px',

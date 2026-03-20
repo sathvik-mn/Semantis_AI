@@ -1,4 +1,8 @@
+import { useState, useMemo } from 'react';
 import { Event } from '../api/semanticAPI';
+
+type SortField = 'timestamp' | 'similarity' | 'latency_ms';
+type SortDirection = 'asc' | 'desc';
 
 interface LogsTableProps {
   events: Event[];
@@ -6,6 +10,41 @@ interface LogsTableProps {
 }
 
 export function LogsTable({ events, isLoading }: LogsTableProps) {
+  const [sortField, setSortField] = useState<SortField>('timestamp');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const sortedEvents = useMemo(() => {
+    const sorted = [...events].sort((a, b) => {
+      let aVal: number;
+      let bVal: number;
+
+      if (sortField === 'timestamp') {
+        aVal = new Date(a.timestamp).getTime();
+        bVal = new Date(b.timestamp).getTime();
+      } else {
+        aVal = a[sortField];
+        bVal = b[sortField];
+      }
+
+      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+    return sorted;
+  }, [events, sortField, sortDirection]);
+
+  const getSortIndicator = (field: SortField) => {
+    if (sortField !== field) return '';
+    return sortDirection === 'asc' ? ' \u25B2' : ' \u25BC';
+  };
+
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleString();
@@ -72,15 +111,21 @@ export function LogsTable({ events, isLoading }: LogsTableProps) {
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>Timestamp</th>
+              <th style={styles.thSortable} onClick={() => handleSort('timestamp')}>
+                Timestamp{getSortIndicator('timestamp')}
+              </th>
               <th style={styles.th}>Decision</th>
-              <th style={styles.th}>Similarity</th>
-              <th style={styles.th}>Latency</th>
+              <th style={styles.thSortable} onClick={() => handleSort('similarity')}>
+                Similarity{getSortIndicator('similarity')}
+              </th>
+              <th style={styles.thSortable} onClick={() => handleSort('latency_ms')}>
+                Latency{getSortIndicator('latency_ms')}
+              </th>
               <th style={styles.th}>Prompt Hash</th>
             </tr>
           </thead>
           <tbody>
-            {events.map((event, index) => (
+            {sortedEvents.map((event, index) => (
               <tr key={index} style={styles.tr}>
                 <td style={styles.td}>{formatTimestamp(event.timestamp)}</td>
                 <td style={styles.td}>
@@ -149,6 +194,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.7)',
     borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+  },
+  thSortable: {
+    textAlign: 'left',
+    padding: '12px',
+    fontSize: '13px',
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+    cursor: 'pointer',
+    userSelect: 'none',
+    transition: 'color 0.2s',
   },
   tr: {
     borderBottom: '1px solid rgba(255, 255, 255, 0.05)',

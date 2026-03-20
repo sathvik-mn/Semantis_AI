@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CreditCard, ArrowUpRight, Loader2, Check, AlertCircle, ExternalLink } from 'lucide-react';
-import { getBillingStatus, upgradePlan, getBillingPortalUrl, BillingStatus } from '../api/semanticAPI';
+import { getBillingStatus, upgradePlan, getBillingPortalUrl, getBillingPlans, BillingStatus, BillingPlan } from '../api/semanticAPI';
 
 export function BillingSection() {
   const [billing, setBilling] = useState<BillingStatus | null>(null);
+  const [plans, setPlans] = useState<Record<string, BillingPlan>>({});
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -12,8 +13,12 @@ export function BillingSection() {
   const fetchBilling = useCallback(async () => {
     try {
       setError(null);
-      const data = await getBillingStatus();
+      const [data, plansData] = await Promise.all([
+        getBillingStatus(),
+        getBillingPlans(),
+      ]);
       setBilling(data);
+      setPlans(plansData.plans);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load billing');
     } finally {
@@ -72,6 +77,13 @@ export function BillingSection() {
       </div>
     );
   }
+
+  const formatPrice = (planKey: string) => {
+    const plan = plans[planKey];
+    if (!plan) return '';
+    if (plan.price_monthly === null) return 'Contact us';
+    return `$${plan.price_monthly}/mo`;
+  };
 
   const currentPlan = billing?.plan || 'free';
   const limits = billing?.limits;
@@ -152,7 +164,7 @@ export function BillingSection() {
               {upgrading === 'pro' ? (
                 <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Upgrading...</>
               ) : (
-                <><ArrowUpRight size={16} /> Upgrade to Pro — $49/mo</>
+                <><ArrowUpRight size={16} /> Upgrade to Pro — {formatPrice('pro')}</>
               )}
             </button>
             <button
@@ -163,7 +175,7 @@ export function BillingSection() {
               {upgrading === 'team' ? (
                 <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Upgrading...</>
               ) : (
-                <><ArrowUpRight size={16} /> Upgrade to Team — $199/mo</>
+                <><ArrowUpRight size={16} /> Upgrade to Team — {formatPrice('team')}</>
               )}
             </button>
           </div>
@@ -180,7 +192,7 @@ export function BillingSection() {
             {upgrading === 'team' ? (
               <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Upgrading...</>
             ) : (
-              <><ArrowUpRight size={16} /> Upgrade to Team — $199/mo</>
+              <><ArrowUpRight size={16} /> Upgrade to Team — {formatPrice('team')}</>
             )}
           </button>
         </div>

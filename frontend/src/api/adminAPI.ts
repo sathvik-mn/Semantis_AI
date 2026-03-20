@@ -21,8 +21,11 @@ export interface AnalyticsSummary {
   total_users: number;
   active_users: number;
   total_requests: number;
+  total_cache_hits: number;
+  total_cache_misses: number;
   cache_hit_ratio: number;
-  total_revenue: number;
+  total_cost_estimate: number;
+  total_tokens_used: number;
   active_api_keys: number;
 }
 
@@ -52,7 +55,7 @@ export interface TopUser {
 export interface GrowthData {
   date: string;
   new_users: number;
-  active_users: number;
+  new_api_keys: number;
   total_users: number;
 }
 
@@ -61,12 +64,16 @@ export interface UsageData {
   requests: number;
   cache_hits: number;
   cache_misses: number;
+  tokens_used: number;
+  cost_estimate: number;
 }
 
 export interface PlanDistribution {
   plan_name: string;
   user_count: number;
   percentage: number;
+  total_requests: number;
+  total_cost: number;
 }
 
 export const adminAPI = {
@@ -77,8 +84,11 @@ export const adminAPI = {
       total_users: d.total_users ?? 0,
       active_users: d.active_users ?? 0,
       total_requests: d.total_requests ?? 0,
+      total_cache_hits: d.total_cache_hits ?? 0,
+      total_cache_misses: d.total_cache_misses ?? 0,
       cache_hit_ratio: d.cache_hit_ratio ?? 0,
-      total_revenue: d.total_cost_estimate ?? 0,
+      total_cost_estimate: d.total_cost_estimate ?? 0,
+      total_tokens_used: d.total_tokens_used ?? 0,
       active_api_keys: d.total_api_keys ?? 0,
     };
   },
@@ -97,7 +107,7 @@ export const adminAPI = {
   },
 
   getUserDetails: async (userId: string) => {
-    const response = await adminApi.get(`/users/${userId}/details`);
+    const response = await adminApi.get(`/users/by-uid/${userId}/details`);
     return response.data;
   },
 
@@ -128,7 +138,7 @@ export const adminAPI = {
     return raw.map((r: any) => ({
       date: r.date ?? '',
       new_users: r.new_users ?? 0,
-      active_users: r.new_api_keys ?? 0,
+      new_api_keys: r.new_api_keys ?? 0,
       total_users: r.total_users ?? 0,
     }));
   },
@@ -143,6 +153,8 @@ export const adminAPI = {
       requests: r.requests ?? 0,
       cache_hits: r.cache_hits ?? 0,
       cache_misses: r.cache_misses ?? 0,
+      tokens_used: r.tokens_used ?? 0,
+      cost_estimate: r.cost_estimate ?? 0,
     }));
   },
 
@@ -153,11 +165,42 @@ export const adminAPI = {
       plan_name: p.plan ?? 'unknown',
       user_count: p.count ?? 0,
       percentage: p.percentage ?? 0,
+      total_requests: p.total_requests ?? 0,
+      total_cost: p.total_cost ?? 0,
     }));
   },
 
   getSystemStats: async () => {
     const response = await adminApi.get('/system/stats');
+    return response.data;
+  },
+
+  updateUserPlan: async (userId: string, plan: string) => {
+    const response = await adminApi.post(`/users/by-uid/${userId}/update-plan`, null, {
+      params: { plan }
+    });
+    return response.data;
+  },
+
+  deactivateUser: async (userId: string) => {
+    const response = await adminApi.post(`/users/by-uid/${userId}/deactivate`);
+    return response.data;
+  },
+
+  activateUser: async (userId: string) => {
+    const response = await adminApi.post(`/users/by-uid/${userId}/activate`);
+    return response.data;
+  },
+
+  getHealthCheck: async () => {
+    const response = await adminApi.get('/health');
+    return response.data;
+  },
+
+  getAuditLogs: async (limit: number = 50, offset: number = 0, action?: string) => {
+    const response = await adminApi.get('/audit-logs', {
+      params: { limit, offset, action: action || undefined }
+    });
     return response.data;
   },
 };

@@ -201,6 +201,23 @@ def get_subscription(customer_id: str) -> Optional[dict]:
         return None
 
 
+def validate_stripe_config():
+    """Check Stripe connectivity at startup."""
+    if STRIPE_SECRET_KEY:
+        try:
+            import stripe
+            stripe.api_key = STRIPE_SECRET_KEY
+            stripe.Account.retrieve()
+            logger.info("Stripe connected")
+        except Exception as e:
+            logger.warning(f"Stripe key configured but invalid: {e}")
+    else:
+        logger.info("Stripe not configured, billing disabled")
+
+
+validate_stripe_config()
+
+
 def handle_webhook(payload: bytes, sig_header: str) -> Optional[dict]:
     """Verify and parse a Stripe webhook event."""
     stripe = _get_stripe()

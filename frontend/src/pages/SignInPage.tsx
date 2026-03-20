@@ -9,15 +9,9 @@ export function SignInPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, isAuthenticated } = useAuth();
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  const { login, logout, user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/playground', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +50,33 @@ export function SignInPage() {
 
         <div style={styles.content} className="pointer-events-auto">
           <div style={styles.card}>
+            {/* Already signed in — offer to continue or switch */}
+            {isAuthenticated && !switchingAccount ? (
+              <>
+                <div style={styles.header}>
+                  <h1 style={styles.title}>Welcome Back</h1>
+                  <p style={styles.subtitle}>
+                    You're signed in as <strong>{user?.email}</strong>
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/playground')}
+                  style={styles.submitButton}
+                >
+                  Continue to Playground
+                </button>
+                <button
+                  onClick={async () => {
+                    await logout();
+                    setSwitchingAccount(true);
+                  }}
+                  style={{ ...styles.googleButton, marginTop: '16px' }}
+                >
+                  Sign in with a different account
+                </button>
+              </>
+            ) : (
+            <>
             <div style={styles.header}>
               <h1 style={styles.title}>Welcome Back</h1>
               <p style={styles.subtitle}>Sign in to your Semantis AI account</p>
@@ -113,6 +134,7 @@ export function SignInPage() {
               </button>
             </form>
 
+            {/* Google Sign-In hidden until implemented
             <div style={styles.divider}>
               <span style={styles.dividerLine} />
               <span style={styles.dividerText}>OR</span>
@@ -123,6 +145,7 @@ export function SignInPage() {
               <Chrome size={20} />
               <span>Continue with Google</span>
             </button>
+            */}
 
             <div style={styles.footer}>
               <Link to="/forgot-password" style={{ ...styles.link, display: 'block', marginBottom: '12px' }}>
@@ -133,6 +156,8 @@ export function SignInPage() {
                 Sign up
               </Link>
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>
