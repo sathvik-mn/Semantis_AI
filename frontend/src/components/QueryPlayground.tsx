@@ -1,12 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useSemanticCache } from '../hooks/useSemanticCache';
-import { ChatResponse } from '../api/semanticAPI';
-import { setApiKey, hasApiKey } from '../api/semanticAPI';
-import { Key, ExternalLink, Copy, Check, Trash2, Clock } from 'lucide-react';
+import { ChatResponse, sendChatCompletion, hasApiKey, setApiKey } from '../api/semanticAPI';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import { Key, ExternalLink, Copy, Check, Trash2, Clock, Send, Bot, User, Zap, Gauge, Layers, Sparkles } from 'lucide-react';
 
 const HISTORY_KEY = 'semantis_chat_history';
 const MAX_HISTORY = 50;
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  meta?: ChatResponse['meta'];
+  usage?: ChatResponse['usage'];
+  isStreaming?: boolean;
+  timestamp: number;
+}
 
 interface HistoryEntry {
   id: string;
@@ -34,21 +43,36 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState('gpt-4o-mini');
   const [temperature, setTemperature] = useState(0.2);
-  const [response, setResponse] = useState<ChatResponse | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey());
-  const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [showHistory, setShowHistory] = useState(false);
-  const { sendQuery, isLoading, error } = useSemanticCache();
+  const [showSettings, setShowSettings] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const copyResponse = () => {
-    if (response?.choices?.[0]?.message?.content) {
-      navigator.clipboard.writeText(response.choices[0].message.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+
+  useEffect(() => {
+    const storedKey = localStorage.getItem('semantic_api_key');
+    if (storedKey) setShowApiKeyInput(false);
+  }, []);
+
+  useEffect(() => {
+    const checkKey = () => {
+      if (hasApiKey() && showApiKeyInput) setShowApiKeyInput(false);
+    };
+    window.addEventListener('storage', checkKey);
+    const interval = setInterval(checkKey, 2000);
+    return () => { window.removeEventListener('storage', checkKey); clearInterval(interval); };
+  }, [showApiKeyInput]);
 
   const addToHistory = useCallback((prompt: string, resp: ChatResponse) => {
     const entry: HistoryEntry = {
@@ -70,38 +94,30 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   }, []);
 
   const loadFromHistory = useCallback((entry: HistoryEntry) => {
-    setPrompt(entry.prompt);
-    setResponse(entry.response);
+    const userMsg: ChatMessage = {
+      id: entry.id + '-u',
+      role: 'user',
+      content: entry.prompt,
+      timestamp: entry.timestamp,
+    };
+    const assistantMsg: ChatMessage = {
+      id: entry.id + '-a',
+      role: 'assistant',
+      content: entry.response.choices[0]?.message.content || '',
+      meta: entry.response.meta,
+      usage: entry.response.usage,
+      timestamp: entry.timestamp,
+    };
+    setMessages([userMsg, assistantMsg]);
     setShowHistory(false);
   }, []);
-
-  useEffect(() => {
-    const storedKey = localStorage.getItem('semantic_api_key');
-    if (storedKey) {
-      setShowApiKeyInput(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const checkKey = () => {
-      if (hasApiKey() && showApiKeyInput) {
-        setShowApiKeyInput(false);
-      }
-    };
-    window.addEventListener('storage', checkKey);
-    const interval = setInterval(checkKey, 2000);
-    return () => {
-      window.removeEventListener('storage', checkKey);
-      clearInterval(interval);
-    };
-  }, [showApiKeyInput]);
 
   const handleApiKeySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const key = apiKeyInput.trim();
     if (!key) return;
     if (!key.startsWith('sc-')) {
-      alert('Invalid Semantis API key format. The key must start with "sc-". You can generate one from the API Keys menu (click your avatar → API Keys → New Key).');
+      alert('Invalid key format. Must start with "sc-".');
       return;
     }
     setApiKey(key);
@@ -111,508 +127,671 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!prompt.trim() || isLoading) return;
 
-    if (!prompt.trim()) return;
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(36) + '-u',
+      role: 'user',
+      content: prompt.trim(),
+      timestamp: Date.now(),
+    };
+
+    const assistantId = Date.now().toString(36) + '-a';
+    const assistantMessage: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true,
+      timestamp: Date.now(),
+    };
+
+    setMessages(prev => [...prev, userMessage, assistantMessage]);
+    setPrompt('');
+    setIsLoading(true);
+    setError(null);
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
 
     try {
-      const result = await sendQuery({
+      const result = await sendChatCompletion({
         model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: userMessage.content }],
         temperature,
       });
 
-      setResponse(result);
-      addToHistory(prompt.trim(), result);
+      const fullContent = result.choices[0]?.message.content || '';
+      addToHistory(userMessage.content, result);
+
+      // Animate typing effect
+      const CHARS_PER_TICK = 8;
+      const TICK_MS = 15;
+      let pos = 0;
+
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          pos = Math.min(pos + CHARS_PER_TICK, fullContent.length);
+          setMessages(prev =>
+            prev.map(m => m.id === assistantId
+              ? { ...m, content: fullContent.slice(0, pos) }
+              : m
+            )
+          );
+          if (pos >= fullContent.length) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, TICK_MS);
+      });
+
+      setMessages(prev =>
+        prev.map(m => m.id === assistantId
+          ? { ...m, content: fullContent, isStreaming: false, meta: result.meta, usage: result.usage }
+          : m
+        )
+      );
+
       if (onQueryComplete) onQueryComplete();
     } catch (err: any) {
-      console.error('Query failed:', err);
-      setResponse(null);
+      const errorMsg = err?.message || 'Query failed';
+      setError(errorMsg);
+      setMessages(prev => prev.filter(m => m.id !== assistantId));
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
+  };
+
+  const autoResizeTextarea = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPrompt(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+  };
+
+  const copyContent = (text: string) => {
+    navigator.clipboard.writeText(text);
   };
 
   const getBadgeColor = (hit: string) => {
     switch (hit) {
-      case 'exact':
-        return '#10b981';
-      case 'semantic':
-        return '#3b82f6';
-      case 'miss':
-        return '#f59e0b';
-      default:
-        return '#6b7280';
+      case 'exact': return '#10b981';
+      case 'semantic': return '#3b82f6';
+      case 'miss': return '#f59e0b';
+      default: return '#6b7280';
+    }
+  };
+
+  const getBadgeIcon = (hit: string) => {
+    switch (hit) {
+      case 'exact': return <Zap size={12} />;
+      case 'semantic': return <Sparkles size={12} />;
+      default: return <Layers size={12} />;
     }
   };
 
   return (
     <div style={styles.container}>
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <div style={styles.inputGroup}>
-          <label style={styles.label}>Prompt</label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Enter your query here..."
-            style={styles.textarea}
-            rows={4}
-          />
-        </div>
-
-        <div style={styles.row}>
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Model</label>
-            <select value={model} onChange={(e) => setModel(e.target.value)} style={styles.select}>
-              <option value="gpt-4o-mini">gpt-4o-mini</option>
-              <option value="gpt-4">gpt-4</option>
-              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-            </select>
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Temperature: {temperature}</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={temperature}
-              onChange={(e) => setTemperature(parseFloat(e.target.value))}
-              style={styles.slider}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button type="submit" disabled={isLoading || !prompt.trim() || !hasApiKey()} style={{ ...styles.button, flex: 1 }}>
-            {isLoading ? 'Processing...' : 'Run Query'}
-          </button>
-          {history.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowHistory(!showHistory)}
-              style={styles.historyToggle}
-            >
-              <Clock size={16} />
-              {history.length}
-            </button>
-          )}
-        </div>
-
-        {error && <div style={styles.error}>{error}</div>}
-      </form>
-
-      {showHistory && history.length > 0 && (
-        <div style={styles.historyPanel}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontSize: '16px', color: '#fff', fontWeight: '600', margin: 0 }}>
-              Query History ({history.length})
-            </h3>
-            <button onClick={clearHistory} style={styles.clearButton}>
-              <Trash2 size={14} /> Clear All
-            </button>
-          </div>
-          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {history.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => loadFromHistory(entry)}
-                style={styles.historyItem}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '14px', color: '#fff', flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {entry.prompt}
-                  </span>
-                  <span
-                    style={{
-                      ...styles.badge,
-                      backgroundColor: getBadgeColor(entry.response.meta.hit),
-                      fontSize: '11px',
-                      padding: '2px 8px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {entry.response.meta.hit.toUpperCase()}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', textAlign: 'left', marginTop: '4px' }}>
-                  {new Date(entry.timestamp).toLocaleString()} · {entry.response.meta.latency_ms.toFixed(0)}ms
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {/* API Key Prompt */}
       {showApiKeyInput && (
-        <div style={styles.apiKeySection}>
-          <div style={styles.apiKeyHeader}>
-            <Key size={18} style={styles.apiKeyIcon} />
-            <h3 style={styles.apiKeyTitle}>API Key Required</h3>
-          </div>
-          <p style={styles.apiKeyDescription}>
-            You need an API key to use the playground. Generate one in Settings or paste an existing key below.
-          </p>
-          <form onSubmit={handleApiKeySubmit} style={styles.apiKeyForm}>
+        <div style={styles.apiKeyBanner}>
+          <Key size={18} style={{ color: '#60a5fa' }} />
+          <span style={{ flex: 1, color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
+            API key required.{' '}
+            <Link to="/settings" style={{ color: '#60a5fa', textDecoration: 'none' }}>
+              Generate in Settings <ExternalLink size={12} style={{ verticalAlign: 'middle' }} />
+            </Link>
+          </span>
+          <form onSubmit={handleApiKeySubmit} style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"
               value={apiKeyInput}
               onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="Paste your Semantis API key here (starts with sc-...)"
-              style={styles.apiKeyInput}
+              placeholder="sc-..."
+              style={styles.apiKeyInlineInput}
             />
-            <button type="submit" disabled={!apiKeyInput.trim()} style={styles.apiKeyButton}>
-              Save API Key
-            </button>
+            <button type="submit" disabled={!apiKeyInput.trim()} style={styles.apiKeySaveBtn}>Save</button>
           </form>
-          <div style={styles.apiKeyHelp}>
-            <p style={styles.apiKeyHelpText}>
-              Don't have an API key?{' '}
-              <Link to="/settings" style={styles.apiKeyLink}>
-                Go to Settings to generate one <ExternalLink size={14} style={styles.linkIcon} />
-              </Link>
+        </div>
+      )}
+
+      {/* Chat Messages */}
+      <div style={styles.chatArea}>
+        {messages.length === 0 && (
+          <div style={styles.emptyState}>
+            <Bot size={40} style={{ color: 'rgba(255,255,255,0.15)', marginBottom: '12px' }} />
+            <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '15px', margin: 0 }}>
+              Ask a question to see semantic caching in action
+            </p>
+            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '13px', margin: '6px 0 0' }}>
+              Responses are streamed in real-time with markdown formatting
             </p>
           </div>
+        )}
+
+        {messages.map((msg) => (
+          <div key={msg.id} style={{
+            ...styles.messageBubbleWrap,
+            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+          }}>
+            {msg.role === 'assistant' && (
+              <div style={styles.avatarBot}><Bot size={16} /></div>
+            )}
+
+            <div style={{
+              ...(msg.role === 'user' ? styles.userBubble : styles.assistantBubble),
+              maxWidth: msg.role === 'user' ? '70%' : '85%',
+            }}>
+              {msg.role === 'user' ? (
+                <p style={{ margin: 0, lineHeight: '1.5' }}>{msg.content}</p>
+              ) : (
+                <>
+                  {msg.content ? (
+                    <MarkdownRenderer content={msg.content} />
+                  ) : msg.isStreaming ? (
+                    <div style={styles.typingIndicator}>
+                      <span style={styles.dot} /><span style={{ ...styles.dot, animationDelay: '0.15s' }} /><span style={{ ...styles.dot, animationDelay: '0.3s' }} />
+                    </div>
+                  ) : null}
+
+                  {msg.isStreaming && msg.content && (
+                    <span style={styles.cursor}>▊</span>
+                  )}
+
+                  {/* Meta bar */}
+                  {!msg.isStreaming && msg.meta && (
+                    <div style={styles.metaBar}>
+                      <span style={{
+                        ...styles.metaChip,
+                        background: getBadgeColor(msg.meta.hit) + '22',
+                        color: getBadgeColor(msg.meta.hit),
+                        border: `1px solid ${getBadgeColor(msg.meta.hit)}44`,
+                      }}>
+                        {getBadgeIcon(msg.meta.hit)}
+                        {msg.meta.hit.toUpperCase()}
+                      </span>
+                      <span style={styles.metaChip}>
+                        <Gauge size={12} />
+                        {msg.meta.latency_ms.toFixed(0)}ms
+                      </span>
+                      {msg.meta.similarity > 0 && (
+                        <span style={styles.metaChip}>
+                          {(msg.meta.similarity * 100).toFixed(1)}% match
+                        </span>
+                      )}
+                      {msg.usage && (
+                        <span style={styles.metaChip}>
+                          {msg.usage.total_tokens} tokens
+                        </span>
+                      )}
+                      <button
+                        onClick={() => copyContent(msg.content)}
+                        style={styles.copyInline}
+                        title="Copy response"
+                      >
+                        <Copy size={12} /> Copy
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {msg.role === 'user' && (
+              <div style={styles.avatarUser}><User size={16} /></div>
+            )}
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input Bar */}
+      <div style={styles.inputBar}>
+        <div style={styles.inputRow}>
+          <button
+            type="button"
+            onClick={() => setShowSettings(!showSettings)}
+            style={styles.settingsToggle}
+            title="Model settings"
+          >
+            ⚙
+          </button>
+
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistory(!showHistory)}
+              style={styles.historyBtn}
+              title="Query history"
+            >
+              <Clock size={14} /> {history.length}
+            </button>
+          )}
+
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={autoResizeTextarea}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything... (Enter to send, Shift+Enter for newline)"
+            style={styles.chatInput}
+            rows={1}
+            disabled={isLoading || !hasApiKey()}
+          />
+
+          <button
+            onClick={handleSubmit as any}
+            disabled={isLoading || !prompt.trim() || !hasApiKey()}
+            style={{
+              ...styles.sendButton,
+              opacity: isLoading || !prompt.trim() ? 0.4 : 1,
+            }}
+          >
+            <Send size={18} />
+          </button>
+        </div>
+
+        {/* Settings row */}
+        {showSettings && (
+          <div style={styles.settingsRow}>
+            <div style={styles.settingItem}>
+              <label style={styles.settingLabel}>Model</label>
+              <select value={model} onChange={(e) => setModel(e.target.value)} style={styles.settingSelect}>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                <option value="gpt-4">gpt-4</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+              </select>
+            </div>
+            <div style={styles.settingItem}>
+              <label style={styles.settingLabel}>Temperature: {temperature}</label>
+              <input
+                type="range" min="0" max="1" step="0.1"
+                value={temperature}
+                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                style={{ width: '120px', cursor: 'pointer' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {error && <div style={styles.errorBar}>{error}</div>}
+      </div>
+
+      {/* History Panel */}
+      {showHistory && history.length > 0 && (
+        <div style={styles.historyOverlay}>
+          <div style={styles.historyPanel}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', color: '#fff', fontWeight: 600, margin: 0 }}>
+                History ({history.length})
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={clearHistory} style={styles.clearBtn}>
+                  <Trash2 size={13} /> Clear
+                </button>
+                <button onClick={() => setShowHistory(false)} style={styles.clearBtn}>
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+              {history.map((entry) => (
+                <button key={entry.id} onClick={() => loadFromHistory(entry)} style={styles.historyItem}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', color: '#fff', flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {entry.prompt}
+                    </span>
+                    <span style={{
+                      fontSize: '11px', padding: '2px 8px', borderRadius: '4px', fontWeight: 600,
+                      background: getBadgeColor(entry.response.meta.hit) + '22',
+                      color: getBadgeColor(entry.response.meta.hit),
+                    }}>
+                      {entry.response.meta.hit.toUpperCase()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', textAlign: 'left', marginTop: '4px' }}>
+                    {new Date(entry.timestamp).toLocaleString()} · {entry.response.meta.latency_ms.toFixed(0)}ms
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
-      {response && (
-        <div style={styles.responseContainer}>
-          <div style={styles.metaPanel}>
-            <h3 style={styles.metaTitle}>Cache Metadata</h3>
-            <div style={styles.metaGrid}>
-              <div style={styles.metaItem}>
-                <span style={styles.metaLabel}>Hit Type:</span>
-                <span
-                  style={{
-                    ...styles.badge,
-                    backgroundColor: getBadgeColor(response.meta.hit),
-                  }}
-                >
-                  {response.meta.hit.toUpperCase()}
-                </span>
-              </div>
-              <div style={styles.metaItem}>
-                <span style={styles.metaLabel}>Similarity:</span>
-                <span style={styles.metaValue}>
-                  {(response.meta.similarity * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div style={styles.metaItem}>
-                <span style={styles.metaLabel}>Latency:</span>
-                <span style={styles.metaValue}>{response.meta.latency_ms.toFixed(0)}ms</span>
-              </div>
-              <div style={styles.metaItem}>
-                <span style={styles.metaLabel}>Strategy:</span>
-                <span style={styles.metaValue}>{response.meta.strategy}</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.responsePanel}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h3 style={styles.responseTitle}>Response</h3>
-              <button
-                onClick={copyResponse}
-                style={styles.copyButton}
-                title="Copy to clipboard"
-              >
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-                {copied ? ' Copied!' : ' Copy'}
-              </button>
-            </div>
-            <div style={styles.responseText}>
-              {response.choices[0]?.message.content}
-            </div>
-            <div style={styles.usage}>
-              <span>Tokens: {response.usage.total_tokens}</span>
-              <span>
-                (Prompt: {response.usage.prompt_tokens}, Completion:{' '}
-                {response.usage.completion_tokens})
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+      <style>{`
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        @keyframes bounce {
+          0%, 80%, 100% { transform: scale(0); }
+          40% { transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    width: '100%',
-  },
-  form: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    padding: '24px',
-    marginBottom: '20px',
-    backdropFilter: 'blur(10px)',
-  },
-  inputGroup: {
-    marginBottom: '20px',
-    flex: 1,
-  },
-  label: {
-    display: 'block',
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: '8px',
-    fontWeight: '500',
-  },
-  textarea: {
-    width: '100%',
-    padding: '12px',
-    fontSize: '14px',
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
-    color: '#fff',
-    fontFamily: 'inherit',
-    resize: 'vertical',
-  },
-  row: {
-    display: 'flex',
-    gap: '20px',
-    marginBottom: '20px',
-  },
-  select: {
-    width: '100%',
-    padding: '12px',
-    fontSize: '14px',
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
-    color: '#fff',
-    cursor: 'pointer',
-  },
-  slider: {
-    width: '100%',
-    cursor: 'pointer',
-  },
-  button: {
-    width: '100%',
-    padding: '14px',
-    fontSize: '16px',
-    fontWeight: '600',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'transform 0.2s, opacity 0.2s',
-  },
-  error: {
-    marginTop: '12px',
-    padding: '12px',
-    background: 'rgba(239, 68, 68, 0.1)',
-    border: '1px solid rgba(239, 68, 68, 0.3)',
-    borderRadius: '8px',
-    color: '#fca5a5',
-    fontSize: '14px',
-  },
-  responseContainer: {
-    display: 'grid',
-    gap: '20px',
-  },
-  metaPanel: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    padding: '24px',
-    backdropFilter: 'blur(10px)',
-  },
-  metaTitle: {
-    fontSize: '18px',
-    color: '#fff',
-    marginBottom: '16px',
-    fontWeight: '600',
-  },
-  metaGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '16px',
-  },
-  metaItem: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    height: '100%',
+    minHeight: '500px',
+    maxHeight: 'calc(100vh - 180px)',
+    width: '100%',
+    position: 'relative',
   },
-  metaLabel: {
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  metaValue: {
-    fontSize: '16px',
-    color: '#fff',
-    fontWeight: '600',
-  },
-  badge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#fff',
-  },
-  responsePanel: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    padding: '24px',
-    backdropFilter: 'blur(10px)',
-  },
-  copyButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 12px',
-    fontSize: '13px',
-    background: 'rgba(59, 130, 246, 0.2)',
-    border: '1px solid rgba(59, 130, 246, 0.4)',
-    borderRadius: '6px',
-    color: '#60a5fa',
-    cursor: 'pointer',
-  },
-  responseTitle: {
-    fontSize: '18px',
-    color: '#fff',
-    marginBottom: '16px',
-    fontWeight: '600',
-  },
-  responseText: {
-    fontSize: '15px',
-    color: 'rgba(255, 255, 255, 0.9)',
-    lineHeight: '1.6',
-    marginBottom: '16px',
-    whiteSpace: 'pre-wrap',
-  },
-  usage: {
-    display: 'flex',
-    gap: '12px',
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  apiKeySection: {
-    background: 'rgba(59, 130, 246, 0.1)',
-    border: '1px solid rgba(59, 130, 246, 0.3)',
-    borderRadius: '12px',
-    padding: '24px',
-    marginTop: '20px',
-    backdropFilter: 'blur(10px)',
-  },
-  apiKeyHeader: {
+
+  // API Key
+  apiKeyBanner: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
+    padding: '12px 16px',
+    background: 'rgba(59,130,246,0.1)',
+    border: '1px solid rgba(59,130,246,0.2)',
+    borderRadius: '10px',
     marginBottom: '12px',
+    flexWrap: 'wrap',
   },
-  apiKeyIcon: {
-    color: '#60a5fa',
-  },
-  apiKeyTitle: {
-    fontSize: '18px',
-    color: '#fff',
-    fontWeight: '600',
-    margin: 0,
-  },
-  apiKeyDescription: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: '16px',
-    lineHeight: '1.5',
-  },
-  apiKeyForm: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '12px',
-  },
-  apiKeyInput: {
-    flex: 1,
-    padding: '12px',
-    fontSize: '14px',
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
+  apiKeyInlineInput: {
+    padding: '6px 10px',
+    fontSize: '13px',
+    background: 'rgba(0,0,0,0.3)',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: '6px',
     color: '#fff',
     fontFamily: 'monospace',
+    width: '200px',
   },
-  apiKeyButton: {
-    padding: '12px 24px',
-    fontSize: '14px',
-    fontWeight: '600',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+  apiKeySaveBtn: {
+    padding: '6px 14px',
+    fontSize: '13px',
+    fontWeight: 600,
+    background: '#3b82f6',
     color: '#fff',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    transition: 'opacity 0.2s',
   },
-  apiKeyHelp: {
-    marginTop: '12px',
-    paddingTop: '12px',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+
+  // Chat area
+  chatArea: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '16px 0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
   },
-  apiKeyHelpText: {
-    fontSize: '13px',
-    color: 'rgba(255, 255, 255, 0.6)',
-    margin: 0,
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    padding: '60px 20px',
   },
-  apiKeyLink: {
+
+  // Messages
+  messageBubbleWrap: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    padding: '4px 0',
+  },
+  avatarBot: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    background: 'rgba(59,130,246,0.15)',
+    border: '1px solid rgba(59,130,246,0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     color: '#60a5fa',
-    textDecoration: 'none',
+    flexShrink: 0,
+    marginTop: '4px',
+  },
+  avatarUser: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    background: 'rgba(139,92,246,0.15)',
+    border: '1px solid rgba(139,92,246,0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#a78bfa',
+    flexShrink: 0,
+    marginTop: '4px',
+  },
+  userBubble: {
+    background: 'rgba(139,92,246,0.12)',
+    border: '1px solid rgba(139,92,246,0.2)',
+    borderRadius: '16px 16px 4px 16px',
+    padding: '12px 16px',
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: '14px',
+  },
+  assistantBubble: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: '16px 16px 16px 4px',
+    padding: '14px 18px',
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: '14px',
+    lineHeight: '1.6',
+  },
+
+  // Typing indicator
+  typingIndicator: {
+    display: 'flex',
+    gap: '4px',
+    padding: '4px 0',
+  },
+  dot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    background: '#60a5fa',
+    animation: 'bounce 1.4s infinite ease-in-out both',
+  },
+  cursor: {
+    animation: 'blink 1s step-end infinite',
+    color: '#60a5fa',
+    fontSize: '14px',
+  },
+
+  // Meta bar
+  metaBar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '12px',
+    paddingTop: '10px',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
+    alignItems: 'center',
+  },
+  metaChip: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '4px',
-    fontWeight: '500',
+    padding: '3px 8px',
+    borderRadius: '5px',
+    fontSize: '11px',
+    fontWeight: 500,
+    background: 'rgba(255,255,255,0.06)',
+    color: 'rgba(255,255,255,0.5)',
+    border: '1px solid rgba(255,255,255,0.08)',
   },
-  linkIcon: {
-    display: 'inline-block',
-  },
-  historyToggle: {
-    display: 'flex',
+  copyInline: {
+    display: 'inline-flex',
     alignItems: 'center',
-    gap: '6px',
-    padding: '14px 18px',
+    gap: '3px',
+    padding: '3px 8px',
+    borderRadius: '5px',
+    fontSize: '11px',
+    background: 'none',
+    border: '1px solid rgba(255,255,255,0.08)',
+    color: 'rgba(255,255,255,0.4)',
+    cursor: 'pointer',
+    marginLeft: 'auto',
+  },
+
+  // Input bar
+  inputBar: {
+    padding: '12px 0 0',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
+  },
+  inputRow: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '8px',
+  },
+  chatInput: {
+    flex: 1,
+    padding: '10px 14px',
     fontSize: '14px',
-    fontWeight: '600',
-    background: 'rgba(255, 255, 255, 0.1)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: '12px',
+    color: '#fff',
+    fontFamily: 'inherit',
+    resize: 'none',
+    lineHeight: '1.5',
+    maxHeight: '150px',
+    outline: 'none',
+  },
+  sendButton: {
+    width: '42px',
+    height: '42px',
+    borderRadius: '12px',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    border: 'none',
     color: '#fff',
     cursor: 'pointer',
-    transition: 'background 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'opacity 0.15s',
+  },
+  settingsToggle: {
+    width: '42px',
+    height: '42px',
+    borderRadius: '12px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: 'rgba(255,255,255,0.5)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    fontSize: '18px',
+  },
+  historyBtn: {
+    height: '42px',
+    padding: '0 12px',
+    borderRadius: '12px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: 'rgba(255,255,255,0.5)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
+    fontSize: '13px',
+    flexShrink: 0,
+    fontFamily: 'inherit',
+  },
+
+  // Settings row
+  settingsRow: {
+    display: 'flex',
+    gap: '16px',
+    padding: '10px 0 0',
+    flexWrap: 'wrap',
+  },
+  settingItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  settingLabel: {
+    fontSize: '12px',
+    color: 'rgba(255,255,255,0.45)',
+    whiteSpace: 'nowrap',
+  },
+  settingSelect: {
+    padding: '4px 8px',
+    fontSize: '12px',
+    background: 'rgba(0,0,0,0.3)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: '6px',
+    color: '#fff',
+    cursor: 'pointer',
+  },
+
+  // Error
+  errorBar: {
+    marginTop: '8px',
+    padding: '8px 12px',
+    background: 'rgba(239,68,68,0.1)',
+    border: '1px solid rgba(239,68,68,0.25)',
+    borderRadius: '8px',
+    color: '#fca5a5',
+    fontSize: '13px',
+  },
+
+  // History overlay
+  historyOverlay: {
+    position: 'absolute',
+    bottom: '70px',
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   historyPanel: {
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
+    background: 'rgba(15,15,20,0.97)',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '12px',
-    padding: '20px',
-    marginBottom: '20px',
-    backdropFilter: 'blur(10px)',
+    padding: '16px',
+    backdropFilter: 'blur(20px)',
+    boxShadow: '0 -8px 30px rgba(0,0,0,0.4)',
   },
   historyItem: {
     display: 'block',
     width: '100%',
-    padding: '12px',
-    marginBottom: '8px',
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
+    padding: '10px 12px',
+    marginBottom: '6px',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'background 0.15s, border-color 0.15s',
     textDecoration: 'none',
     fontFamily: 'inherit',
+    transition: 'background 0.15s',
   },
-  clearButton: {
+  clearBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    padding: '6px 12px',
+    gap: '4px',
+    padding: '4px 10px',
     fontSize: '12px',
-    background: 'rgba(239, 68, 68, 0.15)',
-    border: '1px solid rgba(239, 68, 68, 0.3)',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '6px',
-    color: '#fca5a5',
+    color: 'rgba(255,255,255,0.5)',
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
