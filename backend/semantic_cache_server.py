@@ -541,7 +541,32 @@ class SemanticCacheService:
 
     def tenant(self, tenant_id: str) -> TenantState:
         if tenant_id not in self.tenants:
-            self.tenants[tenant_id] = TenantState()
+            T = TenantState()
+            # Load persisted settings from DB (org settings JSONB)
+            try:
+                from database import get_api_key_info
+                # Find org_id for this tenant from any active API key
+                from database import get_db_connection
+                from psycopg2.extras import RealDictCursor
+                with get_db_connection() as conn:
+                    cur = conn.cursor(cursor_factory=RealDictCursor)
+                    cur.execute(
+                        """SELECT o.settings FROM organizations o
+                           JOIN api_keys ak ON ak.org_id = o.id
+                           WHERE ak.tenant_id = %s AND ak.is_active = TRUE
+                           LIMIT 1""",
+                        (tenant_id,)
+                    )
+                    row = cur.fetchone()
+                    if row and row.get("settings"):
+                        settings = row["settings"] if isinstance(row["settings"], dict) else {}
+                        if "sim_threshold" in settings:
+                            T.sim_threshold = max(0.50, min(0.99, float(settings["sim_threshold"])))
+                        if "domain_thresholds" in settings:
+                            T.domain_thresholds = {k: float(v) for k, v in settings["domain_thresholds"].items()}
+            except Exception:
+                pass  # Fall back to defaults
+            self.tenants[tenant_id] = T
         return self.tenants[tenant_id]
 
     @staticmethod
@@ -2001,6 +2026,22 @@ def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_
                 T.domain_thresholds[domain] = max(0.50, min(0.99, thresh))
         changed["domain_thresholds"] = {k: round(v, 3) for k, v in T.domain_thresholds.items()}
     access_log.info(f"{tenant} | /settings | updated={changed}")
+
+    # Persist to DB (org settings JSONB) in background
+    def _persist_settings():
+        try:
+            ctx = _current_api_key_var.get()
+            org_id = ctx.get("org_id")
+            if org_id:
+                from database import update_org_settings
+                update_org_settings(org_id, {
+                    "sim_threshold": round(T.sim_threshold, 3),
+                    "domain_thresholds": {k: round(v, 3) for k, v in T.domain_thresholds.items()},
+                })
+        except Exception:
+            pass
+    _bg_executor.submit(_persist_settings)
+
     return {"status": "ok", "settings": {
         **changed,
         "sim_threshold": round(T.sim_threshold, 3),
@@ -2510,19 +2551,27 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     tenant, prompt_norm, messages, body.model, user_id=user_id,
                 )
 
-                def _bg_log(hit_type):
+                def _bg_log(hit_type, response_text=""):
                     try:
                         from database import log_usage
+                        _p_tokens = sum(len(m.get("content", "").split()) * 4 // 3 for m in raw_messages)
+                        _c_tokens = len(response_text.split()) * 4 // 3 if response_text else 0
+                        _tokens = _p_tokens + _c_tokens
+                        _cost = round((_p_tokens * 0.00000015) + (_c_tokens * 0.0000006), 6) if hit_type == "miss" else 0.0
+                        access_log.info(f"{tenant} | _bg_log | hit={hit_type} | key={_log_key[:20]} | org={_log_org} | tokens={_tokens}")
                         log_usage(
                             api_key=_log_key, tenant_id=tenant,
                             endpoint="/v1/chat/completions", request_count=1,
                             cache_hits=1 if hit_type != "miss" else 0,
                             cache_misses=1 if hit_type == "miss" else 0,
-                            tokens_used=0, cost_estimate=0,
+                            tokens_used=_tokens, cost_estimate=_cost,
                             user_id=_log_uid, org_id=_log_org,
                         )
-                    except Exception:
-                        pass
+                        access_log.info(f"{tenant} | _bg_log | SUCCESS")
+                    except Exception as _e:
+                        error_log.warning(f"log_usage failed in stream: {_e}")
+                        import traceback
+                        error_log.warning(traceback.format_exc())
 
                 def _fire_webhook(m):
                     try:
@@ -2537,7 +2586,10 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 if cached_ans is not None:
                     # ── Cache hit: stream the cached response in larger chunks ──
                     access_log.info(f"{tenant} | /v1/chat/completions | stream | {meta['hit']} | {meta['latency_ms']}ms")
-                    _bg_executor.submit(_bg_log, meta["hit"])
+                    try:
+                        _bg_log(meta["hit"], cached_ans)
+                    except Exception as _e2:
+                        error_log.warning(f"direct _bg_log failed: {_e2}")
                     _bg_executor.submit(_fire_webhook, meta)
                     # Send cached text in word-sized chunks for a natural feel
                     words = cached_ans.split(' ')
@@ -2554,7 +2606,10 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     # Store the completed response in cache
                     full_response = "".join(full_response_parts)
                     meta["hit"] = "miss"
-                    _bg_executor.submit(_bg_log, "miss")
+                    try:
+                        _bg_log("miss", full_response)
+                    except Exception as _e2:
+                        error_log.warning(f"direct _bg_log miss failed: {_e2}")
                     _bg_executor.submit(_fire_webhook, meta)
                     svc.store_miss(
                         tenant, prompt_norm, full_response, messages,
@@ -2691,9 +2746,32 @@ def get_billing_status(request: Request):
             usage = get_usage_stats_by_org(str(org["id"]), days=30)
         except Exception:
             pass
-        
-        total_hits = int(usage.get("total_hits", 0))
+
         total_requests = int(usage.get("total_requests", 0))
+        # If usage_logs by org_id is empty, try by tenant_id from org's API keys
+        if total_requests == 0:
+            try:
+                from database import get_db_connection, get_usage_stats
+                from psycopg2.extras import RealDictCursor
+                with get_db_connection() as conn:
+                    cur = conn.cursor(cursor_factory=RealDictCursor)
+                    cur.execute(
+                        "SELECT tenant_id FROM api_keys WHERE org_id = %s AND is_active = TRUE",
+                        (str(org["id"]),)
+                    )
+                    for row in cur.fetchall():
+                        tenant_usage = get_usage_stats(row["tenant_id"], days=30)
+                        t_reqs = int(tenant_usage.get("total_requests", 0))
+                        if t_reqs > 0:
+                            total_requests += t_reqs
+                            for k in ("total_hits", "total_misses", "total_tokens", "total_cost"):
+                                usage[k] = int(usage.get(k, 0)) + int(tenant_usage.get(k, 0))
+                    if total_requests > 0:
+                        usage["total_requests"] = total_requests
+            except Exception:
+                pass
+
+        total_hits = int(usage.get("total_hits", 0))
         total_misses = int(usage.get("total_misses", 0))
         total_cost = float(usage.get("total_cost", 0))
         # Estimate savings: avg cost per miss * hits (cost we avoided)
