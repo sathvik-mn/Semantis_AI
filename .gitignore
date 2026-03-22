@@ -24,6 +24,13 @@ cache_data/
 # IDE
 .vscode/
 .idea/
+.claude/
+.cursor/
+
+# Virtual environments
+.venv/
+venv/
+env/
 
 # OS
 .DS_Store

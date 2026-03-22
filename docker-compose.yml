@@ -1,19 +1,6 @@
 version: "3.9"
 
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
   backend:
     build: ./backend
     ports:
@@ -21,10 +8,11 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
+      - REDIS_URL=${REDIS_URL}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX=${PINECONE_INDEX:-semantis}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - RESEND_API_KEY=${RESEND_API_KEY}
     volumes:
       - cache_data:/app/cache_data
       - logs_data:/app/logs
@@ -37,6 +25,9 @@ services:
         VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN}
+        VITE_POSTHOG_KEY: ${VITE_POSTHOG_KEY}
+        VITE_POSTHOG_HOST: ${VITE_POSTHOG_HOST:-https://us.i.posthog.com}
     ports:
       - "3000:80"
     depends_on:
@@ -44,6 +35,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  redis_data:
   cache_data:
   logs_data:

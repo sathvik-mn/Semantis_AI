@@ -100,6 +100,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -111,13 +112,26 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    if (userIsNearBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = useCallback((force?: boolean) => {
+    if (force || userIsNearBottomRef.current) {
+      const el = chatAreaRef.current;
+      if (el) {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      }
+      userIsNearBottomRef.current = true;
+      setShowScrollBtn(false);
     }
   }, []);
 
-  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+  useEffect(() => {
+    if (userIsNearBottomRef.current) {
+      scrollToBottom();
+    } else {
+      // User scrolled away — show the "jump to bottom" button if streaming
+      const anyStreaming = messages.some(m => m.isStreaming);
+      setShowScrollBtn(anyStreaming);
+    }
+  }, [messages, scrollToBottom]);
 
   // Persist messages to localStorage whenever they change (skip while streaming)
   useEffect(() => {
@@ -213,7 +227,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       timestamp: Date.now(),
     };
 
-    userIsNearBottomRef.current = true;
+    userIsNearBottomRef.current = isNearBottom();
     setMessages(prev => [...prev, userMessage, assistantMessage]);
     setPrompt('');
     setIsLoading(true);
@@ -353,7 +367,12 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       <div
         ref={chatAreaRef}
         style={styles.chatArea}
-        onScroll={() => { userIsNearBottomRef.current = isNearBottom(); }}
+        onScroll={() => {
+          const near = isNearBottom();
+          userIsNearBottomRef.current = near;
+          if (near) setShowScrollBtn(false);
+          else if (isLoading) setShowScrollBtn(true);
+        }}
       >
         {messages.length === 0 && (
           <div style={styles.emptyState}>
@@ -442,6 +461,32 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Scroll to bottom button */}
+      {showScrollBtn && (
+        <button
+          onClick={() => scrollToBottom(true)}
+          style={{
+            position: 'absolute',
+            bottom: 90,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(59,130,246,0.85)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '20px',
+            padding: '6px 16px',
+            fontSize: '13px',
+            cursor: 'pointer',
+            zIndex: 10,
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            transition: 'opacity 0.2s',
+          }}
+        >
+          ↓ Scroll to bottom
+        </button>
+      )}
 
       {/* Input Bar */}
       <div style={styles.inputBar}>
