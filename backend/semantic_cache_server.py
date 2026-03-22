@@ -33,7 +33,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from fastapi.openapi.utils import get_openapi
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from dotenv import load_dotenv
 
 # -----------------------------
@@ -1585,6 +1585,20 @@ class ChatRequest(BaseModel):
     ttl_seconds: int = 7 * 24 * 3600
     stream: bool = False
 
+    @validator("temperature")
+    def temp_range(cls, v):
+        if not (0.0 <= v <= 2.0):
+            raise ValueError("temperature must be between 0.0 and 2.0")
+        return v
+
+    @validator("messages")
+    def messages_not_empty(cls, v):
+        if not v:
+            raise ValueError("messages list cannot be empty")
+        if len(v) > 50:
+            raise ValueError("too many messages (max 50)")
+        return v
+
 # -----------------------------
 # Endpoints
 # -----------------------------
@@ -1695,10 +1709,14 @@ def prometheus_metrics():
 @app.get("/query")
 @limiter.limit("200/minute")
 def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_MODEL, tenant: str = Depends(get_tenant_from_key)):
+    # --- Input guard (runs before cache pipeline) ---
+    from input_guard import guard_request
     messages = [{"role": "user", "content": prompt}]
-    prompt_norm = SemanticCacheService.norm_text(prompt)
-    if len(prompt_norm) > 30_000:
-        raise HTTPException(status_code=400, detail="Prompt too long (max 30,000 characters)")
+    messages, guard_err = guard_request(messages, 0.2, model)
+    if guard_err:
+        raise HTTPException(status_code=400, detail=guard_err)
+
+    prompt_norm = SemanticCacheService.norm_text(messages[0]["content"])
     prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()[:8]
 
     endpoint_start = time.time()
@@ -2467,14 +2485,18 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     except Exception:
         pass  # If billing check fails, allow the request through
 
+    # --- Input guard (runs before cache pipeline) ---
+    from input_guard import guard_request
+    raw_messages = [m.model_dump() for m in body.messages]
+    messages, guard_err = guard_request(raw_messages, body.temperature, body.model)
+    if guard_err:
+        raise HTTPException(status_code=400, detail=guard_err)
+
     prompt_norm = SemanticCacheService.norm_text(
-        " ".join([m.content for m in body.messages if m.role == "user"]) or ""
+        " ".join([m["content"] for m in messages if m.get("role") == "user"]) or ""
     )
-    if len(prompt_norm) > 30_000:
-        raise HTTPException(status_code=400, detail="Prompt too long (max 30,000 characters)")
     try:
         user_id = _ctx.get("user_id")
-        messages = [m.model_dump() for m in body.messages]
         chunk_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}"
 
         if body.stream:
