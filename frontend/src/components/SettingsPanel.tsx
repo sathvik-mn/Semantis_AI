@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { generateApiKey, setApiKey, hasApiKey, getApiKey, getSettings, updateSettings, getUserOpenAIKeyStatus, setUserOpenAIKey, removeUserOpenAIKey } from '../api/semanticAPI';
 import { Key, Copy, Check, AlertCircle, Save, Loader2, RefreshCw, Trash2, Shield } from 'lucide-react';
 import { CacheWarmup } from './CacheWarmup';
@@ -18,8 +17,6 @@ export function SettingsPanel() {
   const [serverThreshold, setServerThreshold] = useState(0.75);
   const [serverTtl, setServerTtl] = useState(7);
   const [entries, setEntries] = useState(0);
-  const { user } = useAuth();
-
   // BYOK OpenAI key state
   const [openaiKeySet, setOpenaiKeySet] = useState(false);
   const [openaiKeyPreview, setOpenaiKeyPreview] = useState<string | null>(null);

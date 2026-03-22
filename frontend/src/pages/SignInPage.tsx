@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, AlertCircle, ArrowLeft, Chrome } from 'lucide-react';
+import { Mail, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
 import { TubesBackground } from '../components/TubesBackground';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -33,11 +33,6 @@ export function SignInPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogleSignIn = () => {
-    // Mock Google sign-in
-    alert('Google Sign In - Coming Soon!');
   };
 
   return (

@@ -26,6 +26,7 @@ cache_data/
 .idea/
 .claude/
 .cursor/
+.agents/
 
 # Virtual environments
 .venv/

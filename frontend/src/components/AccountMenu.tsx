@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Settings, Key, LogOut, ChevronDown, X, Copy, Trash2, Plus, User, Mail, Building2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentApiKey, generateApiKey, setApiKey, getApiKey, getUserOpenAIKeyStatus, setUserOpenAIKey, removeUserOpenAIKey } from '../api/semanticAPI';
@@ -16,7 +15,6 @@ interface ApiKeyItem {
 }
 
 export function AccountMenu({ onLogout }: AccountMenuProps) {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);

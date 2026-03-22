@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ChatResponse, sendChatCompletionStream, hasApiKey, setApiKey } from '../api/semanticAPI';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { Key, ExternalLink, Copy, Check, Trash2, Clock, Send, Bot, User, Zap, Gauge, Layers, Sparkles } from 'lucide-react';
+import { Key, ExternalLink, Copy, Trash2, Clock, Send, Bot, User, Zap, Gauge, Layers, Sparkles } from 'lucide-react';
 
 const MAX_HISTORY = 50;
 const MESSAGES_KEY_PREFIX = 'semantis_chat_messages_';
