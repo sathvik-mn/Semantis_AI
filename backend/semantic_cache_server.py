@@ -940,6 +940,11 @@ class SemanticCacheService:
 
         # Store immediately with query embedding (fast path)
         _cached_emb = query_emb
+        # Capture org_id before entering thread
+        try:
+            _query_org_id = _current_api_key_var.get().get("org_id")
+        except Exception:
+            _query_org_id = None
         def _store_fast():
             """Store entry in cache ASAP with just the query embedding."""
             try:
@@ -974,6 +979,22 @@ class SemanticCacheService:
                     store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
+                # Persist to DB (encrypted if configured)
+                try:
+                    if _query_org_id:
+                        from database import store_cache_entry
+                        import datetime
+                        ttl_dt = (datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl_seconds)).isoformat()
+                        store_cache_entry(
+                            org_id=_query_org_id, prompt_hash=prompt_hash,
+                            prompt_norm=prompt_norm, response_text=response_text,
+                            embedding_bytes=emb.tobytes() if emb is not None else None,
+                            model=model, ttl_expires_at=ttl_dt,
+                            domain=entry_domain, tenant_id=tenant_id,
+                        )
+                        access_log.info(f"{tenant_id} | DB cache stored | encrypted={bool(os.getenv('CACHE_ENCRYPTION_KEY'))}")
+                except Exception as _db_err:
+                    error_log.warning(f"DB cache store failed: {_db_err}")
 
                 # Enrich asynchronously: response embedding, local embedding, clusters
                 def _enrich():
@@ -1055,6 +1076,7 @@ class SemanticCacheService:
         model: str,
         ttl_seconds: int = 7 * 24 * 3600,
         user_id: Optional[str] = None,
+        org_id: Optional[str] = None,
     ):
         """Store a response after a cache miss (e.g. after streaming completes)."""
         T = self.tenant(tenant_id)
@@ -1070,7 +1092,9 @@ class SemanticCacheService:
             pass
 
         _cached_emb = query_emb
+        _store_org_id = org_id
         def _store_fast():
+            access_log.info(f"{tenant_id} | _store_fast ENTERED | org={_store_org_id}")
             try:
                 emb = _cached_emb
                 if emb is None:
@@ -1103,6 +1127,24 @@ class SemanticCacheService:
                     store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
+                # Persist to DB (encrypted if configured)
+                try:
+                    if _store_org_id:
+                        from database import store_cache_entry
+                        import datetime
+                        ttl_dt = (datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl_seconds)).isoformat()
+                        store_cache_entry(
+                            org_id=_store_org_id, prompt_hash=prompt_hash,
+                            prompt_norm=prompt_norm, response_text=response_text,
+                            embedding_bytes=emb.tobytes() if emb is not None else None,
+                            model=model, ttl_expires_at=ttl_dt,
+                            domain=entry_domain, tenant_id=tenant_id,
+                        )
+                        access_log.info(f"{tenant_id} | DB cache stored (store_miss) | org={_store_org_id}")
+                    else:
+                        error_log.warning(f"{tenant_id} | DB cache skipped: org_id is None")
+                except Exception as _db_err:
+                    error_log.warning(f"DB cache store failed: {_db_err}")
                 def _enrich():
                     try:
                         resp_emb = None
@@ -1123,6 +1165,7 @@ class SemanticCacheService:
                 _bg_executor.submit(_enrich)
             except Exception as e:
                 error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
+        access_log.info(f"{tenant_id} | store_miss | submitting _store_fast | org={_store_org_id}")
         _bg_executor.submit(_store_fast)
 
     def metrics(self, tenant_id: str) -> dict:
@@ -1512,7 +1555,8 @@ def get_tenant_from_key(request: Request) -> str:
     
     ctx = {"key": token, "user_id": None, "org_id": None, "scope": "read-write"}
     _current_api_key_var.set(ctx)
-    
+    request.state.api_ctx = ctx  # Also store on request for generator access
+
     # Fast in-memory API key cache (avoids DB round-trip on every request)
     cached = _api_key_cache.get(token)
     if cached and (time.time() - cached["ts"]) < 300:
@@ -1555,6 +1599,7 @@ def get_tenant_from_key(request: Request) -> str:
             ctx["user_id"] = key_info.get('user_id')
             ctx["org_id"] = str(key_info.get('org_id', '')) or None
             ctx["scope"] = key_info.get('scope', 'read-write')
+            ctx["plan"] = key_info.get('plan', 'free')
             _current_api_key_var.set(ctx)
             _api_key_cache[token] = {
                 "user_id": ctx["user_id"],
@@ -2499,7 +2544,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
         client = openai.OpenAI(base_url="https://api.semantis.ai/v1", api_key="sc-...")
     Supports stream=True for streaming responses.
     """
-    _ctx = _current_api_key_var.get()
+    _ctx = getattr(request.state, 'api_ctx', None) or _current_api_key_var.get()
     _require_scope(request, "read-write")
 
     # Enforce plan limits (Redis counter for speed, DB fallback)
@@ -2538,13 +2583,17 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     )
     try:
         user_id = _ctx.get("user_id")
+        # Capture context values NOW — ContextVar may not propagate into generator/thread
+        _captured_key = _ctx.get("key", "unknown")
+        _captured_uid = _ctx.get("user_id")
+        _captured_org = _ctx.get("org_id")
         chunk_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}"
 
         if body.stream:
             def stream_generator():
-                _log_key = _ctx.get("key", "unknown")
-                _log_uid = _ctx.get("user_id")
-                _log_org = _ctx.get("org_id")
+                _log_key = _captured_key
+                _log_uid = _captured_uid
+                _log_org = _captured_org
 
                 # Step 1: cache lookup only (no LLM call)
                 cached_ans, meta = svc.lookup(
@@ -2609,11 +2658,12 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     try:
                         _bg_log("miss", full_response)
                     except Exception as _e2:
-                        error_log.warning(f"direct _bg_log miss failed: {_e2}")
+                        error_log.warning(f"log_usage failed in stream: {_e2}")
                     _bg_executor.submit(_fire_webhook, meta)
                     svc.store_miss(
                         tenant, prompt_norm, full_response, messages,
                         body.model, ttl_seconds=body.ttl_seconds, user_id=user_id,
+                        org_id=_log_org,
                     )
 
                 # Finish SSE stream

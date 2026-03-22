@@ -537,32 +537,40 @@ def store_cache_entry(
     embedding_bytes: Optional[bytes] = None,
     model: str = 'gpt-4o-mini',
     ttl_expires_at: Optional[str] = None,
-    domain: str = 'general'
+    domain: str = 'general',
+    tenant_id: str = ''
 ) -> Optional[Dict]:
-    """Insert or update a cache entry. On conflict (same org + hash), update the response."""
+    """Insert or update a cache entry. Encrypts prompt and response if configured."""
+    from encryption import encrypt_cache_entry, is_cache_encryption_enabled
+    # Encrypt sensitive fields if enabled
+    stored_prompt = encrypt_cache_entry(prompt_norm, tenant_id) if tenant_id else prompt_norm
+    stored_response = encrypt_cache_entry(response_text, tenant_id) if tenant_id else response_text
+    is_encrypted = is_cache_encryption_enabled() and bool(tenant_id)
+
     with get_db_connection() as conn:
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
             """INSERT INTO cache_entries
                (org_id, prompt_hash, prompt_norm, response_text, embedding,
-                model, ttl_expires_at, domain)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                model, ttl_expires_at, domain, is_encrypted)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (id) DO NOTHING
                RETURNING id, org_id, prompt_hash, model, created_at""",
-            (org_id, prompt_hash, prompt_norm, response_text,
-             embedding_bytes, model, ttl_expires_at, domain)
+            (org_id, prompt_hash, stored_prompt, stored_response,
+             embedding_bytes, model, ttl_expires_at, domain, is_encrypted)
         )
         row = cur.fetchone()
         return dict(row) if row else None
 
 
-def get_cache_entry(org_id: str, prompt_hash: str) -> Optional[Dict]:
-    """Retrieve a cache entry and bump its use_count / last_used_at."""
+def get_cache_entry(org_id: str, prompt_hash: str, tenant_id: str = '') -> Optional[Dict]:
+    """Retrieve a cache entry, decrypt if encrypted, and bump use_count."""
     with get_db_connection() as conn:
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
             """SELECT id, org_id, prompt_hash, prompt_norm, response_text,
-                      model, ttl_expires_at, created_at, last_used_at, use_count, domain
+                      model, ttl_expires_at, created_at, last_used_at, use_count, domain,
+                      COALESCE(is_encrypted, FALSE) as is_encrypted
                FROM cache_entries
                WHERE org_id = %s AND prompt_hash = %s
                  AND (ttl_expires_at IS NULL OR ttl_expires_at > NOW())
@@ -578,23 +586,37 @@ def get_cache_entry(org_id: str, prompt_hash: str) -> Optional[Dict]:
                    WHERE id = %s""",
                 (row['id'],)
             )
-            return dict(row)
+            result = dict(row)
+            # Decrypt if encrypted
+            if result.get('is_encrypted') and tenant_id:
+                from encryption import decrypt_cache_entry
+                result['prompt_norm'] = decrypt_cache_entry(result['prompt_norm'], tenant_id)
+                result['response_text'] = decrypt_cache_entry(result['response_text'], tenant_id)
+            return result
         return None
 
 
-def list_cache_entries(org_id: str, limit: int = 50) -> List[Dict]:
+def list_cache_entries(org_id: str, limit: int = 50, tenant_id: str = '') -> List[Dict]:
     with get_db_connection() as conn:
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
             """SELECT id, org_id, prompt_hash, prompt_norm, response_text,
-                      model, ttl_expires_at, created_at, last_used_at, use_count, domain
+                      model, ttl_expires_at, created_at, last_used_at, use_count, domain,
+                      COALESCE(is_encrypted, FALSE) as is_encrypted
                FROM cache_entries
                WHERE org_id = %s
                ORDER BY last_used_at DESC
                LIMIT %s""",
             (org_id, limit)
         )
-        return [dict(row) for row in cur.fetchall()]
+        rows = [dict(row) for row in cur.fetchall()]
+        if tenant_id:
+            from encryption import decrypt_cache_entry
+            for row in rows:
+                if row.get('is_encrypted'):
+                    row['prompt_norm'] = decrypt_cache_entry(row['prompt_norm'], tenant_id)
+                    row['response_text'] = decrypt_cache_entry(row['response_text'], tenant_id)
+        return rows
 
 
 # ==========================================================================
