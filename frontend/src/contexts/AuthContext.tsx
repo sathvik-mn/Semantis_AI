@@ -134,9 +134,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
 
+    // Clear chat data only if a different user is logging in
+    const lastUserId = localStorage.getItem('semantis_last_user_id');
+    if (lastUserId && lastUserId !== data.user.id) {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('semantis_chat_messages_') || k.startsWith('semantis_chat_history_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    }
+    localStorage.setItem('semantis_last_user_id', data.user.id);
+
     const mapped = mapSupabaseUser(data.user);
     const enriched = await enrichUserFromBackend(data.session.access_token, mapped);
     setUser(enriched);
+
+    // PostHog: identify user and track login
+    try {
+      const posthog = (await import('posthog-js')).default;
+      if (posthog.__loaded) {
+        posthog.identify(data.user.id, { email: data.user.email, name: enriched.name });
+        posthog.capture('user_login');
+      }
+    } catch { /* posthog not loaded */ }
 
     try {
       const apiKeyData = await getCurrentApiKey();
@@ -155,21 +178,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message);
     if (data.user) {
       setUser(mapSupabaseUser(data.user));
+      // PostHog: track signup
+      try {
+        const posthog = (await import('posthog-js')).default;
+        if (posthog.__loaded) {
+          posthog.identify(data.user.id, { email: data.user.email });
+          posthog.capture('user_signup');
+        }
+      } catch { /* posthog not loaded */ }
     }
   };
 
   const logout = async () => {
     const { clearApiKey } = await import('../api/semanticAPI');
     clearApiKey();
-    // Clear all tenant-scoped chat data so the next user starts fresh
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && (k.startsWith('semantis_chat_messages_') || k.startsWith('semantis_chat_history_'))) {
-        keysToRemove.push(k);
+    // PostHog: reset user identity
+    try {
+      const posthog = (await import('posthog-js')).default;
+      if (posthog.__loaded) {
+        posthog.capture('user_logout');
+        posthog.reset();
       }
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch { /* posthog not loaded */ }
+    // Chat data is preserved for the same user — only cleared if a different user logs in
     await supabase.auth.signOut();
     setUser(null);
   };

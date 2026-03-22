@@ -21,8 +21,12 @@ from typing import Dict, List, Optional, Tuple
 from collections import OrderedDict
 from contextvars import ContextVar
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+
+# Shared bounded thread pool for background tasks (cache storage, logging, webhooks)
+_bg_executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix="bg-worker")
 import faiss
 from fastapi import FastAPI, Request, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -36,6 +40,24 @@ from dotenv import load_dotenv
 # Environment & OpenAI client
 # -----------------------------
 load_dotenv()
+
+# Sentry error tracking (optional — set SENTRY_DSN to enable)
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
+            environment=os.getenv("ENVIRONMENT", "development"),
+        )
+        logging.info("Sentry initialized")
+    except ImportError:
+        logging.warning("sentry-sdk not installed, error tracking disabled")
+    except Exception as e:
+        logging.warning(f"Sentry init failed: {e}")
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if o.strip()]
 if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-REPLACE_ME":
@@ -63,6 +85,21 @@ IVF_UPGRADE_THRESHOLD = int(os.getenv("IVF_UPGRADE_THRESHOLD", "10000"))
 # -----------------------------
 os.makedirs("logs", exist_ok=True)
 
+class JSONFormatter(logging.Formatter):
+    """Structured JSON log formatter for production log aggregation."""
+    def format(self, record):
+        log_entry = {
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0]:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_entry)
+
+LOG_FORMAT = os.getenv("LOG_FORMAT", "text")  # "json" for structured logging
+
 def make_rotating_logger(name: str, filename: str, level=logging.INFO):
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -72,9 +109,12 @@ def make_rotating_logger(name: str, filename: str, level=logging.INFO):
     handler = RotatingFileHandler(
         os.path.join("logs", filename), maxBytes=10_000_000, backupCount=5
     )
-    formatter = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"
-    )
+    if LOG_FORMAT == "json":
+        formatter = JSONFormatter()
+    else:
+        formatter = logging.Formatter(
+            fmt="%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"
+        )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     # Also stream to stdout for dev visibility
@@ -545,7 +585,8 @@ class SemanticCacheService:
         if len(T.events) > 1000:
             T.events = T.events[-1000:]
 
-    def _faiss_add(self, T: TenantState, emb: np.ndarray):
+    def _faiss_add(self, T: TenantState, emb: np.ndarray, tenant_id: str = "", entry_id: str = "", metadata: dict = None):
+        """Add embedding to FAISS (local) and Pinecone (if available)."""
         v = emb.astype("float32").reshape(1, -1)
         faiss.normalize_L2(v)
         if T.index is None:
@@ -555,6 +596,10 @@ class SemanticCacheService:
         # Tier 2b: auto-upgrade to IVF when cache grows large
         if len(T.rows) == IVF_UPGRADE_THRESHOLD and T.dim is not None:
             self._upgrade_to_ivf(T)
+        # Also upsert to Pinecone for cross-worker consistency
+        if tenant_id and entry_id:
+            from vector_store import upsert_embedding
+            _bg_executor.submit(upsert_embedding, tenant_id, entry_id, v.flatten(), metadata or {})
 
     def _local_faiss_add(self, T: TenantState, local_emb: np.ndarray):
         """Add to the local-model FAISS index for fast pre-filtering."""
@@ -691,44 +736,73 @@ class SemanticCacheService:
         query_emb = None
         query_text = prompt_norm
 
-        if local_gate_passed and T.index is not None and len(T.rows) > 0:
+        has_local_index = T.index is not None and len(T.rows) > 0
+        # Check if Pinecone is available for semantic search
+        from vector_store import is_pinecone_enabled, search as pinecone_search
+        use_pinecone = is_pinecone_enabled()
+
+        if local_gate_passed and (has_local_index or use_pinecone):
             query_emb, query_text = self._get_embedding_for_query(messages, user_id=user_id)
             query_domain = domain_hint(query_text)
 
-            # Tier 3b: cluster routing — narrow search to nearest clusters
-            search_rows_mask = None
-            if T.cluster_centroids is not None and T.n_clusters >= 4:
-                cq = query_emb.astype("float32").reshape(1, -1)
-                faiss.normalize_L2(cq)
-                centroid_index = faiss.IndexFlatIP(T.cluster_centroids.shape[1])
-                centroid_index.add(T.cluster_centroids)
-                n_probe_clusters = max(1, T.n_clusters // 3)
-                _, cluster_ids = centroid_index.search(cq, n_probe_clusters)
-                target_clusters = set(int(c) for c in cluster_ids[0] if c >= 0)
-                search_rows_mask = set(
-                    i for i, r in enumerate(T.rows) if r.cluster_id in target_clusters
-                )
-
-            k = min(10, len(T.rows))
-            q = query_emb.astype("float32").reshape(1, -1)
-            faiss.normalize_L2(q)
-            sims, idxs = T.index.search(q, k)
-
             candidates = []
-            for i in range(k):
-                idx = int(idxs[0][i])
-                cosine_sim = float(sims[0][i])
-                if idx < 0 or idx >= len(T.rows):
-                    continue
-                if search_rows_mask is not None and idx not in search_rows_mask:
-                    continue
-                entry = T.rows[idx]
-                if not entry.fresh() or entry.model != model:
-                    continue
 
-                tok_sim = token_overlap_score(query_text, entry.prompt_norm)
-                h_score = hybrid_score(cosine_sim, tok_sim)
-                candidates.append((entry, cosine_sim, tok_sim, h_score, idx))
+            if use_pinecone:
+                # ── Pinecone path: external vector search ──
+                q = query_emb.astype("float32").reshape(1, -1)
+                faiss.normalize_L2(q)
+                pinecone_results = pinecone_search(tenant_id, q.flatten(), top_k=10)
+                # Build a hash→entry lookup from local rows for metadata
+                row_lookup = {r.prompt_hash: r for r in T.rows if hasattr(r, 'prompt_hash')}
+                # Also build from exact cache
+                for key, entry in T.exact.items():
+                    h = hashlib.md5(key.encode()).hexdigest()
+                    row_lookup[h] = entry
+                for match in pinecone_results:
+                    cosine_sim = float(match["score"])
+                    entry_id = match["id"]
+                    entry = row_lookup.get(entry_id)
+                    if entry is None:
+                        continue
+                    if not entry.fresh() or entry.model != model:
+                        continue
+                    tok_sim = token_overlap_score(query_text, entry.prompt_norm)
+                    h_score = hybrid_score(cosine_sim, tok_sim)
+                    candidates.append((entry, cosine_sim, tok_sim, h_score, -1))
+            elif has_local_index:
+                # ── FAISS path: in-process vector search (fallback) ──
+                # Tier 3b: cluster routing — narrow search to nearest clusters
+                search_rows_mask = None
+                if T.cluster_centroids is not None and T.n_clusters >= 4:
+                    cq = query_emb.astype("float32").reshape(1, -1)
+                    faiss.normalize_L2(cq)
+                    centroid_index = faiss.IndexFlatIP(T.cluster_centroids.shape[1])
+                    centroid_index.add(T.cluster_centroids)
+                    n_probe_clusters = max(1, T.n_clusters // 3)
+                    _, cluster_ids = centroid_index.search(cq, n_probe_clusters)
+                    target_clusters = set(int(c) for c in cluster_ids[0] if c >= 0)
+                    search_rows_mask = set(
+                        i for i, r in enumerate(T.rows) if r.cluster_id in target_clusters
+                    )
+
+                k = min(10, len(T.rows))
+                q = query_emb.astype("float32").reshape(1, -1)
+                faiss.normalize_L2(q)
+                sims, idxs = T.index.search(q, k)
+
+                for i in range(k):
+                    idx = int(idxs[0][i])
+                    cosine_sim = float(sims[0][i])
+                    if idx < 0 or idx >= len(T.rows):
+                        continue
+                    if search_rows_mask is not None and idx not in search_rows_mask:
+                        continue
+                    entry = T.rows[idx]
+                    if not entry.fresh() or entry.model != model:
+                        continue
+                    tok_sim = token_overlap_score(query_text, entry.prompt_norm)
+                    h_score = hybrid_score(cosine_sim, tok_sim)
+                    candidates.append((entry, cosine_sim, tok_sim, h_score, idx))
 
             # Tier 3a: cross-encoder re-ranking on top candidates
             if len(candidates) >= 2 and CROSS_ENCODER_ENABLED:
@@ -865,9 +939,10 @@ class SemanticCacheService:
                     if norm_key:
                         T.norm_hash_index[norm_key] = entry
                     T.rows.append(entry)
-                    self._faiss_add(T, emb)
+                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                    metadata={"model": model, "domain": entry_domain})
                     if len(T.rows) % 10 == 0:
-                        threading.Thread(target=self._save_cache, daemon=True).start()
+                        _bg_executor.submit(self._save_cache)
                 try:
                     from redis_cache import store_exact_match, store_embedding
                     store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
@@ -894,11 +969,11 @@ class SemanticCacheService:
                                 self._rebuild_clusters(T)
                     except Exception as e:
                         error_log.debug(f"Enrich failed (non-fatal) | tenant={tenant_id} | {e}")
-                threading.Thread(target=_enrich, daemon=True).start()
+                _bg_executor.submit(_enrich)
 
             except Exception as e:
                 error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
-        threading.Thread(target=_store_fast, daemon=True).start()
+        _bg_executor.submit(_store_fast)
 
         return response_text, meta
 
@@ -993,9 +1068,10 @@ class SemanticCacheService:
                     if norm_key:
                         T.norm_hash_index[norm_key] = entry
                     T.rows.append(entry)
-                    self._faiss_add(T, emb)
+                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                    metadata={"model": model, "domain": entry_domain})
                     if len(T.rows) % 10 == 0:
-                        threading.Thread(target=self._save_cache, daemon=True).start()
+                        _bg_executor.submit(self._save_cache)
                 try:
                     from redis_cache import store_exact_match, store_embedding
                     store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
@@ -1019,10 +1095,10 @@ class SemanticCacheService:
                                 self._rebuild_clusters(T)
                     except Exception:
                         pass
-                threading.Thread(target=_enrich, daemon=True).start()
+                _bg_executor.submit(_enrich)
             except Exception as e:
                 error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
-        threading.Thread(target=_store_fast, daemon=True).start()
+        _bg_executor.submit(_store_fast)
 
     def metrics(self, tenant_id: str) -> dict:
         T = self.tenant(tenant_id)
@@ -1158,13 +1234,15 @@ class SemanticCacheService:
                     response_embedding=resp_emb,
                     local_embedding=local_emb,
                 )
+                warmup_hash = hashlib.md5(prompt_norm.encode()).hexdigest()
                 with self._cache_lock:
                     T.exact[prompt_norm] = entry
                     norm_key = normalize_query(prompt_norm)
                     if norm_key:
                         T.norm_hash_index[norm_key] = entry
                     T.rows.append(entry)
-                    self._faiss_add(T, emb)
+                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=warmup_hash,
+                                    metadata={"model": model, "domain": domain_hint(user_text)})
                     if local_emb is not None:
                         self._local_faiss_add(T, local_emb)
                 added += 1
@@ -1181,7 +1259,7 @@ class SemanticCacheService:
                 errors += 1
                 error_log.warning(f"Warmup entry failed | tenant={tenant_id} | idx={i} | error={e}")
         if added > 0:
-            threading.Thread(target=self._save_cache, daemon=True).start()
+            _bg_executor.submit(self._save_cache)
         return {"added": added, "skipped": skipped, "errors": errors}
 
 svc = SemanticCacheService()
@@ -1380,7 +1458,8 @@ setup_admin_routes()
 
 # Simple API-key format: Bearer sc-{tenant}-{anything}
 API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]+)$")
-_api_key_cache: Dict[str, dict] = {}  # token -> {"user_id": ..., "ts": epoch}
+_api_key_cache: OrderedDict = OrderedDict()  # Bounded LRU: token -> {"user_id": ..., "ts": epoch}
+_API_KEY_CACHE_MAX = 10_000
 
 # Request-scoped API key context (safe for concurrent async requests)
 _current_api_key_var: ContextVar[dict] = ContextVar('_current_api_key', default={"key": None, "user_id": None})
@@ -1430,7 +1509,7 @@ def get_tenant_from_key(request: Request) -> str:
                 update_api_key_usage(token, tenant)
             except Exception:
                 pass
-        threading.Thread(target=_bg_usage, daemon=True).start()
+        _bg_executor.submit(_bg_usage)
         return tenant
 
     try:
@@ -1460,6 +1539,9 @@ def get_tenant_from_key(request: Request) -> str:
                 "expires_at": None,
                 "ts": time.time(),
             }
+            # Evict oldest entries if cache is too large
+            while len(_api_key_cache) > _API_KEY_CACHE_MAX:
+                _api_key_cache.popitem(last=False)
             security_log.debug(
                 f"Auth success | tenant={tenant} | ip={client_ip} | "
                 f"plan={key_info.get('plan', 'unknown')} | scope={ctx['scope']} | "
@@ -1470,12 +1552,12 @@ def get_tenant_from_key(request: Request) -> str:
                 f"API key not found | tenant={tenant} | ip={client_ip} | "
                 f"key_prefix={token[:20]}"
             )
+            raise HTTPException(status_code=401, detail="Invalid API key")
     except HTTPException:
         raise
     except Exception as e:
         error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
-    
-    return tenant
+        raise HTTPException(status_code=503, detail="Authentication service temporarily unavailable")
 
 
 def _require_scope(request: Request, required: str):
@@ -1625,15 +1707,24 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
         _ctx = _current_api_key_var.get()
         user_id = _ctx.get("user_id")
 
-        # Enforce plan limits
+        # Enforce plan limits (Redis counter for speed, DB fallback)
         try:
-            from billing import check_plan_limit
-            from database import get_usage_stats
+            from billing import get_plan_limits
+            from redis_cache import increment_monthly_usage
             plan = _ctx.get("plan", "free")
-            usage = get_usage_stats(tenant, days=30)
-            current_requests = int(usage.get("total_requests", 0))
-            if not check_plan_limit(plan, "max_requests_month", current_requests):
-                raise HTTPException(status_code=429, detail=f"Monthly request limit reached for your '{plan}' plan.")
+            current_requests = increment_monthly_usage(tenant)
+            if current_requests == -1:
+                from database import get_usage_stats
+                usage = get_usage_stats(tenant, days=30)
+                current_requests = int(usage.get("total_requests", 0))
+            limits = get_plan_limits(plan)
+            max_req = limits.get("max_requests_month", 1000)
+            if current_requests > max_req:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Monthly request limit reached for your '{plan}' plan ({current_requests}/{max_req}). "
+                           f"Upgrade at /settings to continue.",
+                )
         except HTTPException:
             raise
         except Exception:
@@ -1681,7 +1772,7 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
                 error_log.warning(f"Could not log usage to database | tenant={tenant} | error={str(e)}")
         
         # Run database logging in background thread (non-blocking)
-        threading.Thread(target=log_usage_async, daemon=True).start()
+        _bg_executor.submit(log_usage_async)
         
         # Log timing breakdown
         before_return = time.time()
@@ -1776,15 +1867,24 @@ def cache_warmup(body: WarmupRequest, request: Request):
         if not tenant:
             tenant = f"usr_{user['id'][:8]}"
 
-        # Enforce plan limits
+        # Enforce plan limits (Redis counter for speed, DB fallback)
         try:
-            from billing import check_plan_limit
-            from database import get_usage_stats
+            from billing import get_plan_limits
+            from redis_cache import increment_monthly_usage
             org_plan = orgs[0].get("plan", "free") if orgs else "free"
-            usage = get_usage_stats(tenant, days=30)
-            current_requests = int(usage.get("total_requests", 0))
-            if not check_plan_limit(org_plan, "max_requests_month", current_requests):
-                raise HTTPException(status_code=429, detail=f"Monthly request limit reached for your '{org_plan}' plan.")
+            current_requests = increment_monthly_usage(tenant)
+            if current_requests == -1:
+                from database import get_usage_stats
+                usage = get_usage_stats(tenant, days=30)
+                current_requests = int(usage.get("total_requests", 0))
+            limits = get_plan_limits(org_plan)
+            max_req = limits.get("max_requests_month", 1000)
+            if current_requests > max_req:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Monthly request limit reached for your '{org_plan}' plan ({current_requests}/{max_req}). "
+                           f"Upgrade at /settings to continue.",
+                )
         except HTTPException:
             raise
         except Exception:
@@ -1822,15 +1922,24 @@ def cache_warmup_api_key(body: WarmupRequest, request: Request, tenant: str = De
         _ctx = _current_api_key_var.get()
         user_id = _ctx.get("user_id")
 
-        # Enforce plan limits
+        # Enforce plan limits (Redis counter for speed, DB fallback)
         try:
-            from billing import check_plan_limit
-            from database import get_usage_stats
+            from billing import get_plan_limits
+            from redis_cache import increment_monthly_usage
             plan = _ctx.get("plan", "free")
-            usage = get_usage_stats(tenant, days=30)
-            current_requests = int(usage.get("total_requests", 0))
-            if not check_plan_limit(plan, "max_requests_month", current_requests):
-                raise HTTPException(status_code=429, detail=f"Monthly request limit reached for your '{plan}' plan.")
+            current_requests = increment_monthly_usage(tenant)
+            if current_requests == -1:
+                from database import get_usage_stats
+                usage = get_usage_stats(tenant, days=30)
+                current_requests = int(usage.get("total_requests", 0))
+            limits = get_plan_limits(plan)
+            max_req = limits.get("max_requests_month", 1000)
+            if current_requests > max_req:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Monthly request limit reached for your '{plan}' plan ({current_requests}/{max_req}). "
+                           f"Upgrade at /settings to continue.",
+                )
         except HTTPException:
             raise
         except Exception:
@@ -2025,6 +2134,54 @@ def generate_api_key_endpoint(
 # frontend via @supabase/supabase-js. The backend only verifies tokens.
 # -----------------------------
 
+def _auto_provision_org(user: dict) -> Optional[dict]:
+    """Auto-create org + API key for new users who have no org yet."""
+    try:
+        from database import create_organization, create_api_key
+        import secrets
+
+        email = user.get("email", "")
+        name = user.get("name", email.split("@")[0])
+        # Create org slug from email prefix
+        slug = re.sub(r'[^a-z0-9]', '', email.split("@")[0].lower())[:20] or "user"
+        # Ensure unique slug
+        slug = f"{slug}_{secrets.token_hex(3)}"
+
+        org = create_organization(
+            name=f"{name}'s Workspace",
+            slug=slug,
+            owner_user_id=user["id"],
+            plan="free",
+        )
+        if org:
+            # Generate API key
+            key_suffix = secrets.token_urlsafe(24)
+            api_key = f"sc-{slug}-{key_suffix}"
+            tenant_id = f"sc-{slug}"
+            create_api_key(
+                api_key=api_key,
+                tenant_id=tenant_id,
+                user_id=user["id"],
+                plan="free",
+                org_id=str(org["id"]),
+                scope="read-write",
+                label="Default key (auto-created)",
+            )
+            app_log.info(f"Auto-provisioned org={slug} + API key for user={user['id']}")
+
+            # Send welcome email (non-blocking)
+            try:
+                from email_service import send_welcome_email
+                _bg_executor.submit(send_welcome_email, email, name)
+            except Exception:
+                pass
+
+            return org
+    except Exception as e:
+        error_log.warning(f"Auto-provision failed for user={user.get('id')}: {e}")
+    return None
+
+
 @app.get("/api/auth/me")
 def get_current_user(request: Request):
     """Get current authenticated user info from Supabase JWT."""
@@ -2036,6 +2193,17 @@ def get_current_user(request: Request):
             orgs = get_user_orgs(user["id"])
         except Exception:
             pass
+
+        # Auto-provision org + API key for new users
+        if not orgs:
+            new_org = _auto_provision_org(user)
+            if new_org:
+                try:
+                    from database import get_user_orgs
+                    orgs = get_user_orgs(user["id"])
+                except Exception:
+                    pass
+
         return {
             "id": user['id'],
             "email": user['email'],
@@ -2275,17 +2443,23 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     _ctx = _current_api_key_var.get()
     _require_scope(request, "read-write")
 
-    # Enforce plan limits
+    # Enforce plan limits (Redis counter for speed, DB fallback)
     try:
-        from billing import check_plan_limit
-        from database import get_usage_stats
+        from billing import check_plan_limit, get_plan_limits
+        from redis_cache import increment_monthly_usage
         plan = _ctx.get("plan", "free")
-        usage = get_usage_stats(tenant, days=30)
-        current_requests = int(usage.get("total_requests", 0))
-        if not check_plan_limit(plan, "max_requests_month", current_requests):
+        current_requests = increment_monthly_usage(tenant)
+        if current_requests == -1:
+            # Redis unavailable — fall back to DB (slower)
+            from database import get_usage_stats
+            usage = get_usage_stats(tenant, days=30)
+            current_requests = int(usage.get("total_requests", 0))
+        limits = get_plan_limits(plan)
+        max_req = limits.get("max_requests_month", 1000)
+        if current_requests > max_req:
             raise HTTPException(
                 status_code=429,
-                detail=f"Monthly request limit reached for your '{plan}' plan. "
+                detail=f"Monthly request limit reached for your '{plan}' plan ({current_requests}/{max_req}). "
                        f"Upgrade at /settings to continue.",
             )
     except HTTPException:
@@ -2341,8 +2515,8 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 if cached_ans is not None:
                     # ── Cache hit: stream the cached response in larger chunks ──
                     access_log.info(f"{tenant} | /v1/chat/completions | stream | {meta['hit']} | {meta['latency_ms']}ms")
-                    threading.Thread(target=_bg_log, args=(meta["hit"],), daemon=True).start()
-                    threading.Thread(target=_fire_webhook, args=(meta,), daemon=True).start()
+                    _bg_executor.submit(_bg_log, meta["hit"])
+                    _bg_executor.submit(_fire_webhook, meta)
                     # Send cached text in word-sized chunks for a natural feel
                     words = cached_ans.split(' ')
                     for i, word in enumerate(words):
@@ -2358,8 +2532,8 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     # Store the completed response in cache
                     full_response = "".join(full_response_parts)
                     meta["hit"] = "miss"
-                    threading.Thread(target=_bg_log, args=("miss",), daemon=True).start()
-                    threading.Thread(target=_fire_webhook, args=(meta,), daemon=True).start()
+                    _bg_executor.submit(_bg_log, "miss")
+                    _bg_executor.submit(_fire_webhook, meta)
                     svc.store_miss(
                         tenant, prompt_norm, full_response, messages,
                         body.model, ttl_seconds=body.ttl_seconds, user_id=user_id,
@@ -2409,8 +2583,8 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 )
             except Exception:
                 pass
-        threading.Thread(target=_bg_log, daemon=True).start()
-        
+        _bg_executor.submit(_bg_log)
+
         access_log.info(f"{tenant} | /v1/chat/completions | {meta['hit']} | sim={meta['similarity']:.3f} | {meta['latency_ms']}ms")
 
         if _prom:

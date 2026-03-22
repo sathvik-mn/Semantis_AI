@@ -13,7 +13,8 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 CACHE_DIR = "cache_data"
-CACHE_FILE = os.path.join(CACHE_DIR, "cache.pkl")
+CACHE_FILE = os.path.join(CACHE_DIR, "cache.json")
+CACHE_FILE_LEGACY = os.path.join(CACHE_DIR, "cache.pkl")
 KEYS_FILE = os.path.join(CACHE_DIR, "api_keys.json")
 
 def ensure_cache_dir():
@@ -99,25 +100,38 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
             "domain_thresholds": getattr(tenant_state, 'domain_thresholds', {}),  # Backward compatible
         }
     
-    # Save to file
-    with open(filepath, 'wb') as f:
-        pickle.dump(cache_data, f)
-    
+    # Save to file as JSON (safe serialization, no arbitrary code execution on load)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(cache_data, f)
+
     print(f"Cache saved to {filepath}")
 
 def load_cache(filepath: str = CACHE_FILE):
     """
-    Load cache data from disk.
-    
+    Load cache data from disk (JSON format, with legacy pickle fallback).
+
     Returns:
         Dictionary of tenant states or None if file doesn't exist
     """
-    if not os.path.exists(filepath):
-        return None
-    
-    try:
-        with open(filepath, 'rb') as f:
+    # Try JSON first, fall back to legacy pickle
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # Not JSON — might be legacy pickle, try that
+            with open(filepath, 'rb') as f:
+                cache_data = pickle.load(f)
+            print(f"Migrated legacy pickle cache to JSON")
+    elif os.path.exists(CACHE_FILE_LEGACY):
+        # Legacy pickle file exists but no JSON yet
+        with open(CACHE_FILE_LEGACY, 'rb') as f:
             cache_data = pickle.load(f)
+        print(f"Loaded legacy pickle cache (will save as JSON next time)")
+    else:
+        return None
+
+    try:
         
         # Reconstruct tenant states
         from semantic_cache_server import TenantState, CacheEntry, CacheEvent

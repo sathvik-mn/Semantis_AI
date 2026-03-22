@@ -252,3 +252,42 @@ def health_check() -> dict:
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+
+# ── Monthly usage counters for plan limit checking ──
+
+def _monthly_usage_key(tenant_id: str) -> str:
+    """Redis key for per-tenant monthly request counter. Resets via TTL."""
+    month = time.strftime("%Y-%m")
+    return f"usage:{tenant_id}:{month}"
+
+
+def increment_monthly_usage(tenant_id: str) -> int:
+    """Increment monthly request counter. Returns new count. Falls back to -1 if Redis unavailable."""
+    r = _get_redis()
+    if r is None:
+        return -1  # Signal caller to fall back to DB
+    try:
+        key = _monthly_usage_key(tenant_id)
+        count = r.incr(key)
+        if count == 1:
+            # First request this month — set TTL to expire at end of month (~32 days max)
+            r.expire(key, 32 * 24 * 3600)
+        return count
+    except Exception as e:
+        logger.warning("Redis increment_monthly_usage failed: %s", e)
+        return -1
+
+
+def get_monthly_usage(tenant_id: str) -> int:
+    """Get current monthly request count. Returns -1 if Redis unavailable."""
+    r = _get_redis()
+    if r is None:
+        return -1
+    try:
+        key = _monthly_usage_key(tenant_id)
+        val = r.get(key)
+        return int(val) if val else 0
+    except Exception as e:
+        logger.warning("Redis get_monthly_usage failed: %s", e)
+        return -1

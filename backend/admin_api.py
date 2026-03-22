@@ -3,7 +3,7 @@ Admin API Endpoints for Dashboard
 Provides comprehensive analytics, user management, and business insights.
 Uses Supabase Postgres via psycopg2.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from typing import Optional, List, Dict
 from pydantic import BaseModel
 import os
@@ -33,10 +33,14 @@ if not ADMIN_API_KEY:
     system_log.warning("ADMIN_API_KEY is not set. Admin endpoints are disabled.")
 
 
-def verify_admin_key(api_key: str = Query(...)):
+def verify_admin_key(
+    x_admin_key: str = Header(None, alias="X-Admin-Key"),
+    api_key: str = Query(None),
+):
+    key = x_admin_key or api_key
     if not ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Admin API is not configured. Set ADMIN_API_KEY env var.")
-    if api_key != ADMIN_API_KEY:
+    if not key or key != ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid admin API key")
     return True
 
@@ -788,11 +792,21 @@ def get_admin_health(admin: bool = Depends(require_admin)):
     stripe_key = os.getenv("STRIPE_SECRET_KEY", "")
     health["checks"]["stripe"] = {"status": "configured" if stripe_key and "PASTE" not in stripe_key else "not_configured"}
 
+    # Vector store check (Pinecone or FAISS fallback)
+    try:
+        from vector_store import health_check as vs_health
+        health["checks"]["vector_store"] = vs_health()
+    except Exception as e:
+        health["checks"]["vector_store"] = {"status": "error", "error": str(type(e).__name__)}
+
     # Environment config
     health["config"] = {
         "encryption_key": bool(os.getenv("ENCRYPTION_KEY")),
         "encryption_salt": bool(os.getenv("ENCRYPTION_SALT")),
         "admin_api_key": bool(os.getenv("ADMIN_API_KEY")),
+        "pinecone_api_key": bool(os.getenv("PINECONE_API_KEY")),
+        "sentry_dsn": bool(os.getenv("SENTRY_DSN")),
+        "resend_api_key": bool(os.getenv("RESEND_API_KEY")),
         "frontend_url": os.getenv("FRONTEND_URL", "not set"),
         "allowed_origins": os.getenv("ALLOWED_ORIGINS", "not set"),
     }

@@ -9,7 +9,7 @@ const adminApi = axios.create({
 });
 
 adminApi.interceptors.request.use(async (config) => {
-  config.params = { ...config.params, api_key: ADMIN_API_KEY };
+  config.headers['X-Admin-Key'] = ADMIN_API_KEY;
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
     config.headers.Authorization = `Bearer ${session.access_token}`;

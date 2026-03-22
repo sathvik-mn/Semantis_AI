@@ -26,7 +26,7 @@ def _get_pool():
             )
         _pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=2,
-            maxconn=10,
+            maxconn=int(os.getenv("DB_MAX_CONNECTIONS", "25")),
             dsn=DATABASE_URL
         )
     return _pool
