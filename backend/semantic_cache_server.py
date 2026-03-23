@@ -2083,8 +2083,10 @@ def list_cache_entries_endpoint(
         orgs = get_user_orgs(user["id"])
         if not orgs:
             return {"entries": [], "total": 0}
-        org_id = orgs[0].get("id")
-        tenant_id = orgs[0].get("slug", "")
+        org_id: str = orgs[0].get("id", "")
+        tenant_id: str = orgs[0].get("slug", "")
+        if not org_id:
+            return {"entries": [], "total": 0}
         entries = list_cache_entries(org_id, limit=limit, offset=offset, search=search, tenant_id=tenant_id)
         total = count_cache_entries(org_id, search=search)
         # Truncate response_text for listing
@@ -2116,7 +2118,9 @@ def delete_cache_entries_endpoint(request: Request, body: DeleteEntriesRequest):
         orgs = get_user_orgs(user["id"])
         if not orgs:
             raise HTTPException(status_code=403, detail="No organization found")
-        org_id = orgs[0].get("id")
+        org_id: str = orgs[0].get("id", "")
+        if not org_id:
+            raise HTTPException(status_code=403, detail="No organization found")
         if len(body.entry_ids) > 100:
             raise HTTPException(status_code=400, detail="Maximum 100 entries per delete request")
         deleted = delete_cache_entries_bulk(body.entry_ids, org_id)
