@@ -2,6 +2,8 @@ import { useState } from 'react';
 import * as api from '../api/semanticAPI';
 import { Flame, Upload, FileJson, AlertCircle, Check, Loader2 } from 'lucide-react';
 
+const BATCH_SIZE = 50;
+
 export function CacheWarmup() {
   const [file, setFile] = useState<File | null>(null);
   const [pasteText, setPasteText] = useState('');
@@ -9,6 +11,7 @@ export function CacheWarmup() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.WarmupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
 
   const parseEntries = (): api.WarmupEntry[] => {
     if (mode === 'paste') {
@@ -80,11 +83,18 @@ export function CacheWarmup() {
     return entries.filter((e) => e.prompt && e.response);
   };
 
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
   const handleWarmup = async () => {
     setError(null);
     setResult(null);
+    setProgress(null);
     setLoading(true);
     try {
+      if (mode === 'file' && file && file.size > MAX_FILE_SIZE) {
+        setError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 5 MB.`);
+        return;
+      }
       let entries: api.WarmupEntry[];
       if (mode === 'file' && file) {
         entries = await parseFile(file);
@@ -99,12 +109,25 @@ export function CacheWarmup() {
         setError('Maximum 500 entries per request. Split your file.');
         return;
       }
-      const res = await api.warmupCache(entries, true);
-      setResult(res);
-    } catch (err: any) {
-      setError(err.message || 'Warmup failed');
+
+      // Send in batches for progress tracking
+      const totals = { added: 0, skipped: 0, errors: 0 };
+      for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+        const batch = entries.slice(i, i + BATCH_SIZE);
+        setProgress({ sent: i, total: entries.length });
+        const res = await api.warmupCache(batch, true);
+        totals.added += res.added;
+        totals.skipped += res.skipped;
+        totals.errors += res.errors;
+      }
+      setProgress({ sent: entries.length, total: entries.length });
+      setResult({ message: 'Warmup complete', ...totals });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Warmup failed';
+      setError(message);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -165,6 +188,7 @@ export function CacheWarmup() {
       )}
 
       <button
+        type="button"
         onClick={handleWarmup}
         disabled={loading || (mode === 'paste' && !pasteText.trim()) || (mode === 'file' && !file)}
         style={styles.button}
@@ -175,6 +199,22 @@ export function CacheWarmup() {
           <><Flame size={18} /> Warm Cache</>
         )}
       </button>
+
+      {progress && (
+        <div style={styles.progressWrap}>
+          <div style={styles.progressBar}>
+            <div
+              style={{
+                ...styles.progressFill,
+                width: `${Math.round((progress.sent / progress.total) * 100)}%`,
+              }}
+            />
+          </div>
+          <span style={styles.progressText}>
+            {progress.sent} / {progress.total} entries processed
+          </span>
+        </div>
+      )}
 
       {result && (
         <div style={styles.result}>
@@ -290,6 +330,29 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '8px',
     color: '#fff',
     cursor: 'pointer',
+  },
+  progressWrap: {
+    marginTop: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  progressBar: {
+    height: '6px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '3px',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #f59e0b, #fbbf24)',
+    borderRadius: '3px',
+    transition: 'width 0.3s ease',
+  },
+  progressText: {
+    fontSize: '12px',
+    color: 'rgba(255, 255, 255, 0.5)',
+    textAlign: 'center',
   },
   result: {
     display: 'flex',

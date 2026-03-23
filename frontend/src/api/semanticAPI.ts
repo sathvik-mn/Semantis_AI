@@ -422,6 +422,56 @@ export async function warmupCache(entries: WarmupEntry[], skipDuplicates = true)
   return res.json();
 }
 
+// ── Cache Entry Management ──
+
+export interface CacheEntryItem {
+  id: number;
+  prompt_norm: string;
+  response_text: string;
+  model: string;
+  domain: string;
+  use_count: number;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface CacheEntriesResponse {
+  entries: CacheEntryItem[];
+  total: number;
+}
+
+export async function listCacheEntries(
+  limit = 50,
+  offset = 0,
+  search?: string,
+): Promise<CacheEntriesResponse> {
+  const token = await getSupabaseToken();
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (search) params.set('search', search);
+  const res = await fetch(`${BACKEND_URL}/api/cache/entries?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to list entries' }));
+    throw new Error(err.detail || 'Failed to list entries');
+  }
+  return res.json();
+}
+
+export async function deleteCacheEntries(entryIds: number[]): Promise<{ deleted: number }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/cache/entries`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ entry_ids: entryIds }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to delete entries' }));
+    throw new Error(err.detail || 'Failed to delete entries');
+  }
+  return res.json();
+}
+
 export async function upgradePlan(
   plan: string,
   successUrl?: string,

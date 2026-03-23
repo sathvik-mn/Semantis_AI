@@ -1933,6 +1933,12 @@ class WarmupEntry(BaseModel):
     response: str = ""
     model: Optional[str] = None
 
+    @validator("prompt", "response")
+    def limit_field_length(cls, v: str) -> str:  # noqa: N805
+        if len(v) > 10_000:
+            raise ValueError("Field exceeds 10 000 character limit")
+        return v
+
 
 class WarmupRequest(BaseModel):
     entries: List[WarmupEntry]
@@ -2057,6 +2063,69 @@ def cache_warmup_api_key(body: WarmupRequest, request: Request, tenant: str = De
         raise
     except Exception as e:
         error_log.exception(f"Cache warmup failed | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ── Cache Entry Management Endpoints ──
+
+@app.get("/api/cache/entries")
+@limiter.limit("30/minute")
+def list_cache_entries_endpoint(
+    request: Request,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None, max_length=200),
+):
+    """List cache entries for the authenticated user's org. Supports pagination and search."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs, list_cache_entries, count_cache_entries
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            return {"entries": [], "total": 0}
+        org_id = orgs[0].get("id")
+        tenant_id = orgs[0].get("slug", "")
+        entries = list_cache_entries(org_id, limit=limit, offset=offset, search=search, tenant_id=tenant_id)
+        total = count_cache_entries(org_id, search=search)
+        # Truncate response_text for listing
+        for e in entries:
+            if e.get("response_text") and len(e["response_text"]) > 200:
+                e["response_text"] = e["response_text"][:200] + "..."
+            for dt_field in ("created_at", "last_used_at", "ttl_expires_at"):
+                if e.get(dt_field) is not None:
+                    e[dt_field] = str(e[dt_field])
+        return {"entries": entries, "total": total}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"List cache entries failed | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class DeleteEntriesRequest(BaseModel):
+    entry_ids: List[int]
+
+
+@app.delete("/api/cache/entries")
+@limiter.limit("20/minute")
+def delete_cache_entries_endpoint(request: Request, body: DeleteEntriesRequest):
+    """Delete one or more cache entries by ID."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs, delete_cache_entries_bulk
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            raise HTTPException(status_code=403, detail="No organization found")
+        org_id = orgs[0].get("id")
+        if len(body.entry_ids) > 100:
+            raise HTTPException(status_code=400, detail="Maximum 100 entries per delete request")
+        deleted = delete_cache_entries_bulk(body.entry_ids, org_id)
+        app_log.info(f"Cache entries deleted | org={org_id} | deleted={deleted}")
+        return {"deleted": deleted}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Delete cache entries failed | error={e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
