@@ -1267,6 +1267,7 @@ class SemanticCacheService:
         user_id: Optional[str] = None,
         ttl_seconds: int = 7 * 24 * 3600,
         skip_duplicates: bool = True,
+        org_id: Optional[str] = None,
     ) -> dict:
         """
         Pre-populate cache with historical (prompt, response) pairs.
@@ -1326,6 +1327,22 @@ class SemanticCacheService:
                     store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
+                # Persist to PostgreSQL (encrypted if configured)
+                if org_id:
+                    try:
+                        from database import store_cache_entry
+                        import datetime as _dt
+                        ttl_dt = (_dt.datetime.utcnow() + _dt.timedelta(seconds=ttl_seconds)).isoformat()
+                        _bg_executor.submit(
+                            store_cache_entry,
+                            org_id=org_id, prompt_hash=warmup_hash,
+                            prompt_norm=prompt_norm, response_text=response_text,
+                            embedding_bytes=emb.tobytes() if emb is not None else None,
+                            model=model, ttl_expires_at=ttl_dt,
+                            domain=domain_hint(user_text), tenant_id=tenant_id,
+                        )
+                    except Exception as _db_err:
+                        error_log.warning(f"Warmup DB store failed: {_db_err}")
                 if (i + 1) % 5 == 0:
                     time.sleep(0.05)
             except Exception as e:
@@ -1997,11 +2014,13 @@ def cache_warmup(body: WarmupRequest, request: Request):
         ]
         if len(entries) > 500:
             raise HTTPException(status_code=400, detail="Maximum 500 entries per request")
+        warmup_org_id: str = orgs[0].get("id", "") if orgs else ""
         result = svc.warmup(
             tenant,
             entries,
             user_id=user["id"],
             skip_duplicates=body.skip_duplicates,
+            org_id=warmup_org_id or None,
         )
         app_log.info(f"Cache warmup | tenant={tenant} | added={result['added']} | skipped={result['skipped']} | errors={result['errors']}")
         return {"message": "Warmup complete", **result}
@@ -2052,11 +2071,13 @@ def cache_warmup_api_key(body: WarmupRequest, request: Request, tenant: str = De
         ]
         if len(entries) > 500:
             raise HTTPException(status_code=400, detail="Maximum 500 entries per request")
+        api_org_id: str = _ctx.get("org_id", "")
         result = svc.warmup(
             tenant,
             entries,
             user_id=user_id,
             skip_duplicates=body.skip_duplicates,
+            org_id=api_org_id or None,
         )
         return {"message": "Warmup complete", **result}
     except HTTPException:
