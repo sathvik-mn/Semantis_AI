@@ -4,12 +4,12 @@ Provides comprehensive analytics, user management, and business insights.
 Uses Supabase Postgres via psycopg2.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
-from typing import Optional, List, Dict
+from typing import Optional
 from pydantic import BaseModel
 import os
 from psycopg2.extras import RealDictCursor
 from database import (
-    get_db_connection, list_api_keys, get_usage_stats,
+    get_db_connection, get_usage_stats,
     update_plan, deactivate_api_key
 )
 import logging

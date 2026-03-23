@@ -2,7 +2,6 @@
 Script to list all registered users and their details from the database.
 """
 import sys
-import os
 from database import get_db_connection
 
 def list_all_users():
@@ -72,7 +71,7 @@ def list_all_users():
                     """, (user_dict['id'],))
                     
                     api_keys = cursor.fetchall()
-                    print(f"  API Key Details:")
+                    print("  API Key Details:")
                     for ak in api_keys:
                         ak_dict = dict(ak)
                         status = "Active" if ak_dict['is_active'] else "Inactive"
@@ -99,7 +98,7 @@ def list_all_users():
                 usage = cursor.fetchone()
                 if usage and usage['total_requests']:
                     usage_dict = dict(usage)
-                    print(f"  Usage Statistics:")
+                    print("  Usage Statistics:")
                     print(f"    - Total Requests: {usage_dict['total_requests']}")
                     print(f"    - Cache Hits: {usage_dict['total_hits'] or 0}")
                     print(f"    - Cache Misses: {usage_dict['total_misses'] or 0}")

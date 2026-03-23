@@ -222,10 +222,10 @@ def main():
         is_valid = validate_api_key(args.validate)
         if is_valid:
             tenant = extract_tenant(args.validate)
-            print(f"[VALID] API key is valid")
+            print("[VALID] API key is valid")
             print(f"Tenant: {tenant}")
         else:
-            print(f"[INVALID] API key format is invalid")
+            print("[INVALID] API key format is invalid")
             print("Expected format: sc-{tenant}-{random}")
         return
     
@@ -243,10 +243,8 @@ def main():
         # Allow auto-generation if no tenant provided
         if not args.tenant:
             keys_tuples = generate_multiple_keys(None, args.count, args.length, auto_tenant=True)
-            tenant_label = "auto-generated"
         else:
             keys_tuples = generate_multiple_keys(args.tenant, args.count, args.length, auto_tenant=False)
-            tenant_label = args.tenant
         
         print(f"\nGenerated {len(keys_tuples)} API key(s):")
         print("=" * 80)

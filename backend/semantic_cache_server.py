@@ -14,7 +14,12 @@ FastAPI service providing:
  - Audit logging, API key scoping, per-org rate limits
 """
 
-import os, time, re, logging, hashlib, json
+import os
+import time
+import re
+import logging
+import hashlib
+import json
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -544,7 +549,6 @@ class SemanticCacheService:
             T = TenantState()
             # Load persisted settings from DB (org settings JSONB)
             try:
-                from database import get_api_key_info
                 # Find org_id for this tenant from any active API key
                 from database import get_db_connection
                 from psycopg2.extras import RealDictCursor
@@ -1047,7 +1051,6 @@ class SemanticCacheService:
         class _CacheMiss(Exception):
             pass
 
-        import builtins
         _original = globals().get("call_llm")
 
         def _raise_sentinel(*a, **kw):
@@ -1675,7 +1678,6 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 def health():
     """Health check endpoint with system status."""
-    import sys
     
     try:
         try:
@@ -1739,7 +1741,7 @@ def get_metrics(tenant: str = Depends(get_tenant_from_key)):
             db_total = int(db_stats.get("total_requests", 0))
             db_hits = int(db_stats.get("total_hits", 0))
             db_misses = int(db_stats.get("total_misses", 0))
-            db_tokens = int(db_stats.get("total_tokens", 0))
+            _db_tokens = int(db_stats.get("total_tokens", 0))  # noqa: F841
             if db_total > 0:
                 m["requests"] = db_total
                 m["total_requests"] = db_total
@@ -1943,7 +1945,7 @@ def cache_warmup(body: WarmupRequest, request: Request):
     """
     try:
         user = _get_user_from_supabase_token(request)
-        from database import get_user_orgs, get_api_key_info, list_api_keys
+        from database import get_user_orgs, list_api_keys
         orgs = get_user_orgs(user["id"])
         tenant = body.tenant
         if not tenant and orgs:
@@ -2516,7 +2518,7 @@ def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, l
                 (org_id, limit)
             )
             logs = [dict(r) for r in cur.fetchall()]
-        return {"audit_logs": [{k: str(v) for k, v in l.items()} for l in logs]}
+        return {"audit_logs": [{k: str(v) for k, v in row.items()} for row in logs]}
     except HTTPException:
         raise
     except Exception as e:
@@ -2549,7 +2551,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
 
     # Enforce plan limits (Redis counter for speed, DB fallback)
     try:
-        from billing import check_plan_limit, get_plan_limits
+        from billing import get_plan_limits
         from redis_cache import increment_monthly_usage
         plan = _ctx.get("plan", "free")
         current_requests = increment_monthly_usage(tenant)
@@ -3048,13 +3050,13 @@ if __name__ == "__main__":
     
     app_log.info(f"Semantis AI Semantic Cache API running on http://0.0.0.0:{port}")
     app_log.info(f"Logs directory: {os.path.abspath('logs')}")
-    app_log.info(f"Access logs: logs/access.log")
-    app_log.info(f"Error logs: logs/errors.log")
-    app_log.info(f"Semantic logs: logs/semantic_ops.log")
-    app_log.info(f"Performance logs: logs/performance.log")
-    app_log.info(f"Security logs: logs/security.log")
-    app_log.info(f"System logs: logs/system.log")
-    app_log.info(f"Application logs: logs/application.log")
+    app_log.info("Access logs: logs/access.log")
+    app_log.info("Error logs: logs/errors.log")
+    app_log.info("Semantic logs: logs/semantic_ops.log")
+    app_log.info("Performance logs: logs/performance.log")
+    app_log.info("Security logs: logs/security.log")
+    app_log.info("System logs: logs/system.log")
+    app_log.info("Application logs: logs/application.log")
     
     try:
         uvicorn.run(app, host="0.0.0.0", port=port)

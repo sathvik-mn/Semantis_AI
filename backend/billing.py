@@ -6,7 +6,7 @@ Stripe is optional — if STRIPE_SECRET_KEY is not set, billing is disabled.
 """
 import os
 import logging
-from typing import Optional, Dict, List
+from typing import Optional
 
 logger = logging.getLogger("semantis.billing")
 

@@ -8,12 +8,9 @@ Falls back gracefully to in-memory-only mode if Redis is unavailable.
 import os
 import json
 import time
-import struct
-import hashlib
 import logging
 import threading
-from typing import Optional, Dict, Tuple, List
-from collections import OrderedDict
+from typing import Optional
 
 import numpy as np
 

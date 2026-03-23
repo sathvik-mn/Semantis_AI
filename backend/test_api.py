@@ -7,7 +7,8 @@ Validates:
 - Query and cache behavior
 """
 
-import requests, time, json
+import requests
+import time
 
 BASE_URL = "http://localhost:8000"
 HEADERS = {"Authorization": "Bearer sc-test-local"}

@@ -18,7 +18,7 @@ def test_database():
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cursor.fetchall()]
-            print(f"✅ Database connected")
+            print("✅ Database connected")
             print(f"✅ Tables found: {', '.join(tables)}")
             
             # Test each table
@@ -40,7 +40,7 @@ def test_backend_health():
         r = requests.get("http://localhost:8000/health", timeout=5)
         if r.status_code == 200:
             data = r.json()
-            print(f"✅ Backend is running")
+            print("✅ Backend is running")
             print(f"   Status: {data.get('status')}")
             print(f"   Version: {data.get('version')}")
             print(f"   Cache: {data.get('cache', {})}")
@@ -70,7 +70,7 @@ def test_backend_endpoints():
         r = requests.get("http://localhost:8000/metrics", headers=headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
-            print(f"✅ Metrics endpoint: OK")
+            print("✅ Metrics endpoint: OK")
             print(f"   Requests: {data.get('total_requests', 0)}")
             print(f"   Hit ratio: {data.get('hit_ratio', 0)}")
             results['metrics'] = True
@@ -91,7 +91,7 @@ def test_backend_endpoints():
                          json=data, headers=headers, timeout=30)
         if r.status_code == 200:
             resp = r.json()
-            print(f"✅ Chat endpoint: OK")
+            print("✅ Chat endpoint: OK")
             meta = resp.get('meta', {})
             print(f"   Hit type: {meta.get('hit', 'unknown')}")
             print(f"   Similarity: {meta.get('similarity', 0)}")
@@ -120,13 +120,13 @@ def test_backend_endpoints():
             resp = r.json()
             meta = resp.get('meta', {})
             if meta.get('hit') == 'exact':
-                print(f"✅ Cache hit test: EXACT HIT")
+                print("✅ Cache hit test: EXACT HIT")
             elif meta.get('hit') == 'semantic':
-                print(f"✅ Cache hit test: SEMANTIC HIT")
+                print("✅ Cache hit test: SEMANTIC HIT")
                 print(f"   Hybrid score: {meta.get('hybrid_score', 'N/A')}")
                 print(f"   Confidence: {meta.get('confidence', 'N/A')}")
             else:
-                print(f"⚠️  Cache hit test: MISS (expected on first run)")
+                print("⚠️  Cache hit test: MISS (expected on first run)")
             results['cache'] = True
         else:
             results['cache'] = False
@@ -159,12 +159,12 @@ def test_algorithm_features():
         if r.status_code == 200:
             resp = r.json()
             meta = resp.get('meta', {})
-            print(f"✅ Context-aware test: OK")
+            print("✅ Context-aware test: OK")
             print(f"   Strategy: {meta.get('strategy', 'unknown')}")
             if 'hybrid_score' in meta:
-                print(f"   ✅ Hybrid scoring active")
+                print("   ✅ Hybrid scoring active")
             if 'confidence' in meta:
-                print(f"   ✅ Confidence scoring active")
+                print("   ✅ Confidence scoring active")
             return True
         else:
             print(f"❌ Context-aware test failed: Status {r.status_code}")
@@ -181,7 +181,7 @@ def test_frontend():
     try:
         r = requests.get("http://localhost:3000", timeout=5)
         if r.status_code == 200:
-            print(f"✅ Frontend is running on port 3000")
+            print("✅ Frontend is running on port 3000")
             return True
         else:
             print(f"⚠️  Frontend returned status {r.status_code}")
