@@ -1,0 +1,5 @@
+[lint]
+ignore = [
+    "E402",  # Module level import not at top of file (intentional for env setup)
+    "E722",  # Bare except (used in non-critical fallback paths)
+]

@@ -18,3 +18,4 @@ sentence-transformers
 pinecone
 sentry-sdk[fastapi]
 resend
+psutil

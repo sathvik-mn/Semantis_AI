@@ -14,7 +14,12 @@ FastAPI service providing:
  - Audit logging, API key scoping, per-org rate limits
 """
 
-import os, time, re, logging, hashlib, json
+import os
+import time
+import re
+import logging
+import hashlib
+import json
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -347,7 +352,7 @@ def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Opt
     client = _get_openai_client(key)
     stream = client.chat.completions.create(
         model=CHAT_MODEL,
-        messages=messages,
+        messages=messages,  # type: ignore[arg-type]
         temperature=temperature,
         max_tokens=1024,
         stream=True,
@@ -367,12 +372,12 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
         client = _get_openai_client(key)
         resp = client.chat.completions.create(
             model=CHAT_MODEL,
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=1024,
         )
         llm_time = round((time.time() - start_time) * 1000, 2)
-        response_text = resp.choices[0].message.content.strip()
+        response_text = (resp.choices[0].message.content or "").strip()
         completion_tokens = len(response_text.split())
         total_tokens = prompt_tokens + completion_tokens
         
@@ -426,7 +431,7 @@ class CacheEvent:
 @dataclass
 class TenantState:
     exact: Dict[str, CacheEntry] = field(default_factory=dict)
-    index: Optional[faiss.IndexFlatIP] = None
+    index: Optional[faiss.Index] = None
     rows: List[CacheEntry] = field(default_factory=list)
     dim: Optional[int] = None
     # Tier 1: normalized-text hash index for O(1) deep-norm lookups
@@ -445,6 +450,7 @@ class TenantState:
     sim_threshold: float = 0.72
     domain_thresholds: Dict[str, float] = field(default_factory=dict)
     events: List[CacheEvent] = field(default_factory=list)
+    _near_misses: List[float] = field(default_factory=list)
 
 # -----------------------------
 # Core semantic cache service
@@ -544,7 +550,6 @@ class SemanticCacheService:
             T = TenantState()
             # Load persisted settings from DB (org settings JSONB)
             try:
-                from database import get_api_key_info
                 # Find org_id for this tenant from any active API key
                 from database import get_db_connection
                 from psycopg2.extras import RealDictCursor
@@ -610,14 +615,14 @@ class SemanticCacheService:
         if len(T.events) > 1000:
             T.events = T.events[-1000:]
 
-    def _faiss_add(self, T: TenantState, emb: np.ndarray, tenant_id: str = "", entry_id: str = "", metadata: dict = None):
+    def _faiss_add(self, T: TenantState, emb: np.ndarray, tenant_id: str = "", entry_id: str = "", metadata: Optional[dict] = None):
         """Add embedding to FAISS (local) and Pinecone (if available)."""
         v = emb.astype("float32").reshape(1, -1)
         faiss.normalize_L2(v)
         if T.index is None:
             T.dim = v.shape[1]
             T.index = faiss.IndexFlatIP(T.dim)
-        T.index.add(v)
+        T.index.add(v)  # type: ignore[call-arg]
         # Tier 2b: auto-upgrade to IVF when cache grows large
         if len(T.rows) == IVF_UPGRADE_THRESHOLD and T.dim is not None:
             self._upgrade_to_ivf(T)
@@ -633,7 +638,7 @@ class SemanticCacheService:
         if T.local_index is None:
             T.local_dim = v.shape[1]
             T.local_index = faiss.IndexFlatIP(T.local_dim)
-        T.local_index.add(v)
+        T.local_index.add(v)  # type: ignore[call-arg]
 
     def _upgrade_to_ivf(self, T: TenantState):
         """Upgrade from IndexFlatIP to IndexIVFFlat for O(sqrt(n)) search."""
@@ -646,8 +651,8 @@ class SemanticCacheService:
                 r.embedding.astype("float32").reshape(1, -1) for r in T.rows
             ])
             faiss.normalize_L2(all_vecs)
-            ivf_index.train(all_vecs)
-            ivf_index.add(all_vecs)
+            ivf_index.train(all_vecs)  # type: ignore[call-arg]
+            ivf_index.add(all_vecs)  # type: ignore[call-arg]
             ivf_index.nprobe = max(1, nlist // 4)
             T.index = ivf_index
             semantic_log.info(
@@ -669,10 +674,10 @@ class SemanticCacheService:
         d = all_vecs.shape[1]
         kmeans = faiss.Kmeans(d, n_clusters, niter=20, verbose=False, gpu=False)
         kmeans.train(all_vecs)
-        T.cluster_centroids = kmeans.centroids.copy()
+        T.cluster_centroids = kmeans.centroids.copy()  # type: ignore[union-attr]
         T.n_clusters = n_clusters
         # Assign cluster IDs to entries
-        _, assignments = kmeans.index.search(all_vecs, 1)
+        _, assignments = kmeans.index.search(all_vecs, 1)  # type: ignore[call-arg]
         for i, row in enumerate(T.rows):
             row.cluster_id = int(assignments[i][0])
 
@@ -746,7 +751,7 @@ class SemanticCacheService:
                     faiss.normalize_L2(lq)
                     local_k = min(3, T.local_index.ntotal)
                     if local_k > 0:
-                        local_sims, _ = T.local_index.search(lq, local_k)
+                        local_sims, _ = T.local_index.search(lq, local_k)  # type: ignore[call-arg]
                         best_local_sim = float(local_sims[0][0])
                         if best_local_sim < 0.40:
                             local_gate_passed = False
@@ -778,7 +783,7 @@ class SemanticCacheService:
                 faiss.normalize_L2(q)
                 pinecone_results = pinecone_search(tenant_id, q.flatten(), top_k=10)
                 # Build a hash→entry lookup from local rows for metadata
-                row_lookup = {r.prompt_hash: r for r in T.rows if hasattr(r, 'prompt_hash')}
+                row_lookup = {hashlib.md5(r.prompt_norm.encode()).hexdigest(): r for r in T.rows}
                 # Also build from exact cache
                 for key, entry in T.exact.items():
                     h = hashlib.md5(key.encode()).hexdigest()
@@ -802,9 +807,9 @@ class SemanticCacheService:
                     cq = query_emb.astype("float32").reshape(1, -1)
                     faiss.normalize_L2(cq)
                     centroid_index = faiss.IndexFlatIP(T.cluster_centroids.shape[1])
-                    centroid_index.add(T.cluster_centroids)
+                    centroid_index.add(T.cluster_centroids)  # type: ignore[call-arg]
                     n_probe_clusters = max(1, T.n_clusters // 3)
-                    _, cluster_ids = centroid_index.search(cq, n_probe_clusters)
+                    _, cluster_ids = centroid_index.search(cq, n_probe_clusters)  # type: ignore[call-arg]
                     target_clusters = set(int(c) for c in cluster_ids[0] if c >= 0)
                     search_rows_mask = set(
                         i for i, r in enumerate(T.rows) if r.cluster_id in target_clusters
@@ -813,7 +818,8 @@ class SemanticCacheService:
                 k = min(10, len(T.rows))
                 q = query_emb.astype("float32").reshape(1, -1)
                 faiss.normalize_L2(q)
-                sims, idxs = T.index.search(q, k)
+                assert T.index is not None
+                sims, idxs = T.index.search(q, k)  # type: ignore[call-arg]
 
                 for i in range(k):
                     idx = int(idxs[0][i])
@@ -940,6 +946,11 @@ class SemanticCacheService:
 
         # Store immediately with query embedding (fast path)
         _cached_emb = query_emb
+        # Capture org_id before entering thread
+        try:
+            _query_org_id = _current_api_key_var.get().get("org_id")
+        except Exception:
+            _query_org_id = None
         def _store_fast():
             """Store entry in cache ASAP with just the query embedding."""
             try:
@@ -974,6 +985,22 @@ class SemanticCacheService:
                     store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
+                # Persist to DB (encrypted if configured)
+                try:
+                    if _query_org_id:
+                        from database import store_cache_entry
+                        import datetime
+                        ttl_dt = (datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl_seconds)).isoformat()
+                        store_cache_entry(
+                            org_id=_query_org_id, prompt_hash=prompt_hash,
+                            prompt_norm=prompt_norm, response_text=response_text,
+                            embedding_bytes=emb.tobytes() if emb is not None else None,
+                            model=model, ttl_expires_at=ttl_dt,
+                            domain=entry_domain, tenant_id=tenant_id,
+                        )
+                        access_log.info(f"{tenant_id} | DB cache stored | encrypted={bool(os.getenv('CACHE_ENCRYPTION_KEY'))}")
+                except Exception as _db_err:
+                    error_log.warning(f"DB cache store failed: {_db_err}")
 
                 # Enrich asynchronously: response embedding, local embedding, clusters
                 def _enrich():
@@ -1026,7 +1053,6 @@ class SemanticCacheService:
         class _CacheMiss(Exception):
             pass
 
-        import builtins
         _original = globals().get("call_llm")
 
         def _raise_sentinel(*a, **kw):
@@ -1055,6 +1081,7 @@ class SemanticCacheService:
         model: str,
         ttl_seconds: int = 7 * 24 * 3600,
         user_id: Optional[str] = None,
+        org_id: Optional[str] = None,
     ):
         """Store a response after a cache miss (e.g. after streaming completes)."""
         T = self.tenant(tenant_id)
@@ -1070,7 +1097,9 @@ class SemanticCacheService:
             pass
 
         _cached_emb = query_emb
+        _store_org_id = org_id
         def _store_fast():
+            access_log.info(f"{tenant_id} | _store_fast ENTERED | org={_store_org_id}")
             try:
                 emb = _cached_emb
                 if emb is None:
@@ -1103,6 +1132,24 @@ class SemanticCacheService:
                     store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
+                # Persist to DB (encrypted if configured)
+                try:
+                    if _store_org_id:
+                        from database import store_cache_entry
+                        import datetime
+                        ttl_dt = (datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl_seconds)).isoformat()
+                        store_cache_entry(
+                            org_id=_store_org_id, prompt_hash=prompt_hash,
+                            prompt_norm=prompt_norm, response_text=response_text,
+                            embedding_bytes=emb.tobytes() if emb is not None else None,
+                            model=model, ttl_expires_at=ttl_dt,
+                            domain=entry_domain, tenant_id=tenant_id,
+                        )
+                        access_log.info(f"{tenant_id} | DB cache stored (store_miss) | org={_store_org_id}")
+                    else:
+                        error_log.warning(f"{tenant_id} | DB cache skipped: org_id is None")
+                except Exception as _db_err:
+                    error_log.warning(f"DB cache store failed: {_db_err}")
                 def _enrich():
                     try:
                         resp_emb = None
@@ -1123,6 +1170,7 @@ class SemanticCacheService:
                 _bg_executor.submit(_enrich)
             except Exception as e:
                 error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
+        access_log.info(f"{tenant_id} | store_miss | submitting _store_fast | org={_store_org_id}")
         _bg_executor.submit(_store_fast)
 
     def metrics(self, tenant_id: str) -> dict:
@@ -1323,7 +1371,7 @@ def _get_rate_limit_key(request: Request) -> str:
 limiter = Limiter(key_func=_get_rate_limit_key)
 app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 # ── Scheduled log cleanup (runs daily in background) ──
@@ -1512,7 +1560,8 @@ def get_tenant_from_key(request: Request) -> str:
     
     ctx = {"key": token, "user_id": None, "org_id": None, "scope": "read-write"}
     _current_api_key_var.set(ctx)
-    
+    request.state.api_ctx = ctx  # Also store on request for generator access
+
     # Fast in-memory API key cache (avoids DB round-trip on every request)
     cached = _api_key_cache.get(token)
     if cached and (time.time() - cached["ts"]) < 300:
@@ -1555,6 +1604,7 @@ def get_tenant_from_key(request: Request) -> str:
             ctx["user_id"] = key_info.get('user_id')
             ctx["org_id"] = str(key_info.get('org_id', '')) or None
             ctx["scope"] = key_info.get('scope', 'read-write')
+            ctx["plan"] = key_info.get('plan', 'free')
             _current_api_key_var.set(ctx)
             _api_key_cache[token] = {
                 "user_id": ctx["user_id"],
@@ -1583,6 +1633,7 @@ def get_tenant_from_key(request: Request) -> str:
     except Exception as e:
         error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
         raise HTTPException(status_code=503, detail="Authentication service temporarily unavailable")
+    return tenant
 
 
 def _require_scope(request: Request, required: str):
@@ -1630,9 +1681,10 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 def health():
     """Health check endpoint with system status."""
-    import sys
     
     try:
+        memory = None
+        cpu_percent = 0.0
         try:
             import psutil
             memory = psutil.virtual_memory()
@@ -1668,7 +1720,7 @@ def health():
             "redis": redis_status,
         }
         
-        if has_system_metrics:
+        if has_system_metrics and memory is not None:
             health_status["system"] = {
                 "memory_percent": round(memory.percent, 2),
                 "memory_available_gb": round(memory.available / (1024**3), 2),
@@ -1694,7 +1746,7 @@ def get_metrics(tenant: str = Depends(get_tenant_from_key)):
             db_total = int(db_stats.get("total_requests", 0))
             db_hits = int(db_stats.get("total_hits", 0))
             db_misses = int(db_stats.get("total_misses", 0))
-            db_tokens = int(db_stats.get("total_tokens", 0))
+            _db_tokens = int(db_stats.get("total_tokens", 0))  # noqa: F841
             if db_total > 0:
                 m["requests"] = db_total
                 m["total_requests"] = db_total
@@ -1898,7 +1950,7 @@ def cache_warmup(body: WarmupRequest, request: Request):
     """
     try:
         user = _get_user_from_supabase_token(request)
-        from database import get_user_orgs, get_api_key_info, list_api_keys
+        from database import get_user_orgs, list_api_keys
         orgs = get_user_orgs(user["id"])
         tenant = body.tenant
         if not tenant and orgs:
@@ -2471,7 +2523,7 @@ def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, l
                 (org_id, limit)
             )
             logs = [dict(r) for r in cur.fetchall()]
-        return {"audit_logs": [{k: str(v) for k, v in l.items()} for l in logs]}
+        return {"audit_logs": [{k: str(v) for k, v in row.items()} for row in logs]}
     except HTTPException:
         raise
     except Exception as e:
@@ -2499,12 +2551,12 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
         client = openai.OpenAI(base_url="https://api.semantis.ai/v1", api_key="sc-...")
     Supports stream=True for streaming responses.
     """
-    _ctx = _current_api_key_var.get()
+    _ctx = getattr(request.state, 'api_ctx', None) or _current_api_key_var.get()
     _require_scope(request, "read-write")
 
     # Enforce plan limits (Redis counter for speed, DB fallback)
     try:
-        from billing import check_plan_limit, get_plan_limits
+        from billing import get_plan_limits
         from redis_cache import increment_monthly_usage
         plan = _ctx.get("plan", "free")
         current_requests = increment_monthly_usage(tenant)
@@ -2538,13 +2590,17 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     )
     try:
         user_id = _ctx.get("user_id")
+        # Capture context values NOW — ContextVar may not propagate into generator/thread
+        _captured_key = _ctx.get("key", "unknown")
+        _captured_uid = _ctx.get("user_id")
+        _captured_org = _ctx.get("org_id")
         chunk_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}"
 
         if body.stream:
             def stream_generator():
-                _log_key = _ctx.get("key", "unknown")
-                _log_uid = _ctx.get("user_id")
-                _log_org = _ctx.get("org_id")
+                _log_key = _captured_key
+                _log_uid = _captured_uid
+                _log_org = _captured_org
 
                 # Step 1: cache lookup only (no LLM call)
                 cached_ans, meta = svc.lookup(
@@ -2609,11 +2665,12 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     try:
                         _bg_log("miss", full_response)
                     except Exception as _e2:
-                        error_log.warning(f"direct _bg_log miss failed: {_e2}")
+                        error_log.warning(f"log_usage failed in stream: {_e2}")
                     _bg_executor.submit(_fire_webhook, meta)
                     svc.store_miss(
                         tenant, prompt_norm, full_response, messages,
                         body.model, ttl_seconds=body.ttl_seconds, user_id=user_id,
+                        org_id=_log_org,
                     )
 
                 # Finish SSE stream
@@ -2856,7 +2913,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         user_email = user.get("email", "")
         
         org_full = get_organization(org_id)
-        settings = org_full.get("settings") or {}
+        settings = (org_full.get("settings") if org_full else None) or {}
         customer_id = settings.get("stripe_customer_id")
         
         if not customer_id:
@@ -2895,7 +2952,7 @@ def billing_portal(request: Request):
         if not orgs:
             raise HTTPException(status_code=400, detail="No organization found")
         org_full = get_organization(str(orgs[0]["id"]))
-        settings = org_full.get("settings") or {}
+        settings = (org_full.get("settings") if org_full else None) or {}
         customer_id = settings.get("stripe_customer_id")
         if not customer_id:
             raise HTTPException(status_code=400, detail="No active subscription found")
@@ -2998,13 +3055,13 @@ if __name__ == "__main__":
     
     app_log.info(f"Semantis AI Semantic Cache API running on http://0.0.0.0:{port}")
     app_log.info(f"Logs directory: {os.path.abspath('logs')}")
-    app_log.info(f"Access logs: logs/access.log")
-    app_log.info(f"Error logs: logs/errors.log")
-    app_log.info(f"Semantic logs: logs/semantic_ops.log")
-    app_log.info(f"Performance logs: logs/performance.log")
-    app_log.info(f"Security logs: logs/security.log")
-    app_log.info(f"System logs: logs/system.log")
-    app_log.info(f"Application logs: logs/application.log")
+    app_log.info("Access logs: logs/access.log")
+    app_log.info("Error logs: logs/errors.log")
+    app_log.info("Semantic logs: logs/semantic_ops.log")
+    app_log.info("Performance logs: logs/performance.log")
+    app_log.info("Security logs: logs/security.log")
+    app_log.info("System logs: logs/system.log")
+    app_log.info("Application logs: logs/application.log")
     
     try:
         uvicorn.run(app, host="0.0.0.0", port=port)

@@ -47,8 +47,8 @@ def test_openai_compatible_endpoint():
     
     if response.status_code == 200:
         result = response.json()
-        print(f"\n[SUCCESS] Request successful!")
-        print(f"Response format: OpenAI-compatible")
+        print("\n[SUCCESS] Request successful!")
+        print("Response format: OpenAI-compatible")
         print(f"Answer: {result['choices'][0]['message']['content'][:100]}...")
         print(f"Model: {result['model']}")
         print(f"Cache hit: {result.get('meta', {}).get('hit', 'unknown')}")
@@ -74,7 +74,7 @@ def test_openai_compatible_endpoint():
         hit_type = result2.get('meta', {}).get('hit', 'unknown')
         latency = result2.get('meta', {}).get('latency_ms', 0)
         
-        print(f"[SUCCESS] Request successful!")
+        print("[SUCCESS] Request successful!")
         print(f"Cache hit: {hit_type}")
         print(f"Latency: {latency}ms")
         
@@ -109,7 +109,7 @@ def test_openai_compatible_endpoint():
         similarity = result3.get('meta', {}).get('similarity', 0)
         latency = result3.get('meta', {}).get('latency_ms', 0)
         
-        print(f"[SUCCESS] Request successful!")
+        print("[SUCCESS] Request successful!")
         print(f"Cache hit: {hit_type}")
         print(f"Similarity: {similarity:.4f}")
         print(f"Latency: {latency}ms")
@@ -140,7 +140,7 @@ def test_openai_compatible_endpoint():
     
     if response4.status_code == 200:
         result4 = response4.json()
-        print(f"[SUCCESS] Request successful!")
+        print("[SUCCESS] Request successful!")
         print(f"Answer: {result4['choices'][0]['message']['content'][:100]}...")
         print(f"Cache hit: {result4.get('meta', {}).get('hit', 'unknown')}")
     else:
@@ -175,9 +175,9 @@ def test_openai_compatible_endpoint():
     print("[SUCCESS] Drop-in replacement for OpenAI API")
     print("\nTo use as OpenAI replacement:")
     print(f"  - Base URL: {BASE_URL}")
-    print(f"  - Endpoint: /v1/chat/completions")
+    print("  - Endpoint: /v1/chat/completions")
     print(f"  - Authorization: {API_KEY}")
-    print(f"  - Format: OpenAI-compatible")
+    print("  - Format: OpenAI-compatible")
 
 def test_integration_examples():
     """Show examples of how to integrate with different tools."""

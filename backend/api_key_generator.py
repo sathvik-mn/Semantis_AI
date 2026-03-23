@@ -6,10 +6,10 @@ import secrets
 import string
 import argparse
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
 
-def generate_api_key(tenant: str = None, length: int = 32, auto_tenant: bool = False) -> tuple[str, str]:
+def generate_api_key(tenant: Optional[str] = None, length: int = 32, auto_tenant: bool = False) -> tuple[str, str]:
     """
     Generate a complex API key for a tenant.
     
@@ -55,7 +55,7 @@ def generate_api_key(tenant: str = None, length: int = 32, auto_tenant: bool = F
     
     return api_key, tenant
 
-def generate_multiple_keys(tenant: str = None, count: int = 1, length: int = 32, auto_tenant: bool = False) -> List[tuple[str, str]]:
+def generate_multiple_keys(tenant: Optional[str] = None, count: int = 1, length: int = 32, auto_tenant: bool = False) -> List[tuple[str, str]]:
     """
     Generate multiple API keys for a tenant.
     
@@ -222,10 +222,10 @@ def main():
         is_valid = validate_api_key(args.validate)
         if is_valid:
             tenant = extract_tenant(args.validate)
-            print(f"[VALID] API key is valid")
+            print("[VALID] API key is valid")
             print(f"Tenant: {tenant}")
         else:
-            print(f"[INVALID] API key format is invalid")
+            print("[INVALID] API key format is invalid")
             print("Expected format: sc-{tenant}-{random}")
         return
     
@@ -243,10 +243,8 @@ def main():
         # Allow auto-generation if no tenant provided
         if not args.tenant:
             keys_tuples = generate_multiple_keys(None, args.count, args.length, auto_tenant=True)
-            tenant_label = "auto-generated"
         else:
             keys_tuples = generate_multiple_keys(args.tenant, args.count, args.length, auto_tenant=False)
-            tenant_label = args.tenant
         
         print(f"\nGenerated {len(keys_tuples)} API key(s):")
         print("=" * 80)
@@ -257,7 +255,7 @@ def main():
         # Create user in database if email provided
         if args.save and args.user_email:
             try:
-                from database import create_user
+                from database import create_user  # type: ignore[attr-defined]
                 user_id = create_user(args.user_email, args.user_name)
                 print(f"User created/updated in database: {args.user_email} (ID: {user_id})")
             except Exception as e:

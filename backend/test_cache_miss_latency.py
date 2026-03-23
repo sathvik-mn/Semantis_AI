@@ -9,7 +9,6 @@ This script tests the cache miss latency improvements:
 
 import requests
 import time
-import json
 
 BASE_URL = "http://localhost:8000"
 # Use a unique tenant ID with timestamp to ensure fresh cache
@@ -69,7 +68,7 @@ def test_cache_miss_latency():
                         'actual': actual_latency,
                         'overhead': actual_latency - reported_latency
                     })
-                    print(f"  ✅ Cache miss detected")
+                    print("  ✅ Cache miss detected")
                     print(f"  ⚡ Overhead: {actual_latency - reported_latency:.2f}ms")
                 else:
                     print(f"  ⚠️  Expected miss but got {hit_type}")
@@ -86,9 +85,9 @@ def test_cache_miss_latency():
         print("\n" + "=" * 60)
         print("LATENCY SUMMARY")
         print("=" * 60)
-        avg_reported = sum(l['reported'] for l in latencies) / len(latencies)
-        avg_actual = sum(l['actual'] for l in latencies) / len(latencies)
-        avg_overhead = sum(l['overhead'] for l in latencies) / len(latencies)
+        avg_reported = sum(entry['reported'] for entry in latencies) / len(latencies)
+        avg_actual = sum(entry['actual'] for entry in latencies) / len(latencies)
+        avg_overhead = sum(entry['overhead'] for entry in latencies) / len(latencies)
         
         print(f"Average Reported Latency: {avg_reported:.2f}ms")
         print(f"Average Actual Latency: {avg_actual:.2f}ms")
@@ -104,10 +103,10 @@ def test_cache_miss_latency():
         
         # Check if reported latency excludes cache storage
         if avg_reported < avg_actual:
-            print(f"\n✅ SUCCESS: Reported latency excludes cache storage")
+            print("\n✅ SUCCESS: Reported latency excludes cache storage")
             print(f"   Difference: {avg_actual - avg_reported:.2f}ms")
         else:
-            print(f"\n⚠️  WARNING: Reported latency might include cache storage")
+            print("\n⚠️  WARNING: Reported latency might include cache storage")
     else:
         print("\n⚠️  No cache misses detected - cannot measure latency improvements")
 

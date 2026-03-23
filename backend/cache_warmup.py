@@ -134,7 +134,7 @@ def load_queries_from_file(filepath: str) -> List[Dict[str, str]]:
             elif isinstance(data, dict) and "queries" in data:
                 return data["queries"]
             else:
-                print(f"Invalid file format. Expected list or dict with 'queries' key.")
+                print("Invalid file format. Expected list or dict with 'queries' key.")
                 return []
     except FileNotFoundError:
         print(f"File not found: {filepath}")
@@ -179,7 +179,7 @@ def main():
     with open("warmup_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    print(f"\nResults saved to: warmup_results.json")
+    print("\nResults saved to: warmup_results.json")
 
 if __name__ == "__main__":
     main()

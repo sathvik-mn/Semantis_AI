@@ -2,9 +2,7 @@
 Prometheus Metrics for Cache Monitoring
 Provides metrics for cache performance, hit rates, latency, and system health.
 """
-import time
-from typing import Dict, Optional
-from prometheus_client import Counter, Histogram, Gauge, Summary, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from prometheus_client.core import CollectorRegistry
 from fastapi import Response
 import logging

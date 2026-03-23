@@ -9,7 +9,6 @@ import time
 from typing import Dict, List
 import numpy as np
 import faiss
-from dataclasses import dataclass, asdict
 from datetime import datetime
 
 CACHE_DIR = "cache_data"
@@ -39,14 +38,14 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
     
     for tenant_id, tenant_state in tenants.items():
         # Convert FAISS index to numpy array if it exists
-        index_data = None
+        _index_data = None
         if tenant_state.index is not None:
             # Get vectors from FAISS index
             num_vectors = tenant_state.index.ntotal
             if num_vectors > 0:
                 # Extract vectors (this is a simplified approach)
                 # For production, consider using faiss.write_index
-                index_data = {
+                _index_data = {
                     "num_vectors": num_vectors,
                     "dim": tenant_state.dim,
                     "vectors": None  # Will be handled separately
@@ -122,12 +121,12 @@ def load_cache(filepath: str = CACHE_FILE):
             # Not JSON — might be legacy pickle, try that
             with open(filepath, 'rb') as f:
                 cache_data = pickle.load(f)
-            print(f"Migrated legacy pickle cache to JSON")
+            print("Migrated legacy pickle cache to JSON")
     elif os.path.exists(CACHE_FILE_LEGACY):
         # Legacy pickle file exists but no JSON yet
         with open(CACHE_FILE_LEGACY, 'rb') as f:
             cache_data = pickle.load(f)
-        print(f"Loaded legacy pickle cache (will save as JSON next time)")
+        print("Loaded legacy pickle cache (will save as JSON next time)")
     else:
         return None
 
@@ -146,7 +145,7 @@ def load_cache(filepath: str = CACHE_FILE):
             return CacheEntry(
                 prompt_norm=entry_data["prompt_norm"],
                 response_text=entry_data["response_text"],
-                embedding=emb,
+                embedding=emb,  # type: ignore[arg-type]
                 model=entry_data["model"],
                 ttl_seconds=entry_data["ttl_seconds"],
                 created_at=entry_data["created_at"],
@@ -175,7 +174,7 @@ def load_cache(filepath: str = CACHE_FILE):
                     index = faiss.IndexFlatIP(dim)
                     embeddings = np.vstack(embeddings_list).astype('float32')
                     faiss.normalize_L2(embeddings)
-                    index.add(embeddings)
+                    index.add(embeddings)  # type: ignore[call-arg]
                     print(f"Reconstructed FAISS index with {len(embeddings_list)} vectors for tenant {tenant_id}")
 
             # Reconstruct local FAISS index
@@ -187,7 +186,7 @@ def load_cache(filepath: str = CACHE_FILE):
                 local_index = faiss.IndexFlatIP(local_dim)
                 local_vecs = np.vstack(local_embs).astype('float32')
                 faiss.normalize_L2(local_vecs)
-                local_index.add(local_vecs)
+                local_index.add(local_vecs)  # type: ignore[call-arg]
 
             events = []
             for event_data in tenant_data.get("events", []):
