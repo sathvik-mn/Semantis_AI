@@ -85,7 +85,7 @@ def upsert_embedding(
         vec = embedding.astype("float32").flatten().tolist()
         meta = metadata or {}
         idx.upsert(
-            vectors=[{"id": entry_id, "values": vec, "metadata": meta}],
+            vectors=[{"id": entry_id, "values": vec, "metadata": meta}],  # type: ignore[arg-type]
             namespace=tenant_id,
         )
         return True
@@ -156,7 +156,7 @@ def search(
             kwargs["filter"] = filter_dict
         results = idx.query(**kwargs)
         matches = []
-        for m in results.get("matches", []):
+        for m in getattr(results, "matches", []) or []:
             matches.append({
                 "id": m["id"],
                 "score": m["score"],

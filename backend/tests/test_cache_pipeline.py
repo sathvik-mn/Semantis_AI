@@ -5,7 +5,7 @@ Requires the server running at http://localhost:8000
 """
 import requests
 import time
-import pytest
+import pytest  # type: ignore[import-not-found]
 
 BASE_URL = "http://localhost:8000"
 API_KEY = "Bearer sc-test-integration"

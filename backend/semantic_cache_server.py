@@ -352,7 +352,7 @@ def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Opt
     client = _get_openai_client(key)
     stream = client.chat.completions.create(
         model=CHAT_MODEL,
-        messages=messages,
+        messages=messages,  # type: ignore[arg-type]
         temperature=temperature,
         max_tokens=1024,
         stream=True,
@@ -372,12 +372,12 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
         client = _get_openai_client(key)
         resp = client.chat.completions.create(
             model=CHAT_MODEL,
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=1024,
         )
         llm_time = round((time.time() - start_time) * 1000, 2)
-        response_text = resp.choices[0].message.content.strip()
+        response_text = (resp.choices[0].message.content or "").strip()
         completion_tokens = len(response_text.split())
         total_tokens = prompt_tokens + completion_tokens
         
@@ -431,7 +431,7 @@ class CacheEvent:
 @dataclass
 class TenantState:
     exact: Dict[str, CacheEntry] = field(default_factory=dict)
-    index: Optional[faiss.IndexFlatIP] = None
+    index: Optional[faiss.Index] = None
     rows: List[CacheEntry] = field(default_factory=list)
     dim: Optional[int] = None
     # Tier 1: normalized-text hash index for O(1) deep-norm lookups
@@ -450,6 +450,7 @@ class TenantState:
     sim_threshold: float = 0.72
     domain_thresholds: Dict[str, float] = field(default_factory=dict)
     events: List[CacheEvent] = field(default_factory=list)
+    _near_misses: List[float] = field(default_factory=list)
 
 # -----------------------------
 # Core semantic cache service
@@ -614,14 +615,14 @@ class SemanticCacheService:
         if len(T.events) > 1000:
             T.events = T.events[-1000:]
 
-    def _faiss_add(self, T: TenantState, emb: np.ndarray, tenant_id: str = "", entry_id: str = "", metadata: dict = None):
+    def _faiss_add(self, T: TenantState, emb: np.ndarray, tenant_id: str = "", entry_id: str = "", metadata: Optional[dict] = None):
         """Add embedding to FAISS (local) and Pinecone (if available)."""
         v = emb.astype("float32").reshape(1, -1)
         faiss.normalize_L2(v)
         if T.index is None:
             T.dim = v.shape[1]
             T.index = faiss.IndexFlatIP(T.dim)
-        T.index.add(v)
+        T.index.add(v)  # type: ignore[call-arg]
         # Tier 2b: auto-upgrade to IVF when cache grows large
         if len(T.rows) == IVF_UPGRADE_THRESHOLD and T.dim is not None:
             self._upgrade_to_ivf(T)
@@ -637,7 +638,7 @@ class SemanticCacheService:
         if T.local_index is None:
             T.local_dim = v.shape[1]
             T.local_index = faiss.IndexFlatIP(T.local_dim)
-        T.local_index.add(v)
+        T.local_index.add(v)  # type: ignore[call-arg]
 
     def _upgrade_to_ivf(self, T: TenantState):
         """Upgrade from IndexFlatIP to IndexIVFFlat for O(sqrt(n)) search."""
@@ -650,8 +651,8 @@ class SemanticCacheService:
                 r.embedding.astype("float32").reshape(1, -1) for r in T.rows
             ])
             faiss.normalize_L2(all_vecs)
-            ivf_index.train(all_vecs)
-            ivf_index.add(all_vecs)
+            ivf_index.train(all_vecs)  # type: ignore[call-arg]
+            ivf_index.add(all_vecs)  # type: ignore[call-arg]
             ivf_index.nprobe = max(1, nlist // 4)
             T.index = ivf_index
             semantic_log.info(
@@ -673,10 +674,10 @@ class SemanticCacheService:
         d = all_vecs.shape[1]
         kmeans = faiss.Kmeans(d, n_clusters, niter=20, verbose=False, gpu=False)
         kmeans.train(all_vecs)
-        T.cluster_centroids = kmeans.centroids.copy()
+        T.cluster_centroids = kmeans.centroids.copy()  # type: ignore[union-attr]
         T.n_clusters = n_clusters
         # Assign cluster IDs to entries
-        _, assignments = kmeans.index.search(all_vecs, 1)
+        _, assignments = kmeans.index.search(all_vecs, 1)  # type: ignore[call-arg]
         for i, row in enumerate(T.rows):
             row.cluster_id = int(assignments[i][0])
 
@@ -750,7 +751,7 @@ class SemanticCacheService:
                     faiss.normalize_L2(lq)
                     local_k = min(3, T.local_index.ntotal)
                     if local_k > 0:
-                        local_sims, _ = T.local_index.search(lq, local_k)
+                        local_sims, _ = T.local_index.search(lq, local_k)  # type: ignore[call-arg]
                         best_local_sim = float(local_sims[0][0])
                         if best_local_sim < 0.40:
                             local_gate_passed = False
@@ -782,7 +783,7 @@ class SemanticCacheService:
                 faiss.normalize_L2(q)
                 pinecone_results = pinecone_search(tenant_id, q.flatten(), top_k=10)
                 # Build a hash→entry lookup from local rows for metadata
-                row_lookup = {r.prompt_hash: r for r in T.rows if hasattr(r, 'prompt_hash')}
+                row_lookup = {hashlib.md5(r.prompt_norm.encode()).hexdigest(): r for r in T.rows}
                 # Also build from exact cache
                 for key, entry in T.exact.items():
                     h = hashlib.md5(key.encode()).hexdigest()
@@ -806,9 +807,9 @@ class SemanticCacheService:
                     cq = query_emb.astype("float32").reshape(1, -1)
                     faiss.normalize_L2(cq)
                     centroid_index = faiss.IndexFlatIP(T.cluster_centroids.shape[1])
-                    centroid_index.add(T.cluster_centroids)
+                    centroid_index.add(T.cluster_centroids)  # type: ignore[call-arg]
                     n_probe_clusters = max(1, T.n_clusters // 3)
-                    _, cluster_ids = centroid_index.search(cq, n_probe_clusters)
+                    _, cluster_ids = centroid_index.search(cq, n_probe_clusters)  # type: ignore[call-arg]
                     target_clusters = set(int(c) for c in cluster_ids[0] if c >= 0)
                     search_rows_mask = set(
                         i for i, r in enumerate(T.rows) if r.cluster_id in target_clusters
@@ -817,7 +818,8 @@ class SemanticCacheService:
                 k = min(10, len(T.rows))
                 q = query_emb.astype("float32").reshape(1, -1)
                 faiss.normalize_L2(q)
-                sims, idxs = T.index.search(q, k)
+                assert T.index is not None
+                sims, idxs = T.index.search(q, k)  # type: ignore[call-arg]
 
                 for i in range(k):
                     idx = int(idxs[0][i])
@@ -1369,7 +1371,7 @@ def _get_rate_limit_key(request: Request) -> str:
 limiter = Limiter(key_func=_get_rate_limit_key)
 app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 # ── Scheduled log cleanup (runs daily in background) ──
@@ -1631,6 +1633,7 @@ def get_tenant_from_key(request: Request) -> str:
     except Exception as e:
         error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
         raise HTTPException(status_code=503, detail="Authentication service temporarily unavailable")
+    return tenant
 
 
 def _require_scope(request: Request, required: str):
@@ -1680,6 +1683,8 @@ def health():
     """Health check endpoint with system status."""
     
     try:
+        memory = None
+        cpu_percent = 0.0
         try:
             import psutil
             memory = psutil.virtual_memory()
@@ -1715,7 +1720,7 @@ def health():
             "redis": redis_status,
         }
         
-        if has_system_metrics:
+        if has_system_metrics and memory is not None:
             health_status["system"] = {
                 "memory_percent": round(memory.percent, 2),
                 "memory_available_gb": round(memory.available / (1024**3), 2),
@@ -2908,7 +2913,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         user_email = user.get("email", "")
         
         org_full = get_organization(org_id)
-        settings = org_full.get("settings") or {}
+        settings = (org_full.get("settings") if org_full else None) or {}
         customer_id = settings.get("stripe_customer_id")
         
         if not customer_id:
@@ -2947,7 +2952,7 @@ def billing_portal(request: Request):
         if not orgs:
             raise HTTPException(status_code=400, detail="No organization found")
         org_full = get_organization(str(orgs[0]["id"]))
-        settings = org_full.get("settings") or {}
+        settings = (org_full.get("settings") if org_full else None) or {}
         customer_id = settings.get("stripe_customer_id")
         if not customer_id:
             raise HTTPException(status_code=400, detail="No active subscription found")

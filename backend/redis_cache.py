@@ -111,7 +111,7 @@ def get_exact_match(org_id: str, prompt_hash: str, model: str) -> Optional[str]:
         data = r.get(key)
         if data is None:
             return None
-        entry = json.loads(data.decode("utf-8"))
+        entry = json.loads(data.decode("utf-8"))  # type: ignore[union-attr]
         if entry.get("model") != model:
             return None
         # Bump use_count async
@@ -150,7 +150,7 @@ def get_embedding(org_id: str, prompt_hash: str) -> Optional[np.ndarray]:
         data = r.get(key)
         if data is None:
             return None
-        return _unpack_embedding(data)
+        return _unpack_embedding(data)  # type: ignore[arg-type]
     except Exception as e:
         logger.warning("Redis get_embedding failed: %s", e)
         return None
@@ -180,7 +180,7 @@ def get_org_settings(org_id: str) -> Optional[dict]:
         data = r.get(key)
         if data is None:
             return None
-        return json.loads(data.decode("utf-8"))
+        return json.loads(data.decode("utf-8"))  # type: ignore[union-attr]
     except Exception as e:
         logger.warning("Redis get_org_settings failed: %s", e)
         return None
@@ -193,7 +193,7 @@ def increment_org_counter(org_id: str, field: str, amount: int = 1) -> int:
         return 0
     try:
         key = f"org:{org_id}:counters"
-        return r.hincrby(key, field, amount)
+        return r.hincrby(key, field, amount)  # type: ignore[return-value]
     except Exception as e:
         logger.warning("Redis increment_org_counter failed: %s", e)
         return 0
@@ -207,7 +207,7 @@ def get_org_counters(org_id: str) -> dict:
     try:
         key = f"org:{org_id}:counters"
         data = r.hgetall(key)
-        return {k.decode(): int(v) for k, v in data.items()} if data else {}
+        return {k.decode(): int(v) for k, v in data.items()} if data else {}  # type: ignore[union-attr]
     except Exception as e:
         logger.warning("Redis get_org_counters failed: %s", e)
         return {}
@@ -222,7 +222,7 @@ def flush_org(org_id: str) -> int:
         pattern = f"org:{org_id}:*"
         keys = list(r.scan_iter(match=pattern, count=1000))
         if keys:
-            return r.delete(*keys)
+            return r.delete(*keys)  # type: ignore[return-value]
         return 0
     except Exception as e:
         logger.warning("Redis flush_org failed: %s", e)
@@ -244,8 +244,8 @@ def health_check() -> dict:
         return {
             "status": "connected",
             "mode": "redis",
-            "used_memory_human": info.get("used_memory_human", "unknown"),
-            "connected_clients": r.info(section="clients").get("connected_clients", 0),
+            "used_memory_human": info.get("used_memory_human", "unknown"),  # type: ignore[union-attr]
+            "connected_clients": r.info(section="clients").get("connected_clients", 0),  # type: ignore[union-attr]
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
@@ -270,7 +270,7 @@ def increment_monthly_usage(tenant_id: str) -> int:
         if count == 1:
             # First request this month — set TTL to expire at end of month (~32 days max)
             r.expire(key, 32 * 24 * 3600)
-        return count
+        return count  # type: ignore[return-value]
     except Exception as e:
         logger.warning("Redis increment_monthly_usage failed: %s", e)
         return -1
@@ -284,7 +284,7 @@ def get_monthly_usage(tenant_id: str) -> int:
     try:
         key = _monthly_usage_key(tenant_id)
         val = r.get(key)
-        return int(val) if val else 0
+        return int(val) if val else 0  # type: ignore[arg-type]
     except Exception as e:
         logger.warning("Redis get_monthly_usage failed: %s", e)
         return -1

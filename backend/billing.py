@@ -167,7 +167,7 @@ def report_usage(subscription_item_id: str, quantity: int) -> bool:
     if not stripe:
         return False
     try:
-        stripe.SubscriptionItem.create_usage_record(
+        stripe.SubscriptionItem.create_usage_record(  # type: ignore[attr-defined]
             subscription_item_id,
             quantity=quantity,
             action="increment",
@@ -191,8 +191,8 @@ def get_subscription(customer_id: str) -> Optional[dict]:
                 "id": sub.id,
                 "status": sub.status,
                 "plan": sub.metadata.get("plan", "unknown"),
-                "current_period_start": sub.current_period_start,
-                "current_period_end": sub.current_period_end,
+                "current_period_start": sub.current_period_start,  # type: ignore[attr-defined]
+                "current_period_end": sub.current_period_end,  # type: ignore[attr-defined]
                 "cancel_at_period_end": sub.cancel_at_period_end,
             }
         return None

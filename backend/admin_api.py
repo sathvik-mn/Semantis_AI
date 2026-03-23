@@ -774,7 +774,7 @@ def get_admin_health(admin: bool = Depends(require_admin)):
 
     # Redis check
     try:
-        from semantic_cache_server import redis_client
+        from semantic_cache_server import redis_client  # type: ignore[attr-defined]
         if redis_client:
             start = time.time()
             redis_client.ping()

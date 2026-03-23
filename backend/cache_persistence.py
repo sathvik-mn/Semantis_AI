@@ -145,7 +145,7 @@ def load_cache(filepath: str = CACHE_FILE):
             return CacheEntry(
                 prompt_norm=entry_data["prompt_norm"],
                 response_text=entry_data["response_text"],
-                embedding=emb,
+                embedding=emb,  # type: ignore[arg-type]
                 model=entry_data["model"],
                 ttl_seconds=entry_data["ttl_seconds"],
                 created_at=entry_data["created_at"],
@@ -174,7 +174,7 @@ def load_cache(filepath: str = CACHE_FILE):
                     index = faiss.IndexFlatIP(dim)
                     embeddings = np.vstack(embeddings_list).astype('float32')
                     faiss.normalize_L2(embeddings)
-                    index.add(embeddings)
+                    index.add(embeddings)  # type: ignore[call-arg]
                     print(f"Reconstructed FAISS index with {len(embeddings_list)} vectors for tenant {tenant_id}")
 
             # Reconstruct local FAISS index
@@ -186,7 +186,7 @@ def load_cache(filepath: str = CACHE_FILE):
                 local_index = faiss.IndexFlatIP(local_dim)
                 local_vecs = np.vstack(local_embs).astype('float32')
                 faiss.normalize_L2(local_vecs)
-                local_index.add(local_vecs)
+                local_index.add(local_vecs)  # type: ignore[call-arg]
 
             events = []
             for event_data in tenant_data.get("events", []):
