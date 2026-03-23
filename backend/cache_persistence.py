@@ -1,6 +1,8 @@
 """
 Cache Persistence Module
 Saves and loads cache data to/from disk for persistence across restarts.
+Sensitive fields (prompt_norm, response_text) are encrypted at rest with
+AES-256-GCM when CACHE_ENCRYPTION_KEY is set.
 """
 import os
 import pickle
@@ -10,11 +12,14 @@ from typing import Dict, List
 import numpy as np
 import faiss
 from datetime import datetime
+from encryption import encrypt_cache_entry, decrypt_cache_entry, is_cache_encryption_enabled
 
 CACHE_DIR = "cache_data"
 CACHE_FILE = os.path.join(CACHE_DIR, "cache.json")
 CACHE_FILE_LEGACY = os.path.join(CACHE_DIR, "cache.pkl")
-KEYS_FILE = os.path.join(CACHE_DIR, "api_keys.json")
+KEYS_DIR = "secure_keys"
+KEYS_FILE = os.path.join(KEYS_DIR, "api_keys.json")
+KEYS_FILE_LEGACY = os.path.join(CACHE_DIR, "api_keys.json")
 
 def ensure_cache_dir():
     """Ensure cache directory exists."""
@@ -53,8 +58,8 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
         
         def _serialize_entry(entry):
             d = {
-                "prompt_norm": entry.prompt_norm,
-                "response_text": entry.response_text,
+                "prompt_norm": encrypt_cache_entry(entry.prompt_norm, tenant_id),
+                "response_text": encrypt_cache_entry(entry.response_text, tenant_id),
                 "embedding": entry.embedding.tolist() if entry.embedding is not None else None,
                 "model": entry.model,
                 "ttl_seconds": entry.ttl_seconds,
@@ -72,7 +77,10 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
             return d
 
         entries_data = [_serialize_entry(e) for e in tenant_state.rows]
-        exact_cache_data = {key: _serialize_entry(e) for key, e in tenant_state.exact.items()}
+        exact_cache_data = {
+            encrypt_cache_entry(key, tenant_id): _serialize_entry(e)
+            for key, e in tenant_state.exact.items()
+        }
         
         cache_data["tenants"][tenant_id] = {
             "exact": exact_cache_data,
@@ -97,6 +105,7 @@ def save_cache(tenants: Dict, filepath: str = CACHE_FILE):
                 for e in tenant_state.events
             ],
             "domain_thresholds": getattr(tenant_state, 'domain_thresholds', {}),  # Backward compatible
+            "is_encrypted": is_cache_encryption_enabled(),
         }
     
     # Save to file as JSON (safe serialization, no arbitrary code execution on load)
@@ -135,6 +144,8 @@ def load_cache(filepath: str = CACHE_FILE):
         # Reconstruct tenant states
         from semantic_cache_server import TenantState, CacheEntry, CacheEvent
         
+        _current_tenant_id = ""
+
         def _deserialize_entry(entry_data):
             emb_data = entry_data.get("embedding")
             emb = np.array(emb_data, dtype="float32") if emb_data is not None else None
@@ -143,8 +154,8 @@ def load_cache(filepath: str = CACHE_FILE):
             local_emb_data = entry_data.get("local_embedding")
             local_emb = np.array(local_emb_data, dtype="float32") if local_emb_data is not None else None
             return CacheEntry(
-                prompt_norm=entry_data["prompt_norm"],
-                response_text=entry_data["response_text"],
+                prompt_norm=decrypt_cache_entry(entry_data["prompt_norm"], _current_tenant_id),
+                response_text=decrypt_cache_entry(entry_data["response_text"], _current_tenant_id),
                 embedding=emb,  # type: ignore[arg-type]
                 model=entry_data["model"],
                 ttl_seconds=entry_data["ttl_seconds"],
@@ -160,8 +171,10 @@ def load_cache(filepath: str = CACHE_FILE):
 
         tenants = {}
         for tenant_id, tenant_data in cache_data.get("tenants", {}).items():
+            _current_tenant_id = tenant_id
             exact_cache = {
-                key: _deserialize_entry(ed) for key, ed in tenant_data.get("exact", {}).items()
+                decrypt_cache_entry(key, tenant_id): _deserialize_entry(ed)
+                for key, ed in tenant_data.get("exact", {}).items()
             }
             rows = [_deserialize_entry(ed) for ed in tenant_data.get("rows", [])]
 
@@ -227,52 +240,54 @@ def load_cache(filepath: str = CACHE_FILE):
         print(f"Error loading cache: {e}")
         return None
 
+def _ensure_keys_dir():
+    """Ensure secure keys directory exists."""
+    os.makedirs(KEYS_DIR, exist_ok=True)
+
+
 def save_api_keys(keys: List[Dict], filepath: str = KEYS_FILE):
-    """
-    Save API keys to JSON file.
-    
-    Args:
-        keys: List of key dictionaries
-        filepath: Path to save keys file
-    """
-    ensure_cache_dir()
-    
+    """Save API keys to JSON file in secure_keys/ directory."""
+    _ensure_keys_dir()
+
     # Load existing keys
-    existing_keys = []
-    if os.path.exists(filepath):
-        try:
-            with open(filepath, 'r') as f:
-                existing_keys = json.load(f)
-        except:
-            existing_keys = []
-    
+    existing_keys = load_api_keys(filepath)
+
     # Merge with new keys (avoid duplicates)
     existing_key_strings = {k.get("api_key") for k in existing_keys}
     for key in keys:
         if key.get("api_key") not in existing_key_strings:
             existing_keys.append(key)
             existing_key_strings.add(key.get("api_key"))
-    
-    # Save to file
+
     with open(filepath, 'w') as f:
         json.dump(existing_keys, f, indent=2)
-    
+
     print(f"API keys saved to {filepath}")
 
+
 def load_api_keys(filepath: str = KEYS_FILE):
-    """
-    Load API keys from JSON file.
-    
-    Returns:
-        List of key dictionaries or empty list if file doesn't exist
-    """
-    if not os.path.exists(filepath):
-        return []
-    
-    try:
-        with open(filepath, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading API keys: {e}")
-        return []
+    """Load API keys. Falls back to legacy cache_data/ location and auto-migrates."""
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading API keys: {e}")
+            return []
+
+    # Fallback: migrate from legacy location
+    if os.path.exists(KEYS_FILE_LEGACY):
+        try:
+            with open(KEYS_FILE_LEGACY, 'r') as f:
+                keys = json.load(f)
+            _ensure_keys_dir()
+            with open(filepath, 'w') as f:
+                json.dump(keys, f, indent=2)
+            print(f"Migrated API keys from {KEYS_FILE_LEGACY} to {filepath}")
+            return keys
+        except Exception as e:
+            print(f"Error loading legacy API keys: {e}")
+            return []
+
+    return []
 

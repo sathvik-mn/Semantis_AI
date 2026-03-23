@@ -18,6 +18,7 @@ logs/
 
 # Cache
 cache_data/
+secure_keys/
 *.pkl
 *.db
 

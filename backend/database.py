@@ -596,19 +596,35 @@ def get_cache_entry(org_id: str, prompt_hash: str, tenant_id: str = '') -> Optio
         return None
 
 
-def list_cache_entries(org_id: str, limit: int = 50, tenant_id: str = '') -> List[Dict]:
+def list_cache_entries(
+    org_id: str, limit: int = 100, offset: int = 0,
+    search: Optional[str] = None, tenant_id: str = '',
+) -> List[Dict]:
+    """List cache entries with optional search and pagination."""
     with get_db_connection() as conn:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            """SELECT id, org_id, prompt_hash, prompt_norm, response_text,
-                      model, ttl_expires_at, created_at, last_used_at, use_count, domain,
-                      COALESCE(is_encrypted, FALSE) as is_encrypted
-               FROM cache_entries
-               WHERE org_id = %s
-               ORDER BY last_used_at DESC
-               LIMIT %s""",
-            (org_id, limit)
-        )
+        if search:
+            cur.execute(
+                """SELECT id, org_id, prompt_hash, prompt_norm, response_text,
+                          model, ttl_expires_at, created_at, last_used_at, use_count, domain,
+                          COALESCE(is_encrypted, FALSE) as is_encrypted
+                   FROM cache_entries
+                   WHERE org_id = %s AND prompt_norm ILIKE %s
+                   ORDER BY last_used_at DESC NULLS LAST
+                   LIMIT %s OFFSET %s""",
+                (org_id, f"%{search}%", limit, offset)
+            )
+        else:
+            cur.execute(
+                """SELECT id, org_id, prompt_hash, prompt_norm, response_text,
+                          model, ttl_expires_at, created_at, last_used_at, use_count, domain,
+                          COALESCE(is_encrypted, FALSE) as is_encrypted
+                   FROM cache_entries
+                   WHERE org_id = %s
+                   ORDER BY last_used_at DESC NULLS LAST
+                   LIMIT %s OFFSET %s""",
+                (org_id, limit, offset)
+            )
         rows = [dict(row) for row in cur.fetchall()]
         if tenant_id:
             from encryption import decrypt_cache_entry
@@ -617,6 +633,47 @@ def list_cache_entries(org_id: str, limit: int = 50, tenant_id: str = '') -> Lis
                     row['prompt_norm'] = decrypt_cache_entry(row['prompt_norm'], tenant_id)
                     row['response_text'] = decrypt_cache_entry(row['response_text'], tenant_id)
         return rows
+
+
+def count_cache_entries(org_id: str, search: Optional[str] = None) -> int:
+    """Count total cache entries for pagination."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        if search:
+            cur.execute(
+                "SELECT COUNT(*) FROM cache_entries WHERE org_id = %s AND prompt_norm ILIKE %s",
+                (org_id, f"%{search}%")
+            )
+        else:
+            cur.execute(
+                "SELECT COUNT(*) FROM cache_entries WHERE org_id = %s",
+                (org_id,)
+            )
+        return cur.fetchone()[0]
+
+
+def delete_cache_entry(entry_id: int, org_id: str) -> bool:
+    """Delete a cache entry by ID, scoped to org for security."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM cache_entries WHERE id = %s AND org_id = %s",
+            (entry_id, org_id)
+        )
+        return cur.rowcount > 0
+
+
+def delete_cache_entries_bulk(entry_ids: List[int], org_id: str) -> int:
+    """Delete multiple cache entries, scoped to org. Returns count deleted."""
+    if not entry_ids:
+        return 0
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM cache_entries WHERE id = ANY(%s) AND org_id = %s",
+            (entry_ids, org_id)
+        )
+        return cur.rowcount
 
 
 # ==========================================================================
