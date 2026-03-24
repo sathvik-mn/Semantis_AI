@@ -7,7 +7,7 @@ name = "semantis"
 version = "0.1.0"
 description = "Python SDK for Semantis AI - Semantic LLM Cache"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.8"
 authors = [
     {name = "Semantis AI"},
@@ -16,7 +16,6 @@ keywords = ["llm", "cache", "semantic", "openai", "gpt"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -41,4 +40,4 @@ Repository = "https://github.com/semantis-ai/semantis-python"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["semantis*"]
+include = ["semantis"]
