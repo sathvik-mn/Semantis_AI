@@ -83,3 +83,46 @@ class ChatCompletion:
             usage=usage,
             meta=meta,
         )
+
+
+@dataclass
+class ChatCompletionChunkDelta:
+    role: Optional[str] = None
+    content: Optional[str] = None
+
+
+@dataclass
+class ChatCompletionChunkChoice:
+    index: int = 0
+    delta: ChatCompletionChunkDelta = field(default_factory=ChatCompletionChunkDelta)
+    finish_reason: Optional[str] = None
+
+
+@dataclass
+class ChatCompletionChunk:
+    id: str = ""
+    object: str = "chat.completion.chunk"
+    created: int = 0
+    model: str = ""
+    choices: List[ChatCompletionChunkChoice] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ChatCompletionChunk":
+        choices = []
+        for c in data.get("choices", []):
+            delta = c.get("delta", {})
+            choices.append(ChatCompletionChunkChoice(
+                index=c.get("index", 0),
+                delta=ChatCompletionChunkDelta(
+                    role=delta.get("role"),
+                    content=delta.get("content"),
+                ),
+                finish_reason=c.get("finish_reason"),
+            ))
+        return cls(
+            id=data.get("id", ""),
+            object=data.get("object", "chat.completion.chunk"),
+            created=data.get("created", 0),
+            model=data.get("model", ""),
+            choices=choices,
+        )
