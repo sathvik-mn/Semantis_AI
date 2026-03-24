@@ -346,12 +346,13 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
         )
         raise
 
-def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None):
+def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None, model: Optional[str] = None):
     """OpenAI chat call with streaming. Yields SSE chunks."""
+    _model = model or CHAT_MODEL
     key = _resolve_openai_key(user_id)
     client = _get_openai_client(key)
     stream = client.chat.completions.create(
-        model=CHAT_MODEL,
+        model=_model,
         messages=messages,  # type: ignore[arg-type]
         temperature=temperature,
         max_tokens=1024,
@@ -362,16 +363,17 @@ def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Opt
             yield chunk.choices[0].delta.content
 
 
-def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None) -> str:
+def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None, model: Optional[str] = None) -> str:
     """OpenAI chat call (thread-safe, uses cached client)."""
+    _model = model or CHAT_MODEL
     start_time = time.time()
     prompt_tokens = sum(len(m.get("content", "").split()) for m in messages)
     key = _resolve_openai_key(user_id)
-    
+
     try:
         client = _get_openai_client(key)
         resp = client.chat.completions.create(
-            model=CHAT_MODEL,
+            model=_model,
             messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=1024,
@@ -382,7 +384,7 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
         total_tokens = prompt_tokens + completion_tokens
         
         app_log.info(
-            f"LLM call | model={CHAT_MODEL} | user_id={user_id} | temp={temperature} | "
+            f"LLM call | model={_model} | user_id={user_id} | temp={temperature} | "
             f"prompt_tokens~={prompt_tokens} | completion_tokens~={completion_tokens} | "
             f"total_tokens~={total_tokens} | time={llm_time}ms"
         )
@@ -390,7 +392,7 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
     except Exception as e:
         llm_time = round((time.time() - start_time) * 1000, 2)
         error_log.exception(
-            f"LLM call failed | model={CHAT_MODEL} | user_id={user_id} | temp={temperature} | "
+            f"LLM call failed | model={_model} | user_id={user_id} | temp={temperature} | "
             f"time={llm_time}ms | error={str(e)}"
         )
         raise
@@ -935,7 +937,7 @@ class SemanticCacheService:
 
         # ── 5) Cache miss — LLM call + async storage ──
         T.misses += 1
-        response_text = call_llm(messages, temperature, user_id)
+        response_text = call_llm(messages, temperature, user_id, model=model)
 
         latency = round((time.time() - t0) * 1000, 2)
         T.latencies_ms.append(latency)
@@ -2750,7 +2752,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     # ── Cache miss: real streaming from OpenAI ──
                     access_log.info(f"{tenant} | /v1/chat/completions | stream | miss | live")
                     full_response_parts = []
-                    for token in call_llm_stream(messages, body.temperature, user_id):
+                    for token in call_llm_stream(messages, body.temperature, user_id, model=body.model):
                         full_response_parts.append(token)
                         yield _sse_chunk(token, chunk_id)
                     # Store the completed response in cache

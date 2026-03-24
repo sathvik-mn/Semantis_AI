@@ -2,12 +2,13 @@
 Semantis AI Client - OpenAI-compatible interface with automatic semantic caching.
 """
 
+import json
 import time
-from typing import Optional, List, Dict, Any
+from typing import Generator, Iterator, Optional, List, Dict, Any, Union
 
 import httpx
 
-from semantis.models import ChatCompletion
+from semantis.models import ChatCompletion, ChatCompletionChunk
 
 
 _DEFAULT_BASE_URL = "https://api.semantis.ai"
@@ -27,22 +28,26 @@ class _Completions:
         model: str = "gpt-4o-mini",
         messages: List[Dict[str, str]],
         temperature: float = 0.2,
+        stream: bool = False,
         ttl_seconds: int = 604800,
         **kwargs,
-    ) -> ChatCompletion:
+    ) -> Union[ChatCompletion, Iterator["ChatCompletionChunk"]]:
         """Create a chat completion (with automatic semantic caching).
 
         Accepts the same parameters as ``openai.chat.completions.create``.
-        Extra kwargs are forwarded to the Semantis API but may be ignored
-        if not supported by the current server version.
+        When ``stream=True``, returns an iterator of ``ChatCompletionChunk``.
         """
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "stream": stream,
             "ttl_seconds": ttl_seconds,
         }
         payload.update(kwargs)
+
+        if stream:
+            return self._client._post_stream("/v1/chat/completions", json=payload)
 
         data = self._client._post("/v1/chat/completions", json=payload)
         return ChatCompletion.from_dict(data)
@@ -117,13 +122,28 @@ class SemantisCache:
                 raise
             except (httpx.ConnectError, httpx.ReadTimeout) as e:
                 last_exc = e
-                # Fallback to direct OpenAI if Semantis is unreachable
                 if attempt == self.max_retries - 1:
                     return self._openai_fallback(path, kwargs)
                 time.sleep(min(2 ** attempt, 8))
         if last_exc:
             raise last_exc
         raise RuntimeError("Request failed after retries")
+
+    def _post_stream(self, path: str, **kwargs) -> Generator[ChatCompletionChunk, None, None]:
+        """POST with SSE streaming. Yields ChatCompletionChunk objects."""
+        with self._http.stream("POST", path, **kwargs) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    return
+                try:
+                    data = json.loads(data_str)
+                    yield ChatCompletionChunk.from_dict(data)
+                except json.JSONDecodeError:
+                    continue
 
     def _openai_fallback(self, path: str, kwargs: dict) -> dict:
         """When Semantis is unreachable, fall back to direct OpenAI call."""
