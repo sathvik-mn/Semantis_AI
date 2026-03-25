@@ -539,7 +539,7 @@ class SemanticCacheService:
         This ensures cache hits survive server restarts without re-calling OpenAI."""
         try:
             from database import load_all_cache_entries
-            from encryption import decrypt_cache_entry, is_cache_encryption_enabled
+            from encryption import decrypt_cache_entry
             start_time = time.time()
             rows = load_all_cache_entries()
             if not rows:
