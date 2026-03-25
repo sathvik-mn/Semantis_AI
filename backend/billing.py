@@ -12,9 +12,7 @@ logger = logging.getLogger("semantis.billing")
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_FREE = os.getenv("STRIPE_PRICE_FREE", "")
-STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
-STRIPE_PRICE_TEAM = os.getenv("STRIPE_PRICE_TEAM", "")
+STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "price_1TExyFCYPzfzoB09DxoQevpI")
 
 _stripe = None
 
@@ -45,42 +43,47 @@ PLANS = {
     "free": {
         "name": "Free",
         "price_monthly": 0,
+        "stripe_price_id": None,
         "max_users": 1,
-        "max_requests_month": 1000,
-        "max_cache_entries": 1000,
-        "byok_required": False,
+        "max_requests_month": 10000,
+        "max_tokens_month": 100000,
+        "max_cache_entries": 10000,
+        "advanced_caching": False,
+        "custom_cache_ttl": False,
+        "analytics_dashboard": False,
         "audit_logs": False,
         "custom_threshold": False,
+        "priority_support": False,
     },
     "pro": {
         "name": "Pro",
         "price_monthly": 49,
-        "max_users": 5,
-        "max_requests_month": 50000,
-        "max_cache_entries": 100000,
-        "byok_required": False,
+        "stripe_price_id": STRIPE_PRICE_PRO,
+        "max_users": 10,
+        "max_requests_month": 500000,
+        "max_tokens_month": 5000000,
+        "max_cache_entries": 500000,
+        "advanced_caching": True,
+        "custom_cache_ttl": True,
+        "analytics_dashboard": True,
         "audit_logs": False,
         "custom_threshold": True,
-    },
-    "team": {
-        "name": "Team",
-        "price_monthly": 199,
-        "max_users": 20,
-        "max_requests_month": 500000,
-        "max_cache_entries": 1000000,
-        "byok_required": False,
-        "audit_logs": True,
-        "custom_threshold": True,
+        "priority_support": True,
     },
     "enterprise": {
         "name": "Enterprise",
         "price_monthly": None,
+        "stripe_price_id": None,
         "max_users": None,
         "max_requests_month": None,
+        "max_tokens_month": None,
         "max_cache_entries": None,
-        "byok_required": True,
+        "advanced_caching": True,
+        "custom_cache_ttl": True,
+        "analytics_dashboard": True,
         "audit_logs": True,
         "custom_threshold": True,
+        "priority_support": True,
     },
 }
 
