@@ -2974,7 +2974,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
     """Start a plan upgrade via Stripe Checkout."""
     try:
         user = _get_user_from_supabase_token(request)
-        from billing import is_enabled, create_customer, create_checkout_session, STRIPE_PRICE_PRO, STRIPE_PRICE_TEAM
+        from billing import is_enabled, create_customer, create_checkout_session, STRIPE_PRICE_PRO
         
         if not is_enabled():
             # If Stripe is not configured, just update the plan directly
@@ -2993,7 +2993,6 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         
         price_map = {
             "pro": STRIPE_PRICE_PRO,
-            "team": STRIPE_PRICE_TEAM,
         }
         price_id = price_map.get(body.plan)
         if not price_id:
