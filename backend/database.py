@@ -551,12 +551,16 @@ def store_cache_entry(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
             """INSERT INTO cache_entries
-               (org_id, prompt_hash, prompt_norm, response_text, embedding,
+               (org_id, tenant_id, prompt_hash, prompt_norm, response_text, embedding,
                 model, ttl_expires_at, domain, is_encrypted)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (id) DO NOTHING
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (org_id, prompt_hash) DO UPDATE
+                 SET response_text = EXCLUDED.response_text,
+                     embedding = EXCLUDED.embedding,
+                     is_encrypted = EXCLUDED.is_encrypted,
+                     last_used_at = NOW()
                RETURNING id, org_id, prompt_hash, model, created_at""",
-            (org_id, prompt_hash, stored_prompt, stored_response,
+            (org_id, tenant_id, prompt_hash, stored_prompt, stored_response,
              embedding_bytes, model, ttl_expires_at, domain, is_encrypted)
         )
         row = cur.fetchone()
@@ -661,6 +665,24 @@ def delete_cache_entry(entry_id: int, org_id: str) -> bool:
             (entry_id, org_id)
         )
         return cur.rowcount > 0
+
+
+def load_all_cache_entries() -> List[Dict]:
+    """Load all cache entries with embeddings for boot-time cache restore.
+    Returns entries grouped by tenant_id for efficient per-tenant loading."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """SELECT id, org_id, tenant_id, prompt_hash, prompt_norm, response_text,
+                      embedding, model, domain,
+                      COALESCE(is_encrypted, FALSE) as is_encrypted
+               FROM cache_entries
+               WHERE embedding IS NOT NULL
+                 AND tenant_id IS NOT NULL AND tenant_id != ''
+                 AND (ttl_expires_at IS NULL OR ttl_expires_at > NOW())
+               ORDER BY tenant_id, created_at ASC"""
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 def delete_cache_entries_bulk(entry_ids: List[int], org_id: str) -> int:

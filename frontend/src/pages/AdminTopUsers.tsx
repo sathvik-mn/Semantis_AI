@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Trophy, TrendingUp, DollarSign } from 'lucide-react';
+import { Trophy, TrendingUp, DollarSign, Hash } from 'lucide-react';
 import { adminAPI, TopUser } from '../api/adminAPI';
 
 export default function AdminTopUsers() {
   const [topUsers, setTopUsers] = useState<TopUser[]>([]);
-  const [sortBy, setSortBy] = useState<'requests' | 'hits' | 'savings'>('requests');
+  const [sortBy, setSortBy] = useState<'requests' | 'hits' | 'savings' | 'tokens'>('requests');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export default function AdminTopUsers() {
         </div>
 
         <div className="flex space-x-2">
-          {(['requests', 'hits', 'savings'] as const).map((s) => (
+          {(['requests', 'hits', 'tokens', 'savings'] as const).map((s) => (
             <button
               key={s}
               onClick={() => setSortBy(s)}
@@ -77,7 +77,7 @@ export default function AdminTopUsers() {
                   : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
               }`}
             >
-              By {s === 'requests' ? 'Requests' : s === 'hits' ? 'Cache Hits' : 'Cost Saved'}
+              By {s === 'requests' ? 'Requests' : s === 'hits' ? 'Cache Hits' : s === 'tokens' ? 'Tokens' : 'Cost Saved'}
             </button>
           ))}
         </div>
@@ -87,7 +87,7 @@ export default function AdminTopUsers() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           {topUsers.slice(0, 3).map((user, index) => (
             <div
-              key={user.tenant_id}
+              key={user.user_id}
               className={`${getRankBg(index + 1)} rounded-lg shadow-lg p-6 transform hover:scale-105 transition-transform`}
             >
               <div className="flex items-center justify-between mb-4">
@@ -111,6 +111,12 @@ export default function AdminTopUsers() {
                   <span className="text-sm text-gray-600 dark:text-gray-400">Cache Hits</span>
                   <span className="font-semibold text-gray-900 dark:text-white">
                     {user.total_cache_hits.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Tokens Used</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">
+                    {user.total_tokens.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -142,6 +148,13 @@ export default function AdminTopUsers() {
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cache Hits</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <div className="flex items-center justify-end">
+                    <Hash className="w-4 h-4 mr-1" />
+                    Tokens
+                  </div>
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hit Ratio</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <div className="flex items-center justify-end">
                     <DollarSign className="w-4 h-4 mr-1" />
                     Est. Cost
                   </div>
@@ -150,7 +163,7 @@ export default function AdminTopUsers() {
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {topUsers.map((user) => (
-                <tr key={user.tenant_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${user.rank <= 3 ? 'font-semibold' : ''}`}>
+                <tr key={user.user_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${user.rank <= 3 ? 'font-semibold' : ''}`}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       {user.rank <= 3 && <Trophy className={`w-5 h-5 mr-2 ${getTrophyColor(user.rank)}`} />}
@@ -164,7 +177,9 @@ export default function AdminTopUsers() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white capitalize">{user.plan}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{user.total_requests.toLocaleString()}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{user.total_cache_hits.toLocaleString()}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">${user.total_cost.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{user.total_tokens.toLocaleString()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{user.cache_hit_ratio.toFixed(1)}%</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">${user.total_cost.toFixed(4)}</td>
                 </tr>
               ))}
             </tbody>

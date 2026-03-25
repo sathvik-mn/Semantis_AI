@@ -681,10 +681,19 @@ export default function AdminUsers() {
                   User
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  API Keys
+                  Plan
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Total Usage
+                  API Keys
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Requests
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Tokens
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Cache Hits
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Last Active
@@ -711,13 +720,22 @@ export default function AdminUsers() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
+                    <PlanBadge plan={user.plan || 'free'} />
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-1.5 text-sm text-gray-900 dark:text-white">
                       <Key className="w-3.5 h-3.5 text-gray-400" />
                       {user.api_key_count}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {(user.total_usage ?? 0).toLocaleString()}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                    {(user.total_requests ?? 0).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                    {(user.total_tokens ?? 0).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                    {(user.total_cache_hits ?? 0).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {user.last_used_at

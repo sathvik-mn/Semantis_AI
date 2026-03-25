@@ -37,18 +37,26 @@ export interface User {
   updated_at: string | null;
   api_key_count: number;
   total_usage: number;
+  total_requests: number;
+  total_cache_hits: number;
+  total_cache_misses: number;
+  total_tokens: number;
+  total_cost: number;
+  plan: string;
   last_used_at: string | null;
 }
 
 export interface TopUser {
-  tenant_id: string;
+  user_id: string;
   email: string;
   name: string;
   plan: string;
   total_requests: number;
   total_cache_hits: number;
+  total_cache_misses: number;
+  total_tokens: number;
   total_cost: number;
-  usage_count: number;
+  cache_hit_ratio: number;
   rank: number;
 }
 
@@ -112,20 +120,22 @@ export const adminAPI = {
   },
 
   getTopUsers: async (limit: number = 100, sortBy: string = 'requests'): Promise<TopUser[]> => {
-    const backendSort = sortBy === 'hits' ? 'requests' : sortBy === 'savings' ? 'cost' : 'usage_count';
+    const backendSort = sortBy === 'hits' ? 'requests' : sortBy === 'savings' ? 'cost' : sortBy === 'tokens' ? 'tokens' : 'requests';
     const response = await adminApi.get('/analytics/top-users', {
       params: { limit, sort_by: backendSort }
     });
     const users = response.data.users ?? [];
     return users.map((u: any, i: number) => ({
-      tenant_id: u.tenant_id,
+      user_id: u.user_id ?? '',
       email: u.email ?? '',
       name: u.name ?? '',
       plan: u.plan ?? 'free',
       total_requests: u.total_requests ?? 0,
       total_cache_hits: u.total_cache_hits ?? 0,
+      total_cache_misses: u.total_cache_misses ?? 0,
+      total_tokens: u.total_tokens ?? 0,
       total_cost: u.total_cost ?? 0,
-      usage_count: u.usage_count ?? 0,
+      cache_hit_ratio: u.cache_hit_ratio ?? 0,
       rank: i + 1,
     }));
   },

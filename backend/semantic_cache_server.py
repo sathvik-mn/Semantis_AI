@@ -521,6 +521,9 @@ class SemanticCacheService:
         except Exception as e:
             error_log.exception(f"Cache load failed | error={str(e)}")
 
+        # Restore cache from DB (persisted entries with embeddings)
+        self._restore_from_db()
+
         # Check Redis availability
         try:
             from redis_cache import is_available
@@ -530,6 +533,84 @@ class SemanticCacheService:
                 system_log.info("Redis not available, using in-memory only")
         except Exception:
             pass
+
+    def _restore_from_db(self):
+        """Load persisted cache entries (with embeddings) from PostgreSQL on boot.
+        This ensures cache hits survive server restarts without re-calling OpenAI."""
+        try:
+            from database import load_all_cache_entries
+            from encryption import decrypt_cache_entry
+            start_time = time.time()
+            rows = load_all_cache_entries()
+            if not rows:
+                system_log.info("DB cache restore | no entries with embeddings found")
+                return
+
+            restored = 0
+            skipped = 0
+            for row in rows:
+                tid = row['tenant_id']
+                emb_bytes = row.get('embedding')
+                if not emb_bytes or not tid:
+                    skipped += 1
+                    continue
+
+                # Deserialize embedding
+                try:
+                    emb = np.frombuffer(emb_bytes, dtype=np.float32).copy()
+                    if emb.shape[0] != EMBED_DIMENSIONS:
+                        skipped += 1
+                        continue
+                except Exception:
+                    skipped += 1
+                    continue
+
+                # Decrypt prompt/response if encrypted
+                prompt_norm = row['prompt_norm']
+                response_text = row['response_text']
+                if row.get('is_encrypted'):
+                    try:
+                        prompt_norm = decrypt_cache_entry(prompt_norm, tid)
+                        response_text = decrypt_cache_entry(response_text, tid)
+                    except Exception:
+                        skipped += 1
+                        continue
+
+                # Build CacheEntry and add to tenant
+                T = self.tenant(tid)
+                prompt_hash = row['prompt_hash']
+                entry = CacheEntry(
+                    prompt_norm=prompt_norm,
+                    response_text=response_text,
+                    embedding=emb,
+                    model=row.get('model', 'gpt-4o-mini'),
+                    ttl_seconds=7 * 24 * 3600,
+                    domain=row.get('domain', 'general'),
+                    strategy="restored",
+                )
+
+                # Skip if already loaded (from pickle cache)
+                if prompt_norm in T.exact:
+                    skipped += 1
+                    continue
+
+                T.exact[prompt_norm] = entry
+                norm_key = normalize_query(prompt_norm)
+                if norm_key:
+                    T.norm_hash_index[norm_key] = entry
+                T.rows.append(entry)
+                self._faiss_add(T, emb, tenant_id=tid, entry_id=prompt_hash,
+                                metadata={"model": entry.model, "domain": entry.domain})
+                restored += 1
+
+            restore_time = round((time.time() - start_time) * 1000, 2)
+            system_log.info(
+                f"DB cache restore | restored={restored} | skipped={skipped} | "
+                f"tenants={len(set(r['tenant_id'] for r in rows if r.get('tenant_id')))} | "
+                f"time={restore_time}ms"
+            )
+        except Exception as e:
+            error_log.warning(f"DB cache restore failed: {e}")
     
     def _save_cache(self):
         """Save cache to disk periodically."""
@@ -2977,19 +3058,11 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         from billing import is_enabled, create_customer, create_checkout_session, STRIPE_PRICE_PRO
         
         if not is_enabled():
-            # If Stripe is not configured, just update the plan directly
-            from database import get_user_orgs, update_org_settings
-            orgs = get_user_orgs(user["id"])
-            if orgs:
-                from database import get_db_connection
-                with get_db_connection() as conn:
-                    cur = conn.cursor()
-                    cur.execute(
-                        "UPDATE organizations SET plan = %s WHERE id = %s",
-                        (body.plan, orgs[0]["id"])
-                    )
-                return {"message": f"Plan updated to {body.plan}", "redirect_url": None}
-            raise HTTPException(status_code=400, detail="No organization found")
+            # Stripe is not configured — paid upgrades require Stripe
+            raise HTTPException(
+                status_code=400,
+                detail="Payments are not configured. Please contact support to upgrade your plan."
+            )
         
         price_map = {
             "pro": STRIPE_PRICE_PRO,
