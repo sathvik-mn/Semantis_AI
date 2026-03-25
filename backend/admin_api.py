@@ -180,35 +180,37 @@ def get_plan_distribution(admin: bool = Depends(require_admin)):
         with get_db_connection() as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
 
+            # Use organization plan (Stripe-verified) as source of truth
             cur.execute("""
-                SELECT plan, COUNT(*) as count, COALESCE(SUM(usage_count), 0) as total_requests
-                FROM api_keys WHERE is_active = TRUE
-                GROUP BY plan
+                SELECT
+                    COALESCE(o.plan, 'free') as plan,
+                    COUNT(DISTINCT p.id) as count,
+                    COALESCE(SUM(ul.request_count), 0) as total_requests,
+                    COALESCE(SUM(ul.tokens_used), 0) as total_tokens,
+                    COALESCE(SUM(ul.cost_estimate), 0) as total_cost
+                FROM profiles p
+                LEFT JOIN org_members om ON p.id = om.user_id
+                LEFT JOIN organizations o ON om.org_id = o.id
+                LEFT JOIN api_keys ak ON p.id = ak.user_id AND ak.is_active = TRUE
+                LEFT JOIN usage_logs ul ON ak.api_key = ul.api_key
+                GROUP BY o.plan
             """)
             plans = [dict(row) for row in cur.fetchall()]
-            total_active = sum(p['count'] for p in plans)
-
-            cur.execute("""
-                SELECT ak.plan, COALESCE(SUM(ul.cost_estimate), 0) as total_cost
-                FROM api_keys ak
-                LEFT JOIN usage_logs ul ON ak.api_key = ul.api_key
-                WHERE ak.is_active = TRUE
-                GROUP BY ak.plan
-            """)
-            costs = {row['plan']: row['total_cost'] or 0 for row in cur.fetchall()}
+            total_users = sum(p['count'] for p in plans)
 
             result = []
             for plan in plans:
-                pct = (plan['count'] / total_active * 100) if total_active > 0 else 0
+                pct = (plan['count'] / total_users * 100) if total_users > 0 else 0
                 result.append({
-                    "plan": plan['plan'],
+                    "plan": plan['plan'] or 'free',
                     "count": plan['count'],
                     "percentage": round(pct, 2),
                     "total_requests": plan['total_requests'] or 0,
-                    "total_cost": round(costs.get(plan['plan'], 0), 2)
+                    "total_tokens": plan['total_tokens'] or 0,
+                    "total_cost": round(plan['total_cost'] or 0, 2)
                 })
 
-            return {"total_active_keys": total_active, "plans": result}
+            return {"total_active_keys": total_users, "plans": result}
     except Exception as e:
         error_log.exception(f"Admin plan distribution failed | error={e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -270,7 +272,7 @@ def get_usage_trends(
 @admin_router.get("/analytics/top-users")
 def get_top_users(
     limit: int = Query(10, ge=1, le=100),
-    sort_by: str = Query("usage_count", regex="^(usage_count|requests|cost)$"),
+    sort_by: str = Query("usage_count", regex="^(usage_count|requests|cost|tokens)$"),
     days: int = Query(30, ge=1, le=365),
     admin: bool = Depends(require_admin)
 ):
@@ -278,31 +280,34 @@ def get_top_users(
         with get_db_connection() as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
 
-            if sort_by == "usage_count":
-                order_by = "ak.usage_count DESC"
+            if sort_by == "tokens":
+                order_by = "total_tokens DESC"
             elif sort_by == "requests":
                 order_by = "total_requests DESC"
-            else:
+            elif sort_by == "cost":
                 order_by = "total_cost DESC"
+            else:
+                order_by = "total_requests DESC"
 
+            # Aggregate by user (p.id) not by API key to avoid duplicates
             cur.execute(f"""
                 SELECT
-                    ak.tenant_id, ak.api_key, ak.plan, ak.usage_count,
-                    p.email, p.name,
-                    ak.created_at, ak.last_used_at,
+                    p.id as user_id, p.email, p.name,
+                    COALESCE(o.plan, 'free') as plan,
+                    MIN(ak.created_at) as created_at,
+                    MAX(ak.last_used_at) as last_used_at,
                     COALESCE(SUM(ul.request_count), 0) as total_requests,
                     COALESCE(SUM(ul.cache_hits), 0) as total_hits,
                     COALESCE(SUM(ul.cache_misses), 0) as total_misses,
                     COALESCE(SUM(ul.tokens_used), 0) as total_tokens,
                     COALESCE(SUM(ul.cost_estimate), 0) as total_cost
-                FROM api_keys ak
-                LEFT JOIN profiles p ON ak.user_id = p.id
+                FROM profiles p
+                JOIN api_keys ak ON p.id = ak.user_id AND ak.is_active = TRUE
                 LEFT JOIN usage_logs ul ON ak.api_key = ul.api_key
                     AND ul.logged_at >= NOW() - INTERVAL '1 day' * %s
-                WHERE ak.is_active = TRUE
-                GROUP BY ak.id, ak.tenant_id, ak.api_key, ak.plan,
-                         ak.usage_count, p.email, p.name,
-                         ak.created_at, ak.last_used_at
+                LEFT JOIN org_members om ON p.id = om.user_id
+                LEFT JOIN organizations o ON om.org_id = o.id
+                GROUP BY p.id, p.email, p.name, o.plan
                 ORDER BY {order_by}
                 LIMIT %s
             """, (days, limit))
@@ -312,22 +317,21 @@ def get_top_users(
                 d = dict(row)
                 total_reqs = d['total_requests'] or 0
                 hits = d['total_hits'] or 0
+                tokens = d['total_tokens'] or 0
                 hit_ratio = (hits / total_reqs * 100) if total_reqs > 0 else 0
                 users.append({
-                    "tenant_id": d['tenant_id'],
-                    "api_key": d['api_key'][:20] + "..." if len(d['api_key']) > 20 else d['api_key'],
+                    "user_id": str(d['user_id']),
                     "email": d['email'],
                     "name": d['name'],
-                    "plan": d['plan'],
-                    "usage_count": d['usage_count'],
+                    "plan": d['plan'] or 'free',
                     "created_at": str(d['created_at']),
                     "last_used_at": str(d['last_used_at']) if d['last_used_at'] else None,
                     "total_requests": total_reqs,
                     "total_cache_hits": hits,
                     "total_cache_misses": d['total_misses'] or 0,
                     "cache_hit_ratio": round(hit_ratio, 2),
-                    "total_tokens": d['total_tokens'] or 0,
-                    "total_cost": round(d['total_cost'] or 0, 2)
+                    "total_tokens": tokens,
+                    "total_cost": round(d['total_cost'] or 0, 4)
                 })
 
             return {"limit": limit, "sort_by": sort_by, "days": days, "users": users}
@@ -347,30 +351,33 @@ def list_all_users(
         with get_db_connection() as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
 
-            if search:
-                cur.execute("""
+            base_query = """
                     SELECT
                         p.id, p.email, p.name, p.created_at, p.updated_at,
                         COUNT(DISTINCT ak.id) as api_key_count,
-                        COALESCE(SUM(ak.usage_count), 0) as total_usage,
-                        MAX(ak.last_used_at) as last_used_at
+                        MAX(ak.last_used_at) as last_used_at,
+                        COALESCE(o.plan, 'free') as org_plan,
+                        COALESCE(SUM(ul.request_count), 0) as total_requests,
+                        COALESCE(SUM(ul.cache_hits), 0) as total_cache_hits,
+                        COALESCE(SUM(ul.cache_misses), 0) as total_cache_misses,
+                        COALESCE(SUM(ul.tokens_used), 0) as total_tokens,
+                        COALESCE(SUM(ul.cost_estimate), 0) as total_cost
                     FROM profiles p
                     LEFT JOIN api_keys ak ON p.id = ak.user_id
+                    LEFT JOIN usage_logs ul ON ak.api_key = ul.api_key
+                    LEFT JOIN org_members om ON p.id = om.user_id
+                    LEFT JOIN organizations o ON om.org_id = o.id
+            """
+            if search:
+                cur.execute(base_query + """
                     WHERE p.email ILIKE %s OR p.name ILIKE %s
-                    GROUP BY p.id
+                    GROUP BY p.id, o.plan
                     ORDER BY p.created_at DESC
                     LIMIT %s OFFSET %s
                 """, (f"%{search}%", f"%{search}%", limit, offset))
             else:
-                cur.execute("""
-                    SELECT
-                        p.id, p.email, p.name, p.created_at, p.updated_at,
-                        COUNT(DISTINCT ak.id) as api_key_count,
-                        COALESCE(SUM(ak.usage_count), 0) as total_usage,
-                        MAX(ak.last_used_at) as last_used_at
-                    FROM profiles p
-                    LEFT JOIN api_keys ak ON p.id = ak.user_id
-                    GROUP BY p.id
+                cur.execute(base_query + """
+                    GROUP BY p.id, o.plan
                     ORDER BY p.created_at DESC
                     LIMIT %s OFFSET %s
                 """, (limit, offset))
@@ -385,7 +392,13 @@ def list_all_users(
                     "created_at": str(d['created_at']),
                     "updated_at": str(d['updated_at']) if d['updated_at'] else None,
                     "api_key_count": d['api_key_count'] or 0,
-                    "total_usage": d['total_usage'] or 0,
+                    "total_usage": d['total_requests'] or 0,
+                    "total_requests": d['total_requests'] or 0,
+                    "total_cache_hits": d['total_cache_hits'] or 0,
+                    "total_cache_misses": d['total_cache_misses'] or 0,
+                    "total_tokens": d['total_tokens'] or 0,
+                    "total_cost": round(d['total_cost'] or 0, 4),
+                    "plan": d['org_plan'] or 'free',
                     "last_used_at": str(d['last_used_at']) if d['last_used_at'] else None
                 })
 
@@ -529,10 +542,18 @@ def update_user_plan_by_uid(
     try:
         with get_db_connection() as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
+            # Update api_keys plan
             cur.execute("UPDATE api_keys SET plan = %s WHERE user_id = %s RETURNING id", (plan, user_id))
             rows = cur.fetchall()
             if not rows:
                 raise HTTPException(status_code=404, detail="No API keys found for user")
+            # Also update organization plan (source of truth for billing)
+            cur.execute("""
+                UPDATE organizations SET plan = %s
+                WHERE id IN (
+                    SELECT org_id FROM org_members WHERE user_id = %s
+                )
+            """, (plan, user_id))
             return {"success": True, "message": f"Plan updated to {plan} for {len(rows)} key(s)", "updated_count": len(rows)}
     except HTTPException:
         raise
