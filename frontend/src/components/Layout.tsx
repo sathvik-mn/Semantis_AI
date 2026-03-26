@@ -33,7 +33,7 @@ export function Layout() {
 
       <nav className="sticky top-0 z-50 bg-black/70 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-[1400px] mx-auto px-5 py-3.5 flex items-center gap-8">
-          <Link to="/playground" className="text-xl font-bold text-gradient no-underline shrink-0">
+          <Link to="/" className="text-xl font-bold text-gradient no-underline shrink-0">
             Semantis AI
           </Link>
 
