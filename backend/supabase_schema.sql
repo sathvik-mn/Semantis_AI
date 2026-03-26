@@ -336,13 +336,18 @@ BEGIN
 
   user_slug := lower(replace(split_part(NEW.email, '@', 1), '.', '-')) || '-' || substr(NEW.id::text, 1, 8);
 
-  INSERT INTO public.organizations (name, slug, plan)
+  INSERT INTO public.organizations (name, slug, plan, credits_balance)
   VALUES (
     COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)) || '''s Org',
     user_slug,
-    'free'
+    'free',
+    1.00  -- $1.00 starting credits for free plan
   )
   RETURNING id INTO new_org_id;
+
+  -- Log the starting credits
+  INSERT INTO public.credits_ledger (org_id, amount, balance_after, reason)
+  VALUES (new_org_id, 1.00, 1.00, 'starting_credits');
 
   INSERT INTO public.org_members (org_id, user_id, role)
   VALUES (new_org_id, NEW.id, 'owner');
@@ -360,7 +365,55 @@ CREATE TRIGGER on_auth_user_created
 -- so all admin and logging operations work without policy restrictions.
 
 -- =============================================================================
--- 12. Data Retention Policy (auto-cleanup of old logs)
+-- 12. Credits Ledger (prepaid credits for Semantis Key users)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.credits_ledger (
+  id SERIAL PRIMARY KEY,
+  org_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  amount REAL NOT NULL,                -- positive = credit added, negative = deducted
+  balance_after REAL NOT NULL,         -- running balance after this transaction
+  reason TEXT DEFAULT 'topup',         -- topup, token_usage, starting_credits, refund
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_credits_org_id ON public.credits_ledger(org_id);
+CREATE INDEX IF NOT EXISTS idx_credits_created_at ON public.credits_ledger(created_at);
+
+-- Add credits_balance column to organizations for fast lookups
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'credits_balance') THEN
+    ALTER TABLE public.organizations ADD COLUMN credits_balance REAL DEFAULT 0.0;
+  END IF;
+END $$;
+
+-- Add tokens_saved columns to usage_logs for tracking cache savings
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = 'tokens_saved') THEN
+    ALTER TABLE public.usage_logs ADD COLUMN tokens_saved INTEGER DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = 'cost_saved') THEN
+    ALTER TABLE public.usage_logs ADD COLUMN cost_saved REAL DEFAULT 0.0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = 'is_byok') THEN
+    ALTER TABLE public.usage_logs ADD COLUMN is_byok BOOLEAN DEFAULT FALSE;
+  END IF;
+END $$;
+
+-- RLS for credits_ledger
+ALTER TABLE public.credits_ledger ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Org members can view credits" ON public.credits_ledger;
+CREATE POLICY "Org members can view credits" ON public.credits_ledger
+  FOR SELECT USING (
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+  );
+
+-- =============================================================================
+-- 13. Data Retention Policy (auto-cleanup of old logs)
 -- =============================================================================
 
 -- Function: delete usage_logs older than 90 days and audit_logs older than 365 days

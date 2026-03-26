@@ -2776,6 +2776,24 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     except Exception:
         pass  # If billing check fails, allow the request through
 
+    # --- Credits check (Semantis Key users only — BYOK users skip this) ---
+    try:
+        from billing import is_byok_user, get_credits_balance
+        _user_id_for_check = _ctx.get("user_id")
+        _org_id_for_check = _ctx.get("org_id")
+        if _org_id_for_check and not is_byok_user(_user_id_for_check):
+            balance = get_credits_balance(_org_id_for_check)
+            if balance <= 0:
+                raise HTTPException(
+                    status_code=402,
+                    detail="Insufficient credits. Add credits at /settings to continue using the Semantis API key. "
+                           "Or add your own OpenAI key (BYOK) to avoid credit charges.",
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If credits check fails, allow the request through
+
     # --- Input guard (runs before cache pipeline) ---
     from input_guard import guard_request
     raw_messages = [m.model_dump() for m in body.messages]
@@ -2808,11 +2826,26 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 def _bg_log(hit_type, response_text="", similarity=0.0, latency_ms=0.0, p_hash=""):
                     try:
                         from database import log_usage
+                        from billing import calculate_token_cost, is_byok_user, deduct_credits
                         _p_tokens = sum(len(m.get("content", "").split()) * 4 // 3 for m in raw_messages)
                         _c_tokens = len(response_text.split()) * 4 // 3 if response_text else 0
                         _tokens = _p_tokens + _c_tokens
-                        _cost = round((_p_tokens * 0.00000015) + (_c_tokens * 0.0000006), 6) if hit_type == "miss" else 0.0
-                        access_log.info(f"{tenant} | _bg_log | hit={hit_type} | key={_log_key[:20]} | org={_log_org} | tokens={_tokens}")
+                        _is_byok = is_byok_user(_log_uid)
+
+                        # Cost calculation: BYOK users pay $0, Semantis Key users pay per-token on misses
+                        if hit_type == "miss" and not _is_byok:
+                            _cost = calculate_token_cost(_p_tokens, _c_tokens)
+                            # Deduct from prepaid credits
+                            if _log_org and _cost > 0:
+                                deduct_credits(_log_org, _cost, reason="token_usage")
+                        else:
+                            _cost = 0.0
+
+                        # Tokens saved tracking: on cache hits, record what would have been used
+                        _tokens_saved = _tokens if hit_type != "miss" else 0
+                        _cost_saved = calculate_token_cost(_p_tokens, _c_tokens) if hit_type != "miss" else 0.0
+
+                        access_log.info(f"{tenant} | _bg_log | hit={hit_type} | key={_log_key[:20]} | org={_log_org} | tokens={_tokens} | byok={_is_byok}")
                         log_usage(
                             api_key=_log_key, tenant_id=tenant,
                             endpoint="/v1/chat/completions", request_count=1,
@@ -2822,8 +2855,9 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                             user_id=_log_uid, org_id=_log_org,
                             decision=hit_type, similarity=similarity,
                             latency_ms=latency_ms, prompt_hash=p_hash,
+                            tokens_saved=_tokens_saved, cost_saved=_cost_saved,
+                            is_byok=_is_byok,
                         )
-                        access_log.info(f"{tenant} | _bg_log | SUCCESS")
                     except Exception as _e:
                         error_log.warning(f"log_usage failed in stream: {_e}")
                         import traceback
@@ -2901,29 +2935,45 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
         prompt_tokens = sum(len(m.content.split()) * 4 // 3 for m in body.messages)
         completion_tokens = len(ans.split()) * 4 // 3
         total_tokens = prompt_tokens + completion_tokens
-        # Estimate cost: $0.15/1M input, $0.60/1M output for gpt-4o-mini
-        cost_est = round((prompt_tokens * 0.00000015) + (completion_tokens * 0.0000006), 6) if meta.get("hit") == "miss" else 0.0
 
         _log_key = _ctx.get("key", "unknown")
         _log_uid = _ctx.get("user_id")
         _log_org = _ctx.get("org_id")
         _log_hit = meta.get("hit")
         _log_tokens = total_tokens
-        _log_cost = cost_est
+        _log_p_tokens = prompt_tokens
+        _log_c_tokens = completion_tokens
         def _bg_log():
             try:
                 from database import log_usage
+                from billing import calculate_token_cost, is_byok_user, deduct_credits
+                _is_byok = is_byok_user(_log_uid)
+
+                # Cost: BYOK = $0, Semantis Key = per-token on misses only
+                if _log_hit == "miss" and not _is_byok:
+                    _cost = calculate_token_cost(_log_p_tokens, _log_c_tokens)
+                    if _log_org and _cost > 0:
+                        deduct_credits(_log_org, _cost, reason="token_usage")
+                else:
+                    _cost = 0.0
+
+                # Tokens saved: on cache hits, record what would have been used
+                _tokens_saved = _log_tokens if _log_hit != "miss" else 0
+                _cost_saved = calculate_token_cost(_log_p_tokens, _log_c_tokens) if _log_hit != "miss" else 0.0
+
                 log_usage(
                     api_key=_log_key, tenant_id=tenant,
                     endpoint="/v1/chat/completions", request_count=1,
                     cache_hits=1 if _log_hit != "miss" else 0,
                     cache_misses=1 if _log_hit == "miss" else 0,
-                    tokens_used=_log_tokens, cost_estimate=_log_cost,
+                    tokens_used=_log_tokens, cost_estimate=_cost,
                     user_id=_log_uid, org_id=_log_org,
                     decision=_log_hit,
                     similarity=float(meta.get("similarity", 0.0)),
                     latency_ms=float(meta.get("latency_ms", 0.0)),
                     prompt_hash=meta.get("prompt_hash", ""),
+                    tokens_saved=_tokens_saved, cost_saved=_cost_saved,
+                    is_byok=_is_byok,
                 )
             except Exception:
                 pass
@@ -3041,32 +3091,46 @@ def get_billing_status(request: Request):
         total_hits = int(usage.get("total_hits", 0))
         total_misses = int(usage.get("total_misses", 0))
         total_cost = float(usage.get("total_cost", 0))
-        # Estimate savings: avg cost per miss * hits (cost we avoided)
-        if total_misses > 0 and total_cost > 0:
+        total_tokens_saved = int(usage.get("total_tokens_saved", 0))
+        total_cost_saved = float(usage.get("total_cost_saved", 0))
+
+        # Savings estimate: use actual tracked cost_saved if available, else fallback
+        if total_cost_saved > 0:
+            estimated_savings_usd = round(total_cost_saved, 2)
+        elif total_misses > 0 and total_cost > 0:
             avg_cost_per_request = total_cost / total_misses
             estimated_savings_usd = round(total_hits * avg_cost_per_request, 2)
         elif total_hits > 0:
-            estimated_savings_usd = round(total_hits * 0.002, 2)  # fallback $0.002/hit
+            estimated_savings_usd = round(total_hits * 0.002, 2)
         elif total_requests > 0 and total_hits == 0 and total_misses == 0:
-            # Fallback: usage_count from api_keys with no hit/miss breakdown
-            # Conservatively estimate 30% cache hit rate at $0.002/request
             estimated_hits = int(total_requests * 0.3)
             total_hits = estimated_hits
             estimated_savings_usd = round(estimated_hits * 0.002, 2)
         else:
             estimated_savings_usd = 0.0
-        
+
+        # Get credits balance
+        credits_balance = 0.0
+        try:
+            from database import get_org_credits_balance
+            credits_balance = get_org_credits_balance(str(org["id"]))
+        except Exception:
+            pass
+
         limits = get_plan_limits(plan)
         return {
             "org_id": str(org["id"]),
             "org_name": org["name"],
             "plan": plan,
             "limits": limits,
+            "credits_balance": round(credits_balance, 6),
             "usage_30d": usage,
             "savings_estimate": {
                 "cached_requests": total_hits,
                 "total_requests": total_requests,
                 "estimated_savings_usd": estimated_savings_usd,
+                "tokens_saved": total_tokens_saved,
+                "cost_saved_usd": round(total_cost_saved, 4),
             },
         }
     except HTTPException:
@@ -3201,7 +3265,13 @@ async def stripe_webhook(request: Request):
             if org_id:
                 try:
                     _update_org_plan(org_id, plan)
-                    app_log.info(f"Webhook | plan upgraded to {plan} | org={org_id}")
+                    # Grant starting credits for the new plan
+                    from billing import get_plan_limits, add_credits
+                    plan_limits = get_plan_limits(plan)
+                    starting_credits = plan_limits.get("starting_credits_usd")
+                    if starting_credits and starting_credits > 0:
+                        add_credits(org_id, starting_credits, reason="starting_credits")
+                    app_log.info(f"Webhook | plan upgraded to {plan} | org={org_id} | credits={starting_credits}")
                 except Exception as e:
                     error_log.error(f"Webhook plan update failed | org={org_id} | error={e}")
 
@@ -3239,6 +3309,75 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         error_log.exception(f"Webhook failed | error={e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# ── Credits endpoints ──
+
+@app.get("/api/credits/balance")
+def get_credits_balance_endpoint(request: Request):
+    """Get the current prepaid credits balance for the user's org."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs, get_org_credits_balance
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            return {"credits_balance": 0.0, "org_id": None}
+        org_id = str(orgs[0]["id"])
+        balance = get_org_credits_balance(org_id)
+        return {"credits_balance": round(balance, 6), "org_id": org_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Credits balance failed | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class AddCreditsRequest(BaseModel):
+    amount_usd: float
+
+@app.post("/api/credits/add")
+def add_credits_endpoint(body: AddCreditsRequest, request: Request):
+    """Add prepaid credits to the user's org (admin or Stripe-triggered)."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        if body.amount_usd <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be positive")
+        from database import get_user_orgs
+        from billing import add_credits
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            raise HTTPException(status_code=400, detail="No organization found")
+        org_id = str(orgs[0]["id"])
+        success = add_credits(org_id, body.amount_usd, reason="topup")
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to add credits")
+        from database import get_org_credits_balance
+        new_balance = get_org_credits_balance(org_id)
+        return {"message": f"Added ${body.amount_usd:.2f} credits", "credits_balance": round(new_balance, 6)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Add credits failed | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/credits/history")
+def get_credits_history_endpoint(request: Request, limit: int = Query(50, ge=1, le=500)):
+    """Get credits transaction history for the user's org."""
+    try:
+        user = _get_user_from_supabase_token(request)
+        from database import get_user_orgs, get_credits_history
+        orgs = get_user_orgs(user["id"])
+        if not orgs:
+            return {"transactions": []}
+        org_id = str(orgs[0]["id"])
+        history = get_credits_history(org_id, limit)
+        return {"transactions": [{k: str(v) for k, v in row.items()} for row in history]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_log.exception(f"Credits history failed | error={e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 # -----------------------------
 # Entry point

@@ -395,7 +395,10 @@ def log_usage(
     decision: Optional[str] = None,
     similarity: float = 0.0,
     latency_ms: float = 0.0,
-    prompt_hash: Optional[str] = None
+    prompt_hash: Optional[str] = None,
+    tokens_saved: int = 0,
+    cost_saved: float = 0.0,
+    is_byok: bool = False
 ):
     with get_db_connection() as conn:
         cur = conn.cursor()
@@ -409,11 +412,13 @@ def log_usage(
             """INSERT INTO usage_logs
                (api_key, tenant_id, user_id, org_id, endpoint, request_count,
                 cache_hits, cache_misses, tokens_used, cost_estimate,
-                decision, similarity, latency_ms, prompt_hash)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                decision, similarity, latency_ms, prompt_hash,
+                tokens_saved, cost_saved, is_byok)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (api_key, tenant_id, user_id, org_id, endpoint, request_count,
              cache_hits, cache_misses, tokens_used, cost_estimate,
-             decision, similarity, latency_ms, prompt_hash)
+             decision, similarity, latency_ms, prompt_hash,
+             tokens_saved, cost_saved, is_byok)
         )
 
 
@@ -441,7 +446,9 @@ def get_usage_stats(tenant_id: str, days: int = 30) -> Dict:
                  COALESCE(SUM(cache_hits), 0)    as total_hits,
                  COALESCE(SUM(cache_misses), 0)  as total_misses,
                  COALESCE(SUM(tokens_used), 0)   as total_tokens,
-                 COALESCE(SUM(cost_estimate), 0)  as total_cost
+                 COALESCE(SUM(cost_estimate), 0)  as total_cost,
+                 COALESCE(SUM(tokens_saved), 0)  as total_tokens_saved,
+                 COALESCE(SUM(cost_saved), 0)    as total_cost_saved
                FROM usage_logs
                WHERE tenant_id = %s
                  AND logged_at >= NOW() - INTERVAL '1 day' * %s""",
@@ -450,7 +457,8 @@ def get_usage_stats(tenant_id: str, days: int = 30) -> Dict:
         row = cur.fetchone()
         result = dict(row) if row else {
             "total_requests": 0, "total_hits": 0,
-            "total_misses": 0, "total_tokens": 0, "total_cost": 0
+            "total_misses": 0, "total_tokens": 0, "total_cost": 0,
+            "total_tokens_saved": 0, "total_cost_saved": 0,
         }
         # Fallback to api_keys.usage_count if usage_logs is empty
         if result.get('total_requests', 0) == 0:
@@ -475,7 +483,9 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
                  COALESCE(SUM(cache_hits), 0)    as total_hits,
                  COALESCE(SUM(cache_misses), 0)  as total_misses,
                  COALESCE(SUM(tokens_used), 0)   as total_tokens,
-                 COALESCE(SUM(cost_estimate), 0)  as total_cost
+                 COALESCE(SUM(cost_estimate), 0)  as total_cost,
+                 COALESCE(SUM(tokens_saved), 0)  as total_tokens_saved,
+                 COALESCE(SUM(cost_saved), 0)    as total_cost_saved
                FROM usage_logs
                WHERE org_id = %s
                  AND logged_at >= NOW() - INTERVAL '1 day' * %s""",
@@ -484,7 +494,8 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
         row = cur.fetchone()
         result = dict(row) if row else {
             "total_requests": 0, "total_hits": 0,
-            "total_misses": 0, "total_tokens": 0, "total_cost": 0
+            "total_misses": 0, "total_tokens": 0, "total_cost": 0,
+            "total_tokens_saved": 0, "total_cost_saved": 0,
         }
         if result.get('total_requests', 0) > 0:
             return result
@@ -495,7 +506,9 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
                  COALESCE(SUM(ul.cache_hits), 0)    as total_hits,
                  COALESCE(SUM(ul.cache_misses), 0)  as total_misses,
                  COALESCE(SUM(ul.tokens_used), 0)   as total_tokens,
-                 COALESCE(SUM(ul.cost_estimate), 0)  as total_cost
+                 COALESCE(SUM(ul.cost_estimate), 0)  as total_cost,
+                 COALESCE(SUM(ul.tokens_saved), 0)  as total_tokens_saved,
+                 COALESCE(SUM(ul.cost_saved), 0)    as total_cost_saved
                FROM usage_logs ul
                JOIN api_keys ak ON ul.api_key = ak.api_key AND ak.org_id = %s
                WHERE ul.logged_at >= NOW() - INTERVAL '1 day' * %s""",
@@ -504,7 +517,8 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
         row = cur.fetchone()
         result = dict(row) if row else {
             "total_requests": 0, "total_hits": 0,
-            "total_misses": 0, "total_tokens": 0, "total_cost": 0
+            "total_misses": 0, "total_tokens": 0, "total_cost": 0,
+            "total_tokens_saved": 0, "total_cost_saved": 0,
         }
         # Fallback to api_keys.usage_count if usage_logs is empty
         if result.get('total_requests', 0) == 0:
@@ -519,6 +533,83 @@ def get_usage_stats_by_org(org_id: str, days: int = 30) -> Dict:
             if fallback and (fallback['total_requests'] or 0) > 0:
                 result['total_requests'] = fallback['total_requests']
         return result
+
+
+# ==========================================================================
+# Credits Management
+# ==========================================================================
+
+def get_org_credits_balance(org_id: str) -> float:
+    """Get the current credits balance for an organization."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT COALESCE(credits_balance, 0.0) FROM organizations WHERE id = %s',
+            (org_id,)
+        )
+        row = cur.fetchone()
+        return float(row[0]) if row else 0.0
+
+
+def add_org_credits(org_id: str, amount: float, reason: str = "topup") -> bool:
+    """Add credits to an org's balance and log the transaction."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE organizations
+               SET credits_balance = COALESCE(credits_balance, 0.0) + %s
+               WHERE id = %s
+               RETURNING credits_balance""",
+            (amount, org_id)
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        new_balance = float(row[0])
+        cur.execute(
+            """INSERT INTO credits_ledger (org_id, amount, balance_after, reason)
+               VALUES (%s, %s, %s, %s)""",
+            (org_id, amount, new_balance, reason)
+        )
+        return True
+
+
+def deduct_org_credits(org_id: str, amount: float, reason: str = "token_usage") -> bool:
+    """Deduct credits from an org's balance. Returns False if insufficient."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE organizations
+               SET credits_balance = credits_balance - %s
+               WHERE id = %s AND COALESCE(credits_balance, 0.0) >= %s
+               RETURNING credits_balance""",
+            (amount, org_id, amount)
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        new_balance = float(row[0])
+        cur.execute(
+            """INSERT INTO credits_ledger (org_id, amount, balance_after, reason)
+               VALUES (%s, %s, %s, %s)""",
+            (org_id, -amount, new_balance, reason)
+        )
+        return True
+
+
+def get_credits_history(org_id: str, limit: int = 50) -> List[Dict]:
+    """Get recent credits transactions for an org."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """SELECT id, amount, balance_after, reason, description, created_at
+               FROM credits_ledger
+               WHERE org_id = %s
+               ORDER BY created_at DESC
+               LIMIT %s""",
+            (org_id, limit)
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 # ==========================================================================

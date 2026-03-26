@@ -38,6 +38,9 @@ def is_enabled() -> bool:
 
 
 # ── Plan definitions ──
+# Service fee tiers (same for Semantis Key and BYOK users).
+# Token costs are separate — only Semantis Key users pay per-token on cache misses.
+# BYOK users pay $0 for tokens (they pay OpenAI directly).
 
 PLANS = {
     "free": {
@@ -45,9 +48,9 @@ PLANS = {
         "price_monthly": 0,
         "stripe_price_id": None,
         "max_users": 1,
-        "max_requests_month": 10000,
-        "max_tokens_month": 100000,
-        "max_cache_entries": 10000,
+        "max_requests_month": 1000,
+        "max_cache_entries": 1000,
+        "starting_credits_usd": 1.00,
         "advanced_caching": False,
         "custom_cache_ttl": False,
         "analytics_dashboard": False,
@@ -60,9 +63,9 @@ PLANS = {
         "price_monthly": 49,
         "stripe_price_id": STRIPE_PRICE_PRO,
         "max_users": 10,
-        "max_requests_month": 500000,
-        "max_tokens_month": 5000000,
-        "max_cache_entries": 500000,
+        "max_requests_month": 100000,
+        "max_cache_entries": 100000,
+        "starting_credits_usd": 5.00,
         "advanced_caching": True,
         "custom_cache_ttl": True,
         "analytics_dashboard": True,
@@ -70,14 +73,14 @@ PLANS = {
         "custom_threshold": True,
         "priority_support": True,
     },
-    "enterprise": {
-        "name": "Enterprise",
+    "team": {
+        "name": "Team",
         "price_monthly": None,
         "stripe_price_id": None,
         "max_users": None,
         "max_requests_month": None,
-        "max_tokens_month": None,
         "max_cache_entries": None,
+        "starting_credits_usd": None,
         "advanced_caching": True,
         "custom_cache_ttl": True,
         "analytics_dashboard": True,
@@ -85,6 +88,13 @@ PLANS = {
         "custom_threshold": True,
         "priority_support": True,
     },
+}
+
+# ── Token pricing (Semantis Key users only, charged on cache misses) ──
+# BYOK users pay $0 — they hit their own OpenAI key.
+TOKEN_PRICING = {
+    "prompt_per_token": 0.00000020,      # $0.20 / 1M tokens
+    "completion_per_token": 0.00000080,  # $0.80 / 1M tokens
 }
 
 
@@ -99,6 +109,70 @@ def check_plan_limit(plan: str, metric: str, current_value: int) -> bool:
     if max_val is None:
         return True
     return current_value < max_val
+
+
+def calculate_token_cost(prompt_tokens: int, completion_tokens: int) -> float:
+    """Calculate the token cost for a cache miss (Semantis Key users only).
+    Returns 0.0 for cache hits — call this only on misses."""
+    cost = (prompt_tokens * TOKEN_PRICING["prompt_per_token"]) + \
+           (completion_tokens * TOKEN_PRICING["completion_per_token"])
+    return round(cost, 8)
+
+
+def estimate_tokens_saved(prompt_tokens: int, completion_tokens: int) -> dict:
+    """Estimate the dollar value of tokens saved by a cache hit."""
+    saved_cost = calculate_token_cost(prompt_tokens, completion_tokens)
+    return {
+        "tokens_saved": prompt_tokens + completion_tokens,
+        "cost_saved_usd": saved_cost,
+    }
+
+
+# ── Credits Management ──
+
+def get_credits_balance(org_id: str) -> float:
+    """Get the current prepaid credits balance for an org."""
+    try:
+        from database import get_org_credits_balance
+        return get_org_credits_balance(org_id)
+    except Exception as e:
+        logger.error(f"Failed to get credits balance | org_id={org_id} | error={e}")
+        return 0.0
+
+
+def add_credits(org_id: str, amount_usd: float, reason: str = "topup") -> bool:
+    """Add prepaid credits to an org's balance."""
+    if amount_usd <= 0:
+        return False
+    try:
+        from database import add_org_credits
+        return add_org_credits(org_id, amount_usd, reason)
+    except Exception as e:
+        logger.error(f"Failed to add credits | org_id={org_id} | amount={amount_usd} | error={e}")
+        return False
+
+
+def deduct_credits(org_id: str, amount_usd: float, reason: str = "token_usage") -> bool:
+    """Deduct credits from an org's balance. Returns False if insufficient."""
+    if amount_usd <= 0:
+        return True  # nothing to deduct
+    try:
+        from database import deduct_org_credits
+        return deduct_org_credits(org_id, amount_usd, reason)
+    except Exception as e:
+        logger.error(f"Failed to deduct credits | org_id={org_id} | amount={amount_usd} | error={e}")
+        return False
+
+
+def is_byok_user(user_id: Optional[str]) -> bool:
+    """Check if a user has their own OpenAI key set (BYOK)."""
+    if not user_id:
+        return False
+    try:
+        from database import get_user_openai_key_encrypted
+        return get_user_openai_key_encrypted(user_id) is not None
+    except Exception:
+        return False
 
 
 # ── Stripe Customer Management ──
