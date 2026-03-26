@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { generateApiKey, setApiKey, hasApiKey, getApiKey, getSettings, updateSettings, getUserOpenAIKeyStatus, setUserOpenAIKey, removeUserOpenAIKey } from '../api/semanticAPI';
 import { Key, Copy, Check, AlertCircle, Save, Loader2, RefreshCw, Trash2, Shield } from 'lucide-react';
 import { CacheWarmup } from './CacheWarmup';
-import { CacheManager } from './CacheManager';
 
 export function SettingsPanel() {
   const [threshold, setThreshold] = useState(0.75);
@@ -376,8 +375,6 @@ export function SettingsPanel() {
       {/* Cache Warm-Up */}
       <CacheWarmup />
 
-      {/* Cache Entry Manager */}
-      <CacheManager />
 
       {/* Summary */}
       <div style={styles.infoBox}>
