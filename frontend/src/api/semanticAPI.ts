@@ -365,6 +365,7 @@ export interface BillingPlan {
   max_users: number | null;
   max_requests_month: number | null;
   max_cache_entries: number | null;
+  starting_credits_usd: number | null;
 }
 
 export interface BillingStatus {
@@ -372,12 +373,29 @@ export interface BillingStatus {
   org_name: string;
   plan: string;
   limits: BillingPlan;
+  credits_balance: number;
   usage_30d: Record<string, number>;
   savings_estimate: {
     cached_requests: number;
     total_requests: number;
     estimated_savings_usd: number;
+    tokens_saved: number;
+    cost_saved_usd: number;
   };
+}
+
+export interface CreditsBalance {
+  credits_balance: number;
+  org_id: string | null;
+}
+
+export interface CreditsTransaction {
+  id: string;
+  amount: string;
+  balance_after: string;
+  reason: string;
+  description: string | null;
+  created_at: string;
 }
 
 export async function getBillingPlans(): Promise<{ plans: Record<string, BillingPlan>; stripe_enabled: boolean }> {
@@ -505,5 +523,39 @@ export async function getBillingPortalUrl(): Promise<{ portal_url: string }> {
     const err = await res.json().catch(() => ({ detail: 'Failed to open billing portal' }));
     throw new Error(err.detail || 'Failed to open billing portal');
   }
+  return res.json();
+}
+
+// ---------- Credits endpoints ----------
+
+export async function getCreditsBalance(): Promise<CreditsBalance> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/credits/balance`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch credits balance');
+  return res.json();
+}
+
+export async function addCredits(amountUsd: number): Promise<{ message: string; credits_balance: number }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/credits/add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ amount_usd: amountUsd }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to add credits' }));
+    throw new Error(err.detail || 'Failed to add credits');
+  }
+  return res.json();
+}
+
+export async function getCreditsHistory(limit = 50): Promise<{ transactions: CreditsTransaction[] }> {
+  const token = await getSupabaseToken();
+  const res = await fetch(`${BACKEND_URL}/api/credits/history?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch credits history');
   return res.json();
 }

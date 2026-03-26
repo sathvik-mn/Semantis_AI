@@ -45,6 +45,8 @@ export function SavingsDashboard() {
   const total = savings?.total_requests ?? 0;
   const cached = savings?.cached_requests ?? 0;
   const savingsUsd = savings?.estimated_savings_usd ?? 0;
+  const tokensSaved = savings?.tokens_saved ?? 0;
+  const costSaved = savings?.cost_saved_usd ?? 0;
   const hitRate = total > 0 ? (cached / total) * 100 : 0;
 
   return (
@@ -69,9 +71,14 @@ export function SavingsDashboard() {
           <div style={styles.cardValue}>{hitRate.toFixed(1)}%</div>
           <div style={styles.cardDesc}>Share served from cache</div>
         </div>
+        <div style={styles.card}>
+          <div style={styles.cardLabel}>Tokens Saved</div>
+          <div style={styles.cardValue}>{tokensSaved.toLocaleString()}</div>
+          <div style={styles.cardDesc}>Tokens avoided via cache hits</div>
+        </div>
         <div style={styles.cardHighlight}>
           <div style={styles.cardLabel}>Estimated Savings</div>
-          <div style={styles.cardValue}>${savingsUsd.toFixed(2)}</div>
+          <div style={styles.cardValue}>${costSaved > 0 ? costSaved.toFixed(2) : savingsUsd.toFixed(2)}</div>
           <div style={styles.cardDesc}>Avoided LLM API costs (30 days)</div>
         </div>
       </div>

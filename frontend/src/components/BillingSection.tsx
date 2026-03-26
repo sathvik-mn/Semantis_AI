@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CreditCard, ArrowUpRight, Loader2, Check, AlertCircle, ExternalLink } from 'lucide-react';
-import { getBillingStatus, upgradePlan, getBillingPortalUrl, getBillingPlans, BillingStatus, BillingPlan } from '../api/semanticAPI';
+import { CreditCard, ArrowUpRight, Loader2, Check, AlertCircle, ExternalLink, Coins, Key } from 'lucide-react';
+import { getBillingStatus, upgradePlan, getBillingPortalUrl, getBillingPlans, getUserOpenAIKeyStatus, BillingStatus, BillingPlan } from '../api/semanticAPI';
 
 export function BillingSection() {
   const [billing, setBilling] = useState<BillingStatus | null>(null);
@@ -9,16 +9,19 @@ export function BillingSection() {
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isByok, setIsByok] = useState(false);
 
   const fetchBilling = useCallback(async () => {
     try {
       setError(null);
-      const [data, plansData] = await Promise.all([
+      const [data, plansData, keyStatus] = await Promise.all([
         getBillingStatus(),
         getBillingPlans(),
+        getUserOpenAIKeyStatus().catch(() => ({ key_set: false })),
       ]);
       setBilling(data);
       setPlans(plansData.plans);
+      setIsByok(keyStatus.key_set ?? false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load billing');
     } finally {
@@ -144,9 +147,36 @@ export function BillingSection() {
           </div>
         )}
 
+        {/* BYOK indicator */}
+        <div style={styles.byokIndicator}>
+          <Key size={14} style={{ color: isByok ? '#34d399' : '#60a5fa' }} />
+          <span style={{ fontSize: '13px', color: isByok ? '#86efac' : '#93c5fd' }}>
+            {isByok ? 'Using your own OpenAI key (BYOK) — no token charges from Semantis' : 'Using Semantis API key — tokens deducted from credits on cache misses'}
+          </span>
+        </div>
+
+        {/* Credits balance (Semantis Key users) */}
+        {!isByok && (
+          <div style={styles.creditsCard}>
+            <div style={styles.creditsHeader}>
+              <Coins size={16} style={{ color: '#fbbf24' }} />
+              <span style={styles.usageLabel}>Prepaid Credits</span>
+            </div>
+            <div style={{ ...styles.creditsValue, color: (billing?.credits_balance ?? 0) > 0 ? '#fde68a' : '#fca5a5' }}>
+              ${(billing?.credits_balance ?? 0).toFixed(4)}
+            </div>
+            {(billing?.credits_balance ?? 0) <= 0.01 && (
+              <div style={styles.creditsWarning}>
+                Credits low — add more to continue using the Semantis API key
+              </div>
+            )}
+          </div>
+        )}
+
         {savings && savings.estimated_savings_usd > 0 && (
           <div style={styles.savingsChip}>
             You've saved ~${savings.estimated_savings_usd.toFixed(2)} this month with caching
+            {savings.tokens_saved > 0 && ` (${savings.tokens_saved.toLocaleString()} tokens saved)`}
           </div>
         )}
       </div>
@@ -236,6 +266,22 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '12px', padding: '8px 12px', borderRadius: '8px',
     background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)',
     fontSize: '13px', color: '#86efac',
+  },
+  byokIndicator: {
+    marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px',
+  },
+  creditsCard: {
+    marginTop: '12px', padding: '12px 16px', borderRadius: '8px',
+    background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.2)',
+  },
+  creditsHeader: {
+    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px',
+  },
+  creditsValue: {
+    fontSize: '22px', fontWeight: '700' as const,
+  },
+  creditsWarning: {
+    fontSize: '12px', color: '#fca5a5', marginTop: '4px',
   },
   upgradeSection: { marginTop: '16px' },
   upgradeText: { fontSize: '14px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px', marginTop: 0 },

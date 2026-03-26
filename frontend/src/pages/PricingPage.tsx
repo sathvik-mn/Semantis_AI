@@ -19,9 +19,9 @@ export function PricingPage() {
       price: '$0',
       description: 'Perfect for trying out Semantis AI',
       features: [
-        'Free for 1 month',
-        '10,000 API requests/month',
-        '100K tokens included',
+        '$1.00 starting credits included',
+        '1,000 API requests/month',
+        'BYOK: Bring your own OpenAI key',
         'Basic semantic caching',
         'Community support',
       ],
@@ -34,8 +34,8 @@ export function PricingPage() {
       description: 'For growing teams and projects',
       features: [
         'Everything in Free',
-        '500,000 API requests/month',
-        '5M tokens included',
+        '$5.00 starting credits included',
+        '100,000 API requests/month',
         'Advanced caching algorithms',
         'Priority support',
         'Custom cache TTL',
@@ -46,17 +46,16 @@ export function PricingPage() {
       popular: true,
     },
     {
-      name: 'Enterprise',
+      name: 'Team',
       price: 'Custom',
       description: 'For large-scale production deployments',
       features: [
         'Everything in Pro',
         'Unlimited API requests',
-        'Unlimited tokens',
-        'Dedicated infrastructure',
+        'Custom starting credits',
+        'Audit logs',
         'Custom SLA guarantees',
         '24/7 priority support',
-        'Advanced security',
         'Dedicated account manager',
       ],
       cta: 'Contact Sales',
@@ -144,6 +143,27 @@ export function PricingPage() {
                 )}
               </div>
             ))}
+          </div>
+
+          {/* How billing works */}
+          <div className="glass-card p-10 mb-6">
+            <h3 className="text-xl font-bold text-white mb-4 text-center">How Billing Works</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <h4 className="text-lg font-semibold text-blue-400 mb-2">Use Our API Key</h4>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  Pay your plan fee + per-token on cache misses only. Cache hits are always free.
+                  Credits are prepaid — add more anytime. The more our cache works, the less you pay.
+                </p>
+              </div>
+              <div>
+                <h4 className="text-lg font-semibold text-emerald-400 mb-2">Bring Your Own Key (BYOK)</h4>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  Already have an OpenAI key? Just pay the plan fee. Your key handles OpenAI calls,
+                  and our semantic cache reduces them. Zero token charges from us.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="glass-card p-10 text-center">
