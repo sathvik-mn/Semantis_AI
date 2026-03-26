@@ -78,11 +78,15 @@ def verify_admin_key(
             from database import get_user_by_id
             token = authorization.split(" ", 1)[1]
             payload = verify_token(token)
+            if not payload:
+                raise HTTPException(status_code=401, detail="Invalid or expired token")
             user_id = payload.get("sub")
             if user_id:
                 user = get_user_by_id(user_id)
                 if user and user.get("is_admin"):
                     return True
+        except HTTPException:
+            raise
         except Exception:
             pass
 

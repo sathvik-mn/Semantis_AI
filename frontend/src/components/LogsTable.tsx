@@ -51,6 +51,7 @@ export function LogsTable({ events, isLoading }: LogsTableProps) {
   };
 
   const getDecisionColor = (decision: string) => {
+    if (!decision) return '#f59e0b';
     if (decision.includes('exact')) return '#10b981';
     if (decision.includes('semantic')) return '#3b82f6';
     return '#f59e0b';
@@ -61,9 +62,9 @@ export function LogsTable({ events, isLoading }: LogsTableProps) {
     const rows = events.map((event) => [
       event.timestamp,
       event.decision,
-      event.similarity.toFixed(3),
-      event.latency_ms.toFixed(0),
-      event.prompt_hash,
+      (event.similarity ?? 0).toFixed(3),
+      (event.latency_ms ?? 0).toFixed(0),
+      event.prompt_hash ?? '',
     ]);
 
     const csvContent = [
@@ -138,9 +139,9 @@ export function LogsTable({ events, isLoading }: LogsTableProps) {
                     {event.decision}
                   </span>
                 </td>
-                <td style={styles.td}>{(event.similarity * 100).toFixed(1)}%</td>
-                <td style={styles.td}>{event.latency_ms.toFixed(0)}ms</td>
-                <td style={styles.tdHash}>{event.prompt_hash.substring(0, 16)}...</td>
+                <td style={styles.td}>{((event.similarity ?? 0) * 100).toFixed(1)}%</td>
+                <td style={styles.td}>{(event.latency_ms ?? 0).toFixed(0)}ms</td>
+                <td style={styles.tdHash}>{event.prompt_hash ? event.prompt_hash.substring(0, 16) + '...' : 'N/A'}</td>
               </tr>
             ))}
           </tbody>
