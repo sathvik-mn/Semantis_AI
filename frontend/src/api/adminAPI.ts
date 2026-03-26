@@ -2,14 +2,13 @@ import axios from 'axios';
 import { supabase } from '../lib/supabase';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || 'admin-secret-key-change-me';
 
 const adminApi = axios.create({
   baseURL: `${API_BASE_URL}/admin`,
 });
 
 adminApi.interceptors.request.use(async (config) => {
-  config.headers['X-Admin-Key'] = ADMIN_API_KEY;
+  // Admin panel authenticates via Supabase JWT — backend checks is_admin flag
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
     config.headers.Authorization = `Bearer ${session.access_token}`;

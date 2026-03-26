@@ -1474,6 +1474,25 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
+# ── Global request body size limit (2MB) ──
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+_MAX_BODY_SIZE = 2 * 1024 * 1024  # 2 MB
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > _MAX_BODY_SIZE:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Request body too large. Maximum is {_MAX_BODY_SIZE // (1024*1024)}MB."},
+            )
+        return await call_next(request)
+
+app.add_middleware(MaxBodySizeMiddleware)
+
+
 # ── Scheduled log cleanup (runs daily in background) ──
 def _schedule_log_cleanup():
     """Run database log cleanup once per day in a background thread."""
@@ -1630,7 +1649,7 @@ def setup_admin_routes():
 setup_admin_routes()
 
 # Simple API-key format: Bearer sc-{tenant}-{anything}
-API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]+)$")
+API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]{3,128})$")
 _api_key_cache: OrderedDict = OrderedDict()  # Bounded LRU: token -> {"user_id": ..., "ts": epoch}
 _API_KEY_CACHE_MAX = 10_000
 
@@ -1754,6 +1773,20 @@ class ChatMessage(BaseModel):
     role: str
     content: str
 
+    @validator("role")
+    def validate_role(cls, v):
+        if len(v) > 50:
+            raise ValueError("role must be under 50 characters")
+        if v not in ("system", "user", "assistant", "function", "tool"):
+            raise ValueError("invalid role")
+        return v
+
+    @validator("content")
+    def validate_content(cls, v):
+        if len(v) > 30_000:
+            raise ValueError("content exceeds 30,000 character limit")
+        return v
+
 class ChatRequest(BaseModel):
     model: str = CHAT_MODEL
     messages: List[ChatMessage]
@@ -1761,10 +1794,22 @@ class ChatRequest(BaseModel):
     ttl_seconds: int = 7 * 24 * 3600
     stream: bool = False
 
+    @validator("model")
+    def validate_model(cls, v):
+        if len(v) > 100:
+            raise ValueError("model name too long")
+        return v
+
     @validator("temperature")
     def temp_range(cls, v):
         if not (0.0 <= v <= 2.0):
             raise ValueError("temperature must be between 0.0 and 2.0")
+        return v
+
+    @validator("ttl_seconds")
+    def validate_ttl(cls, v):
+        if v < 0 or v > 30 * 24 * 3600:
+            raise ValueError("ttl_seconds must be between 0 and 30 days")
         return v
 
     @validator("messages")
@@ -1779,6 +1824,7 @@ class ChatRequest(BaseModel):
 # Endpoints
 # -----------------------------
 @app.get("/health")
+@limiter.limit("60/minute")
 def health():
     """Health check endpoint with system status."""
     
@@ -1833,6 +1879,7 @@ def health():
         return {"status": "error", "service": "semantic-cache", "version": "2.0.0"}
 
 @app.get("/metrics")
+@limiter.limit("60/minute")
 def get_metrics(tenant: str = Depends(get_tenant_from_key)):
     """Get cache performance metrics for the tenant."""
     svc.adapt_threshold(tenant)
@@ -1864,6 +1911,7 @@ def get_metrics(tenant: str = Depends(get_tenant_from_key)):
     return m
 
 @app.get("/prometheus/metrics")
+@limiter.limit("30/minute")
 def prometheus_metrics():
     """Prometheus metrics endpoint."""
     try:
@@ -1991,6 +2039,7 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
         raise HTTPException(status_code=500, detail="Internal error")
 
 @app.get("/events")
+@limiter.limit("60/minute")
 def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get_tenant_from_key)):
     """Get recent cache events from DB (persisted across restarts)."""
     try:
@@ -2030,6 +2079,7 @@ class SettingsUpdate(BaseModel):
     domain_thresholds: Optional[Dict[str, float]] = None
 
 @app.get("/settings")
+@limiter.limit("60/minute")
 def get_settings(tenant: str = Depends(get_tenant_from_key)):
     """Get current cache settings for the tenant."""
     T = svc.tenant(tenant)
@@ -2232,6 +2282,12 @@ def list_cache_entries_endpoint(
 class DeleteEntriesRequest(BaseModel):
     entry_ids: List[int]
 
+    @validator("entry_ids")
+    def validate_ids(cls, v):
+        if len(v) > 500:
+            raise ValueError("max 500 entries per delete request")
+        return v
+
 
 @app.delete("/api/cache/entries")
 @limiter.limit("20/minute")
@@ -2259,6 +2315,7 @@ def delete_cache_entries_endpoint(request: Request, body: DeleteEntriesRequest):
 
 
 @app.put("/settings")
+@limiter.limit("30/minute")
 def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_key)):
     """Update cache settings for the tenant."""
     T = svc.tenant(tenant)
@@ -2325,6 +2382,7 @@ def _get_user_from_supabase_token(request: Request) -> dict:
 
 
 @app.get("/api/keys/current")
+@limiter.limit("30/minute")
 def get_current_api_key(request: Request):
     """Get the current user's API key (requires Supabase JWT)."""
     try:
@@ -2492,6 +2550,7 @@ def _auto_provision_org(user: dict) -> Optional[dict]:
 
 
 @app.get("/api/auth/me")
+@limiter.limit("30/minute")
 def get_current_user(request: Request):
     """Get current authenticated user info from Supabase JWT."""
     try:
@@ -2536,7 +2595,16 @@ def get_current_user(request: Request):
 class OpenAIKeyRequest(BaseModel):
     api_key: str
 
+    @validator("api_key")
+    def validate_key(cls, v):
+        if len(v) > 256:
+            raise ValueError("API key too long")
+        if not v.startswith("sk-"):
+            raise ValueError("Invalid OpenAI API key format")
+        return v
+
 @app.post("/api/users/openai-key")
+@limiter.limit("10/hour")
 def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Request):
     """Set user's OpenAI API key (requires Supabase JWT)."""
     try:
@@ -2562,6 +2630,7 @@ def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Reques
         raise HTTPException(status_code=500, detail="Failed to set OpenAI API key")
 
 @app.get("/api/users/openai-key")
+@limiter.limit("30/minute")
 def get_user_openai_key_status(auth_request: Request):
     """Check if user has OpenAI API key set (requires Supabase JWT)."""
     try:
@@ -2585,6 +2654,7 @@ def get_user_openai_key_status(auth_request: Request):
         raise HTTPException(status_code=500, detail="Failed to get OpenAI API key status")
 
 @app.delete("/api/users/openai-key")
+@limiter.limit("10/hour")
 def remove_user_openai_key(auth_request: Request):
     """Remove user's OpenAI API key (requires Supabase JWT)."""
     try:
@@ -2604,6 +2674,7 @@ def remove_user_openai_key(auth_request: Request):
         raise HTTPException(status_code=500, detail="Failed to remove OpenAI API key")
 
 @app.post("/api/auth/logout")
+@limiter.limit("10/minute")
 def logout():
     """Logout (client clears Supabase session)."""
     return {"message": "Logged out successfully"}
@@ -2613,6 +2684,21 @@ def logout():
 class CreateOrgRequest(BaseModel):
     name: str
     slug: str
+
+    @validator("name")
+    def validate_name(cls, v):
+        if not v or len(v) > 255:
+            raise ValueError("name must be 1-255 characters")
+        return v.strip()
+
+    @validator("slug")
+    def validate_slug(cls, v):
+        import re as _re
+        if not v or len(v) > 100:
+            raise ValueError("slug must be 1-100 characters")
+        if not _re.match(r'^[a-z0-9][a-z0-9-]*$', v):
+            raise ValueError("slug must be lowercase alphanumeric with hyphens")
+        return v
 
 @app.post("/api/orgs")
 @limiter.limit("10/hour")
@@ -2637,6 +2723,7 @@ def create_org(body: CreateOrgRequest, request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/orgs")
+@limiter.limit("30/minute")
 def list_user_orgs(request: Request):
     """List organizations for the current user."""
     try:
@@ -2653,6 +2740,18 @@ def list_user_orgs(request: Request):
 class InviteMemberRequest(BaseModel):
     email: str
     role: str = "member"
+
+    @validator("email")
+    def validate_email(cls, v):
+        if not v or len(v) > 255 or "@" not in v:
+            raise ValueError("invalid email address")
+        return v.strip().lower()
+
+    @validator("role")
+    def validate_role(cls, v):
+        if v not in ("owner", "admin", "member"):
+            raise ValueError("role must be owner, admin, or member")
+        return v
 
 @app.post("/api/orgs/{org_id}/members")
 @limiter.limit("20/hour")
@@ -2683,7 +2782,19 @@ def invite_member(org_id: str, body: InviteMemberRequest, request: Request):
 class OrgSettingsUpdate(BaseModel):
     webhook_url: Optional[str] = None
 
+    @validator("webhook_url")
+    def validate_webhook_url(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > 2048:
+            raise ValueError("webhook URL too long (max 2048)")
+        if not v.startswith(("https://", "http://")):
+            raise ValueError("webhook URL must start with https:// or http://")
+        return v
+
 @app.patch("/api/orgs/{org_id}/settings")
+@limiter.limit("20/minute")
 def update_org_settings_endpoint(org_id: str, body: OrgSettingsUpdate, request: Request):
     """Update organization settings (e.g. webhook URL for cache events)."""
     try:
@@ -2705,6 +2816,7 @@ def update_org_settings_endpoint(org_id: str, body: OrgSettingsUpdate, request: 
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/orgs/{org_id}/audit")
+@limiter.limit("30/minute")
 def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, le=500)):
     """Get audit logs for an organization."""
     try:
@@ -3022,6 +3134,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
 
 
 @app.get("/v1/models")
+@limiter.limit("60/minute")
 def list_models(tenant: str = Depends(get_tenant_from_key)):
     """OpenAI-compatible models listing for proxy compatibility."""
     return {
@@ -3038,6 +3151,7 @@ def list_models(tenant: str = Depends(get_tenant_from_key)):
 # ── Billing endpoints ──
 
 @app.get("/api/billing/plans")
+@limiter.limit("30/minute")
 def get_billing_plans():
     """Get available billing plans and their limits."""
     from billing import PLANS, is_enabled
@@ -3045,6 +3159,7 @@ def get_billing_plans():
 
 
 @app.get("/api/billing/status")
+@limiter.limit("30/minute")
 def get_billing_status(request: Request):
     """Get billing status for the current user's org."""
     try:
@@ -3147,7 +3262,20 @@ class UpgradePlanRequest(BaseModel):
     success_url: str = ""
     cancel_url: str = ""
 
+    @validator("plan")
+    def validate_plan(cls, v):
+        if v not in ("pro", "team"):
+            raise ValueError("invalid plan")
+        return v
+
+    @validator("success_url", "cancel_url")
+    def validate_urls(cls, v):
+        if v and len(v) > 2048:
+            raise ValueError("URL too long")
+        return v
+
 @app.post("/api/billing/upgrade")
+@limiter.limit("5/hour")
 def upgrade_plan(body: UpgradePlanRequest, request: Request):
     """Start a plan upgrade via Stripe Checkout."""
     try:
@@ -3205,6 +3333,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
 
 
 @app.post("/api/billing/portal")
+@limiter.limit("10/hour")
 def billing_portal(request: Request):
     """Create a Stripe Customer Portal session for managing subscriptions."""
     try:
@@ -3234,6 +3363,7 @@ def billing_portal(request: Request):
 
 
 @app.post("/api/billing/webhook")
+@limiter.limit("100/hour")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events for subscription lifecycle."""
     try:
@@ -3313,6 +3443,7 @@ async def stripe_webhook(request: Request):
 # ── Credits endpoints ──
 
 @app.get("/api/credits/balance")
+@limiter.limit("30/minute")
 def get_credits_balance_endpoint(request: Request):
     """Get the current prepaid credits balance for the user's org."""
     try:
@@ -3332,15 +3463,25 @@ def get_credits_balance_endpoint(request: Request):
 
 
 class AddCreditsRequest(BaseModel):
-    amount_usd: float
+    amount_usd: float = 0.0
+
+    @validator("amount_usd")
+    def validate_amount(cls, v):
+        if v <= 0:
+            raise ValueError("Amount must be positive")
+        if v > 500:
+            raise ValueError("Maximum single top-up is $500")
+        return round(v, 2)
 
 @app.post("/api/credits/add")
+@limiter.limit("3/hour")
 def add_credits_endpoint(body: AddCreditsRequest, request: Request):
-    """Add prepaid credits to the user's org (admin or Stripe-triggered)."""
+    """Add prepaid credits to the user's org. Requires admin privileges."""
     try:
         user = _get_user_from_supabase_token(request)
-        if body.amount_usd <= 0:
-            raise HTTPException(status_code=400, detail="Amount must be positive")
+        # Only admins can add credits (regular users pay via Stripe)
+        if not user.get("is_admin"):
+            raise HTTPException(status_code=403, detail="Only admins can add credits directly. Use the billing page to purchase credits.")
         from database import get_user_orgs
         from billing import add_credits
         orgs = get_user_orgs(user["id"])
@@ -3361,6 +3502,7 @@ def add_credits_endpoint(body: AddCreditsRequest, request: Request):
 
 
 @app.get("/api/credits/history")
+@limiter.limit("30/minute")
 def get_credits_history_endpoint(request: Request, limit: int = Query(50, ge=1, le=500)):
     """Get credits transaction history for the user's org."""
     try:

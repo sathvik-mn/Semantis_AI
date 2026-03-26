@@ -3,7 +3,7 @@ Admin API Endpoints for Dashboard
 Provides comprehensive analytics, user management, and business insights.
 Uses Supabase Postgres via psycopg2.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request
 from typing import Optional
 from pydantic import BaseModel
 import os
@@ -27,6 +27,32 @@ def get_svc():
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
+# ── Admin rate limiting ──
+# Track admin requests per IP with a simple in-memory counter.
+# Allows 60 requests per minute per IP across all admin endpoints.
+_admin_rate_limit: dict = {}  # {ip: [timestamps]}
+_ADMIN_RATE_LIMIT = 60  # requests per minute
+_ADMIN_RATE_WINDOW = 60  # seconds
+
+import time as _time
+
+def _check_admin_rate_limit(request: Request):
+    """Rate limit all admin endpoints to prevent abuse."""
+    ip = request.client.host if request.client else "unknown"
+    now = _time.time()
+    # Clean old entries
+    if ip in _admin_rate_limit:
+        _admin_rate_limit[ip] = [t for t in _admin_rate_limit[ip] if now - t < _ADMIN_RATE_WINDOW]
+    else:
+        _admin_rate_limit[ip] = []
+    if len(_admin_rate_limit[ip]) >= _ADMIN_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Admin rate limit exceeded. Try again in a minute.")
+    _admin_rate_limit[ip].append(now)
+    # Evict stale IPs periodically (keep dict small)
+    if len(_admin_rate_limit) > 1000:
+        cutoff = now - _ADMIN_RATE_WINDOW
+        _admin_rate_limit.clear()
+
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
 if not ADMIN_API_KEY:
@@ -36,15 +62,36 @@ if not ADMIN_API_KEY:
 def verify_admin_key(
     x_admin_key: str = Header(None, alias="X-Admin-Key"),
     api_key: str = Query(None),
+    authorization: str = Header(None),
 ):
+    import hmac
+
+    # Method 1: Admin API key (server-to-server calls)
     key = x_admin_key or api_key
+    if ADMIN_API_KEY and key and hmac.compare_digest(key, ADMIN_API_KEY):
+        return True
+
+    # Method 2: Supabase JWT with is_admin=true (browser-based admin panel)
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from auth import verify_token
+            from database import get_user_by_id
+            token = authorization.split(" ", 1)[1]
+            payload = verify_token(token)
+            user_id = payload.get("sub")
+            if user_id:
+                user = get_user_by_id(user_id)
+                if user and user.get("is_admin"):
+                    return True
+        except Exception:
+            pass
+
     if not ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Admin API is not configured. Set ADMIN_API_KEY env var.")
-    if not key or key != ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid admin API key")
-    return True
+    raise HTTPException(status_code=401, detail="Admin access required. Provide a valid admin API key or sign in as an admin user.")
 
-def require_admin(admin_verified: bool = Depends(verify_admin_key)):
+def require_admin(request: Request, admin_verified: bool = Depends(verify_admin_key)):
+    _check_admin_rate_limit(request)
     return admin_verified
 
 
