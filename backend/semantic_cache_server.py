@@ -1825,7 +1825,7 @@ class ChatRequest(BaseModel):
 # -----------------------------
 @app.get("/health")
 @limiter.limit("60/minute")
-def health():
+def health(request: Request):
     """Health check endpoint with system status."""
     
     try:
@@ -1880,7 +1880,7 @@ def health():
 
 @app.get("/metrics")
 @limiter.limit("60/minute")
-def get_metrics(tenant: str = Depends(get_tenant_from_key)):
+def get_metrics(request: Request, tenant: str = Depends(get_tenant_from_key)):
     """Get cache performance metrics for the tenant."""
     svc.adapt_threshold(tenant)
     m = svc.metrics(tenant)
@@ -1912,7 +1912,7 @@ def get_metrics(tenant: str = Depends(get_tenant_from_key)):
 
 @app.get("/prometheus/metrics")
 @limiter.limit("30/minute")
-def prometheus_metrics():
+def prometheus_metrics(request: Request):
     """Prometheus metrics endpoint."""
     try:
         from prometheus_metrics import get_metrics_response
@@ -2040,7 +2040,7 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
 
 @app.get("/events")
 @limiter.limit("60/minute")
-def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get_tenant_from_key)):
+def get_events(request: Request, limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get_tenant_from_key)):
     """Get recent cache events from DB (persisted across restarts)."""
     try:
         from database import get_events_from_db
@@ -2080,7 +2080,7 @@ class SettingsUpdate(BaseModel):
 
 @app.get("/settings")
 @limiter.limit("60/minute")
-def get_settings(tenant: str = Depends(get_tenant_from_key)):
+def get_settings(request: Request, tenant: str = Depends(get_tenant_from_key)):
     """Get current cache settings for the tenant."""
     T = svc.tenant(tenant)
     return {
@@ -2316,7 +2316,7 @@ def delete_cache_entries_endpoint(request: Request, body: DeleteEntriesRequest):
 
 @app.put("/settings")
 @limiter.limit("30/minute")
-def update_settings(body: SettingsUpdate, tenant: str = Depends(get_tenant_from_key)):
+def update_settings(request: Request, body: SettingsUpdate, tenant: str = Depends(get_tenant_from_key)):
     """Update cache settings for the tenant."""
     T = svc.tenant(tenant)
     changed = {}
@@ -2631,10 +2631,10 @@ def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Reques
 
 @app.get("/api/users/openai-key")
 @limiter.limit("30/minute")
-def get_user_openai_key_status(auth_request: Request):
+def get_user_openai_key_status(request: Request):
     """Check if user has OpenAI API key set (requires Supabase JWT)."""
     try:
-        user = _get_user_from_supabase_token(auth_request)
+        user = _get_user_from_supabase_token(request)
         from database import get_user_openai_key_encrypted
 
         encrypted_key = get_user_openai_key_encrypted(user["id"])
@@ -2655,10 +2655,10 @@ def get_user_openai_key_status(auth_request: Request):
 
 @app.delete("/api/users/openai-key")
 @limiter.limit("10/hour")
-def remove_user_openai_key(auth_request: Request):
+def remove_user_openai_key(request: Request):
     """Remove user's OpenAI API key (requires Supabase JWT)."""
     try:
-        user = _get_user_from_supabase_token(auth_request)
+        user = _get_user_from_supabase_token(request)
         from database import clear_user_openai_key
 
         success = clear_user_openai_key(user["id"])
@@ -2675,7 +2675,7 @@ def remove_user_openai_key(auth_request: Request):
 
 @app.post("/api/auth/logout")
 @limiter.limit("10/minute")
-def logout():
+def logout(request: Request):
     """Logout (client clears Supabase session)."""
     return {"message": "Logged out successfully"}
 
@@ -3135,7 +3135,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
 
 @app.get("/v1/models")
 @limiter.limit("60/minute")
-def list_models(tenant: str = Depends(get_tenant_from_key)):
+def list_models(request: Request, tenant: str = Depends(get_tenant_from_key)):
     """OpenAI-compatible models listing for proxy compatibility."""
     return {
         "object": "list",
@@ -3152,7 +3152,7 @@ def list_models(tenant: str = Depends(get_tenant_from_key)):
 
 @app.get("/api/billing/plans")
 @limiter.limit("30/minute")
-def get_billing_plans():
+def get_billing_plans(request: Request):
     """Get available billing plans and their limits."""
     from billing import PLANS, is_enabled
     return {"plans": PLANS, "stripe_enabled": is_enabled()}
