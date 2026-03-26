@@ -391,7 +391,11 @@ def log_usage(
     tokens_used: int = 0,
     cost_estimate: float = 0,
     user_id: Optional[str] = None,
-    org_id: Optional[str] = None
+    org_id: Optional[str] = None,
+    decision: Optional[str] = None,
+    similarity: float = 0.0,
+    latency_ms: float = 0.0,
+    prompt_hash: Optional[str] = None
 ):
     with get_db_connection() as conn:
         cur = conn.cursor()
@@ -404,11 +408,28 @@ def log_usage(
         cur.execute(
             """INSERT INTO usage_logs
                (api_key, tenant_id, user_id, org_id, endpoint, request_count,
-                cache_hits, cache_misses, tokens_used, cost_estimate)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                cache_hits, cache_misses, tokens_used, cost_estimate,
+                decision, similarity, latency_ms, prompt_hash)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (api_key, tenant_id, user_id, org_id, endpoint, request_count,
-             cache_hits, cache_misses, tokens_used, cost_estimate)
+             cache_hits, cache_misses, tokens_used, cost_estimate,
+             decision, similarity, latency_ms, prompt_hash)
         )
+
+
+def get_events_from_db(tenant_id: str, limit: int = 100) -> List[Dict]:
+    """Fetch recent cache events from usage_logs for the logs page."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """SELECT logged_at, tenant_id, prompt_hash, decision, similarity, latency_ms
+               FROM usage_logs
+               WHERE tenant_id = %s AND decision IS NOT NULL
+               ORDER BY logged_at DESC
+               LIMIT %s""",
+            (tenant_id, limit)
+        )
+        return [dict(r) for r in cur.fetchall()]
 
 
 def get_usage_stats(tenant_id: str, days: int = 30) -> Dict:

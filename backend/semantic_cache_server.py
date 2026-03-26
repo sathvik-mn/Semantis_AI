@@ -1961,7 +1961,11 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
                     cache_misses=1 if meta.get('hit') == 'miss' else 0,
                     tokens_used=0,
                     cost_estimate=0,
-                    user_id=user_id
+                    user_id=user_id,
+                    decision=meta.get('hit', 'miss'),
+                    similarity=float(meta.get('similarity', 0.0)),
+                    latency_ms=float(meta.get('latency_ms', 0.0)),
+                    prompt_hash=meta.get('prompt_hash', '')
                 )
             except Exception as e:
                 error_log.warning(f"Could not log usage to database | tenant={tenant} | error={str(e)}")
@@ -1988,20 +1992,37 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
 
 @app.get("/events")
 def get_events(limit: int = Query(100, ge=1, le=1000), tenant: str = Depends(get_tenant_from_key)):
-    """Get recent cache events for the tenant."""
-    T = svc.tenant(tenant)
-    events = T.events[-limit:] if len(T.events) > limit else T.events
-    return [
-        {
-            "timestamp": e.timestamp,
-            "tenant_id": e.tenant_id,
-            "prompt_hash": e.prompt_hash,
-            "decision": e.decision,
-            "similarity": e.similarity,
-            "latency_ms": e.latency_ms,
-        }
-        for e in reversed(events)  # Most recent first
-    ]
+    """Get recent cache events from DB (persisted across restarts)."""
+    try:
+        from database import get_events_from_db
+        db_events = get_events_from_db(tenant, limit)
+        return [
+            {
+                "timestamp": str(e.get("logged_at", "")),
+                "tenant_id": e.get("tenant_id", tenant),
+                "prompt_hash": e.get("prompt_hash", ""),
+                "decision": e.get("decision", "miss"),
+                "similarity": float(e.get("similarity", 0.0)),
+                "latency_ms": float(e.get("latency_ms", 0.0)),
+            }
+            for e in db_events
+        ]
+    except Exception as _e:
+        error_log.warning(f"Failed to load events from DB: {_e}")
+        # Fallback to in-memory events
+        T = svc.tenant(tenant)
+        events = T.events[-limit:] if len(T.events) > limit else T.events
+        return [
+            {
+                "timestamp": e.timestamp,
+                "tenant_id": e.tenant_id,
+                "prompt_hash": e.prompt_hash,
+                "decision": e.decision,
+                "similarity": e.similarity,
+                "latency_ms": e.latency_ms,
+            }
+            for e in reversed(events)
+        ]
 
 class SettingsUpdate(BaseModel):
     sim_threshold: Optional[float] = None
@@ -2784,7 +2805,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     tenant, prompt_norm, messages, body.model, user_id=user_id,
                 )
 
-                def _bg_log(hit_type, response_text=""):
+                def _bg_log(hit_type, response_text="", similarity=0.0, latency_ms=0.0, p_hash=""):
                     try:
                         from database import log_usage
                         _p_tokens = sum(len(m.get("content", "").split()) * 4 // 3 for m in raw_messages)
@@ -2799,6 +2820,8 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                             cache_misses=1 if hit_type == "miss" else 0,
                             tokens_used=_tokens, cost_estimate=_cost,
                             user_id=_log_uid, org_id=_log_org,
+                            decision=hit_type, similarity=similarity,
+                            latency_ms=latency_ms, prompt_hash=p_hash,
                         )
                         access_log.info(f"{tenant} | _bg_log | SUCCESS")
                     except Exception as _e:
@@ -2820,7 +2843,10 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     # ── Cache hit: stream the cached response in larger chunks ──
                     access_log.info(f"{tenant} | /v1/chat/completions | stream | {meta['hit']} | {meta['latency_ms']}ms")
                     try:
-                        _bg_log(meta["hit"], cached_ans)
+                        _bg_log(meta["hit"], cached_ans,
+                                similarity=float(meta.get("similarity", 0.0)),
+                                latency_ms=float(meta.get("latency_ms", 0.0)),
+                                p_hash=meta.get("prompt_hash", ""))
                     except Exception as _e2:
                         error_log.warning(f"direct _bg_log failed: {_e2}")
                     _bg_executor.submit(_fire_webhook, meta)
@@ -2840,7 +2866,10 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     full_response = "".join(full_response_parts)
                     meta["hit"] = "miss"
                     try:
-                        _bg_log("miss", full_response)
+                        _bg_log("miss", full_response,
+                                similarity=0.0,
+                                latency_ms=float(meta.get("latency_ms", 0.0)),
+                                p_hash=meta.get("prompt_hash", ""))
                     except Exception as _e2:
                         error_log.warning(f"log_usage failed in stream: {_e2}")
                     _bg_executor.submit(_fire_webhook, meta)
@@ -2891,6 +2920,10 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                     cache_misses=1 if _log_hit == "miss" else 0,
                     tokens_used=_log_tokens, cost_estimate=_log_cost,
                     user_id=_log_uid, org_id=_log_org,
+                    decision=_log_hit,
+                    similarity=float(meta.get("similarity", 0.0)),
+                    latency_ms=float(meta.get("latency_ms", 0.0)),
+                    prompt_hash=meta.get("prompt_hash", ""),
                 )
             except Exception:
                 pass
