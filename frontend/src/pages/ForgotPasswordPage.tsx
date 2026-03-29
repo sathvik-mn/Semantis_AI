@@ -48,7 +48,7 @@ export function ForgotPasswordPage() {
               <p className="text-white/60 text-sm mb-6">
                 We sent a password reset link to <strong className="text-white">{email}</strong>.
               </p>
-              <Link to="/signin" className="text-blue-500 font-semibold text-base hover:underline">
+              <Link to="/signin" className="text-white/70 font-semibold text-base hover:underline hover:text-white">
                 Back to Sign In
               </Link>
             </div>
@@ -72,7 +72,7 @@ export function ForgotPasswordPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
                     className="w-full px-4 py-3.5 text-[15px] bg-black/40 border border-white/[0.15]
-                               rounded-xl text-white outline-none focus:border-blue-500 transition-all"
+                               rounded-xl text-white outline-none focus:border-white/30 transition-all"
                     required
                     autoFocus
                   />
@@ -88,16 +88,16 @@ export function ForgotPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-4 text-base font-semibold bg-gradient-to-br from-blue-500 to-blue-600
-                             text-white border-none rounded-xl cursor-pointer shadow-[0_4px_16px_rgba(59,130,246,0.4)]
-                             hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-2"
+                  className="w-full py-4 text-base font-semibold bg-white text-[#0a0a0b]
+                             border-none rounded-xl cursor-pointer
+                             hover:bg-[#e5e5e5] disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-2"
                 >
                   {loading ? 'Sending...' : 'Send Reset Link'}
                 </button>
               </form>
 
               <div className="mt-8 text-center text-sm text-white/60">
-                <Link to="/signin" className="text-blue-500 font-semibold no-underline hover:underline">
+                <Link to="/signin" className="text-white/70 font-semibold no-underline hover:underline hover:text-white">
                   Back to Sign In
                 </Link>
               </div>

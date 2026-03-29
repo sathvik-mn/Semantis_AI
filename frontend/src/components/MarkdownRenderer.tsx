@@ -129,8 +129,8 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: Mark
               <blockquote style={{
                 margin: '12px 0',
                 padding: '8px 16px',
-                borderLeft: '3px solid #3b82f6',
-                background: 'rgba(59,130,246,0.08)',
+                borderLeft: '3px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.04)',
                 borderRadius: '0 6px 6px 0',
                 color: 'rgba(255,255,255,0.8)',
               }}>
@@ -171,7 +171,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: Mark
           },
           a({ href, children }) {
             return (
-              <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none' }}>
+              <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(255, 255, 255, 0.7)', textDecoration: 'none' }}>
                 {children}
               </a>
             );

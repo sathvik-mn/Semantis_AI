@@ -31,9 +31,9 @@ export function Prism() {
         ctx.rotate(rotation + (i * Math.PI * 2) / 3);
 
         const gradient = ctx.createLinearGradient(-300, -300, 300, 300);
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0)');
-        gradient.addColorStop(0.5, `rgba(59, 130, 246, ${0.15 + Math.sin(rotation * 2 + i) * 0.05})`);
-        gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+        gradient.addColorStop(0, 'rgba(167, 139, 250, 0)');
+        gradient.addColorStop(0.5, `rgba(167, 139, 250, ${0.15 + Math.sin(rotation * 2 + i) * 0.05})`);
+        gradient.addColorStop(1, 'rgba(167, 139, 250, 0)');
 
         ctx.strokeStyle = gradient;
         ctx.lineWidth = 2;

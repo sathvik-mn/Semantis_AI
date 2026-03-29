@@ -90,7 +90,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sectionTitle: {
     fontSize: '20px',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.8)',
     marginBottom: '12px',
     fontWeight: '600',
   },

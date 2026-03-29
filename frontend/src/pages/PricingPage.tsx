@@ -90,12 +90,12 @@ export function PricingPage() {
               <div
                 key={tier.name}
                 className={`glass-card flex flex-col p-8 transition-all hover:-translate-y-1 relative ${
-                  tier.popular ? 'border-blue-500/40 bg-blue-500/[0.06] md:scale-105' : ''
+                  tier.popular ? 'border-white/[0.15] bg-white/[0.04] md:scale-105' : ''
                 }`}
               >
                 {tier.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full
-                                  bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-bold uppercase tracking-wider">
+                                  bg-white text-[#0a0a0b] text-xs font-bold uppercase tracking-wider">
                     Most Popular
                   </div>
                 )}
@@ -150,7 +150,7 @@ export function PricingPage() {
             <h3 className="text-xl font-bold text-white mb-4 text-center">How Billing Works</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <h4 className="text-lg font-semibold text-blue-400 mb-2">Use Our API Key</h4>
+                <h4 className="text-lg font-semibold text-white mb-2">Use Our API Key</h4>
                 <p className="text-sm text-white/60 leading-relaxed">
                   Pay your plan fee + per-token on cache misses only. Cache hits are always free.
                   Credits are prepaid — add more anytime. The more our cache works, the less you pay.
@@ -170,7 +170,7 @@ export function PricingPage() {
             <h3 className="text-xl font-bold text-white mb-2">Questions about pricing?</h3>
             <p className="text-white/60">
               Contact our sales team at{' '}
-              <a href="mailto:sales@semantis.ai" className="text-blue-400 font-semibold no-underline hover:underline">
+              <a href="mailto:sales@semantis.ai" className="text-white font-semibold no-underline hover:underline">
                 sales@semantis.ai
               </a>
             </p>

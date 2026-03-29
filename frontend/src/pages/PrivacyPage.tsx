@@ -65,7 +65,7 @@ export function PrivacyPage() {
             <h2 className="text-xl font-semibold text-white mt-8">7. Contact</h2>
             <p>
               For privacy-related inquiries, contact us at{' '}
-              <a href="mailto:privacy@semantis.ai" className="text-blue-400 no-underline hover:underline">privacy@semantis.ai</a>.
+              <a href="mailto:privacy@semantis.ai" className="text-white/80 no-underline hover:underline hover:text-white">privacy@semantis.ai</a>.
             </p>
           </div>
         </div>

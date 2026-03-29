@@ -163,7 +163,7 @@ export function SettingsPanel() {
       {/* API Key Management */}
       <div style={styles.apiKeyContainer}>
         <div style={styles.apiKeyHeader}>
-          <Key size={20} style={{ color: '#60a5fa' }} />
+          <Key size={20} style={{ color: 'rgba(255, 255, 255, 0.7)' }} />
           <h3 style={styles.sectionTitle}>API Key Management</h3>
         </div>
         <p style={styles.description}>
@@ -425,8 +425,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '4px',
   },
   apiKeyContainer: {
-    background: 'rgba(59, 130, 246, 0.1)',
-    border: '1px solid rgba(59, 130, 246, 0.3)',
+    background: 'rgba(255, 255, 255, 0.06)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
     borderRadius: '12px',
     padding: '24px',
   },
@@ -449,7 +449,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     fontSize: '13px',
     fontFamily: 'monospace',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.7)',
     wordBreak: 'break-all' as const,
   },
   warning: {
@@ -482,7 +482,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   valueDisplay: {
     fontSize: '16px',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontWeight: '700',
     fontFamily: 'monospace',
     background: 'rgba(96, 165, 250, 0.1)',
@@ -493,7 +493,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     cursor: 'pointer',
     marginBottom: '4px',
-    accentColor: '#3b82f6',
+    accentColor: '#a78bfa',
   },
   sliderLabels: {
     display: 'flex',
@@ -527,10 +527,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '14px 24px',
     fontSize: '15px',
     fontWeight: '600',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    background: '#fff',
     border: 'none',
     borderRadius: '10px',
-    color: '#fff',
+    color: '#0a0a0b',
     transition: 'all 0.2s',
     marginTop: '4px',
   },
@@ -548,13 +548,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   infoBox: {
     padding: '16px',
-    background: 'rgba(59, 130, 246, 0.08)',
-    border: '1px solid rgba(59, 130, 246, 0.2)',
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
     borderRadius: '8px',
   },
   infoTitle: {
     fontSize: '15px',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.7)',
     marginBottom: '12px',
     fontWeight: '600',
     marginTop: 0,
@@ -593,10 +593,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 24px',
     fontSize: '15px',
     fontWeight: '600',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    background: '#fff',
     border: 'none',
     borderRadius: '8px',
-    color: '#fff',
+    color: '#0a0a0b',
     cursor: 'pointer',
     transition: 'opacity 0.2s',
   },

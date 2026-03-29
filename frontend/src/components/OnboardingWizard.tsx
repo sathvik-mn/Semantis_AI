@@ -140,7 +140,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(255, 255, 255, 0.2)',
   },
   dotActive: {
-    background: '#60a5fa',
+    background: 'rgba(255, 255, 255, 0.7)',
   },
   title: {
     fontSize: '22px',
@@ -161,10 +161,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   primaryBtn: {
     padding: '10px 20px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    background: '#fff',
     border: 'none',
     borderRadius: '8px',
-    color: '#fff',
+    color: '#0a0a0b',
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',

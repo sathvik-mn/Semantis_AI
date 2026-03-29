@@ -141,7 +141,7 @@ export function BillingSection() {
               <div style={{
                 ...styles.progressFill,
                 width: `${usagePercent}%`,
-                background: usagePercent > 90 ? '#ef4444' : usagePercent > 70 ? '#f59e0b' : '#3b82f6',
+                background: usagePercent > 90 ? '#ef4444' : usagePercent > 70 ? '#f59e0b' : '#a78bfa',
               }} />
             </div>
           </div>
@@ -149,8 +149,8 @@ export function BillingSection() {
 
         {/* BYOK indicator */}
         <div style={styles.byokIndicator}>
-          <Key size={14} style={{ color: isByok ? '#34d399' : '#60a5fa' }} />
-          <span style={{ fontSize: '13px', color: isByok ? '#86efac' : '#93c5fd' }}>
+          <Key size={14} style={{ color: isByok ? '#34d399' : 'rgba(255,255,255,0.7)' }} />
+          <span style={{ fontSize: '13px', color: isByok ? '#86efac' : 'rgba(255,255,255,0.6)' }}>
             {isByok ? 'Using your own OpenAI key (BYOK) — no token charges from Semantis' : 'Using Semantis API key — tokens deducted from credits on cache misses'}
           </span>
         </div>

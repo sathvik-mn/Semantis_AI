@@ -5,8 +5,7 @@ export function NotFoundPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-5">
       <div className="text-center max-w-md">
-        <div className="text-[120px] font-bold leading-none bg-gradient-to-br from-blue-500 to-purple-500
-                        bg-clip-text text-transparent mb-4">
+        <div className="text-[120px] font-bold leading-none text-gradient mb-4">
           404
         </div>
         <h1 className="text-2xl font-bold text-white mb-3">Page not found</h1>
@@ -23,9 +22,9 @@ export function NotFoundPage() {
           </button>
           <Link
             to="/"
-            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600
-                       text-white font-medium no-underline shadow-[0_4px_16px_rgba(59,130,246,0.3)]
-                       hover:opacity-90 transition-all"
+            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white
+                       text-[#0a0a0b] font-medium no-underline
+                       hover:bg-[#e5e5e5] transition-all"
           >
             <Home size={18} /> Home
           </Link>

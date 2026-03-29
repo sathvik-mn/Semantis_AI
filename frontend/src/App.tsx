@@ -35,7 +35,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
           width: '40px',
           height: '40px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+          background: 'rgba(255, 255, 255, 0.3)',
           animation: 'pulse 1.5s ease-in-out infinite',
         }} />
         <style>{`@keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }`}</style>
@@ -60,7 +60,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
           width: '40px',
           height: '40px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+          background: 'rgba(255, 255, 255, 0.3)',
           animation: 'pulse 1.5s ease-in-out infinite',
         }} />
         <style>{`@keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }`}</style>

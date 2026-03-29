@@ -16,12 +16,15 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@motionone/utils": "^10.18.0",
     "@sentry/react": "^10.45.0",
     "@supabase/supabase-js": "^2.97.1-canary.1",
     "axios": "^1.13.2",
+    "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.35.2",
     "lucide-react": "^0.553.0",
+    "motion": "^12.38.0",
     "posthog-js": "^1.363.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -30,6 +33,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "recharts": "^3.4.1",
     "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.5.0",
     "three": "^0.183.2"
   },
   "devDependencies": {

@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { TubesBackground } from '../components/TubesBackground';
+import { NeonRGBTextEffect } from '../components/ui/neon-rgbtext-effect';
+import TextMarquee from '../components/ui/text-marquee';
 
 export function LandingPage() {
   const { isAuthenticated } = useAuth();
@@ -20,10 +22,7 @@ export function LandingPage() {
               {isAuthenticated ? (
                 <Link to="/playground" className="btn-primary no-underline">Go to Playground</Link>
               ) : (
-                <>
-                  <Link to="/signin" className="btn-ghost no-underline">Sign In</Link>
-                  <Link to="/signup" className="btn-primary no-underline">Get Started</Link>
-                </>
+                <Link to="/signin" className="btn-ghost no-underline">Sign In</Link>
               )}
             </div>
           </div>
@@ -32,31 +31,51 @@ export function LandingPage() {
         {/* Hero */}
         <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
           <div className="relative z-10 text-center max-w-5xl mx-auto px-8 pt-32 pb-24">
-            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8 animate-fade-in backdrop-blur-sm">
-              Intelligent Semantic Caching for LLMs
+            {/* Neon RGB heading — both lines */}
+            <div className="opacity-0 animate-fade-in mb-6" style={{ animationDelay: '0.2s' }}>
+              <NeonRGBTextEffect
+                lines={['Cut Your LLM Costs', 'By Up To 80%']}
+                fontSize={72}
+                fontFamily="'Inter', sans-serif"
+                fontWeight={800}
+                offsetAmount={0.005}
+                className="mx-auto max-w-full"
+              />
             </div>
 
-            <h1 className="text-5xl md:text-7xl font-extrabold text-white mb-6 leading-[1.08] tracking-tight animate-slide-up"
-                style={{ textShadow: '0 0 30px rgba(10,10,11,0.9), 0 0 60px rgba(10,10,11,0.6)' }}>
-              Cut Your LLM Costs{' '}
-              <span className="text-gradient">By Up To 80%</span>
-            </h1>
+            {/* Scrolling Marquee — right below heading */}
+            <div className="w-screen relative left-1/2 -translate-x-1/2 mb-10 opacity-0 animate-fade-in" style={{ animationDelay: '0.6s' }}>
+              <TextMarquee
+                delay={800}
+                baseVelocity={-2}
+                clasname="font-extrabold tracking-[-0.04em] leading-[90%] text-white/[0.10] !text-[5vw]"
+              >
+                Semantic Caching &middot; Cost Reduction &middot; Lightning Fast &middot; LLM Compatible &middot;
+              </TextMarquee>
+              <TextMarquee
+                delay={800}
+                baseVelocity={2}
+                clasname="font-extrabold tracking-[-0.04em] leading-[90%] text-white/[0.08] !text-[5vw]"
+              >
+                OpenAI &middot; Anthropic &middot; Plug &amp; Play &middot; Real-time Analytics &middot; Enterprise Ready &middot;
+              </TextMarquee>
+            </div>
 
-            <p className="text-lg md:text-xl text-white/70 max-w-3xl mx-auto mb-12 leading-relaxed animate-slide-up drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]"
-               style={{ animationDelay: '0.1s', textShadow: '0 0 20px rgba(10,10,11,1), 0 0 40px rgba(10,10,11,0.8)' }}>
+            <p className="text-lg md:text-xl text-white/70 max-w-3xl mx-auto mb-12 leading-relaxed opacity-0 animate-slide-up drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]"
+               style={{ animationDelay: '1s', textShadow: '0 0 20px rgba(10,10,11,1), 0 0 40px rgba(10,10,11,0.8)' }}>
               An intelligent caching layer between your application and LLM providers.
               Reduce costs and latency by serving cached responses for semantically similar queries.
             </p>
 
-            <div className="flex gap-4 justify-center flex-wrap mb-20 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="flex gap-4 justify-center flex-wrap mb-20 opacity-0 animate-slide-up" style={{ animationDelay: '1.15s' }}>
               {isAuthenticated ? (
-                <Link to="/playground" className="btn-primary text-lg px-8 py-4 no-underline">
+                <Link to="/playground" className="btn-liquid-glass text-lg px-8 py-4 no-underline">
                   Go to Playground &rarr;
                 </Link>
               ) : (
                 <>
-                  <Link to="/signup" className="btn-primary text-lg px-8 py-4 no-underline">
-                    Start Saving Now &rarr;
+                  <Link to="/playground" className="btn-liquid-glass text-lg px-8 py-4 no-underline">
+                    Try In Playground &rarr;
                   </Link>
                   <Link to="/docs" className="btn-ghost text-lg px-8 py-4 no-underline">
                     View Documentation
@@ -71,8 +90,9 @@ export function LandingPage() {
                 { num: '80%', label: 'Cost Reduction' },
                 { num: '<50ms', label: 'Cache Response Time' },
                 { num: '100%', label: 'LLM Compatible' },
-              ].map((s) => (
-                <div key={s.label} className="glass-card gradient-border p-8 text-center backdrop-blur-md">
+              ].map((s, i) => (
+                <div key={s.label} className="glass-card gradient-border p-8 text-center backdrop-blur-md opacity-0 animate-count-up"
+                     style={{ animationDelay: `${1.4 + i * 0.15}s` }}>
                   <div className="text-4xl md:text-5xl font-bold text-gradient mb-2">{s.num}</div>
                   <div className="text-white/60 text-sm">{s.label}</div>
                 </div>
@@ -95,10 +115,10 @@ export function LandingPage() {
               <div
                 key={f.title}
                 className={`glass-card p-8 text-center transition-all hover:-translate-y-1 ${
-                  f.highlighted ? 'border-blue-500/30 bg-blue-500/[0.06]' : ''
+                  f.highlighted ? 'border-white/[0.15] bg-white/[0.04]' : ''
                 }`}
               >
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl">
+                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-white/[0.1] border border-white/[0.12] flex items-center justify-center text-white font-bold text-xl">
                   {f.icon}
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-3">{f.title}</h3>
@@ -126,7 +146,7 @@ export function LandingPage() {
             ].map((f) => (
               <div key={f.title} className="glass-card p-6 hover:-translate-y-1 transition-all group">
                 <div className="text-3xl mb-3">{f.icon}</div>
-                <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-400 transition-colors">{f.title}</h3>
+                <h3 className="text-base font-semibold text-white mb-2 group-hover:text-white/90 transition-colors">{f.title}</h3>
                 <p className="text-sm text-white/50 leading-relaxed">{f.text}</p>
               </div>
             ))}

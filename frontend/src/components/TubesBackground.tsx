@@ -14,8 +14,8 @@ const randomColors = (count: number): string[] =>
     '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')
   );
 
-const SEMANTIS_TUBE_COLORS = ['#3b82f6', '#8b5cf6', '#2563eb'];
-const SEMANTIS_LIGHT_COLORS = ['#60a5fa', '#a78bfa', '#3b82f6', '#7c3aed'];
+const SEMANTIS_TUBE_COLORS = ['#a78bfa', '#7c3aed', '#6d6875'];
+const SEMANTIS_LIGHT_COLORS = ['#c4b5fd', '#a78bfa', '#7c3aed', '#6d6875'];
 
 export function TubesBackground({
   children,

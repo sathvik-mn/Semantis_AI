@@ -29,7 +29,7 @@ export function Layout() {
   return (
     <div className="min-h-screen flex flex-col bg-surface noise">
       {/* Top accent line */}
-      <div className="h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent" />
+      <div className="h-[2px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
       <nav className="sticky top-0 z-50 bg-black/70 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-[1400px] mx-auto px-5 py-3.5 flex items-center gap-8">

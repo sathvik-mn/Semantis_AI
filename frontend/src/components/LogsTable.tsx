@@ -53,7 +53,7 @@ export function LogsTable({ events, isLoading }: LogsTableProps) {
   const getDecisionColor = (decision: string) => {
     if (!decision) return '#f59e0b';
     if (decision.includes('exact')) return '#10b981';
-    if (decision.includes('semantic')) return '#3b82f6';
+    if (decision.includes('semantic')) return '#a78bfa';
     return '#f59e0b';
   };
 
@@ -174,10 +174,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 16px',
     fontSize: '14px',
     fontWeight: '500',
-    background: 'rgba(59, 130, 246, 0.2)',
-    border: '1px solid rgba(59, 130, 246, 0.4)',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
     borderRadius: '6px',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.8)',
     cursor: 'pointer',
     transition: 'all 0.2s',
   },

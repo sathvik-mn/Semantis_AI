@@ -67,7 +67,7 @@ export function ResetPasswordPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter new password"
                     className="w-full px-4 py-3.5 text-[15px] bg-black/40 border border-white/[0.15]
-                               rounded-xl text-white outline-none focus:border-blue-500 transition-all"
+                               rounded-xl text-white outline-none focus:border-white/30 transition-all"
                     required
                     autoFocus
                   />
@@ -97,7 +97,7 @@ export function ResetPasswordPage() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter new password"
                     className="w-full px-4 py-3.5 text-[15px] bg-black/40 border border-white/[0.15]
-                               rounded-xl text-white outline-none focus:border-blue-500 transition-all"
+                               rounded-xl text-white outline-none focus:border-white/30 transition-all"
                     required
                   />
                 </div>
@@ -112,9 +112,9 @@ export function ResetPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-4 text-base font-semibold bg-gradient-to-br from-blue-500 to-blue-600
-                             text-white border-none rounded-xl cursor-pointer shadow-[0_4px_16px_rgba(59,130,246,0.4)]
-                             hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-2"
+                  className="w-full py-4 text-base font-semibold bg-white text-[#0a0a0b]
+                             border-none rounded-xl cursor-pointer
+                             hover:bg-[#e5e5e5] disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-2"
                 >
                   {loading ? 'Updating...' : 'Update Password'}
                 </button>

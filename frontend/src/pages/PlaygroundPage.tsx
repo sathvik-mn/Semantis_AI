@@ -123,7 +123,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statValue: {
     fontSize: '18px',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '600',
   },
   recentActivity: {
@@ -155,7 +155,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
   },
   eventDecision: {
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '600',
   },
   eventDetails: {

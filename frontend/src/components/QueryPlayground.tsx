@@ -324,7 +324,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const getBadgeColor = (hit: string) => {
     switch (hit) {
       case 'exact': return '#10b981';
-      case 'semantic': return '#3b82f6';
+      case 'semantic': return '#a78bfa';
       case 'miss': return '#f59e0b';
       default: return '#6b7280';
     }
@@ -343,10 +343,10 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       {/* API Key Prompt */}
       {showApiKeyInput && (
         <div style={styles.apiKeyBanner}>
-          <Key size={18} style={{ color: '#60a5fa' }} />
+          <Key size={18} style={{ color: 'rgba(255, 255, 255, 0.7)' }} />
           <span style={{ flex: 1, color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
             API key required.{' '}
-            <Link to="/settings" style={{ color: '#60a5fa', textDecoration: 'none' }}>
+            <Link to="/settings" style={{ color: 'rgba(255, 255, 255, 0.7)', textDecoration: 'none' }}>
               Generate in Settings <ExternalLink size={12} style={{ verticalAlign: 'middle' }} />
             </Link>
           </span>
@@ -471,8 +471,8 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
             bottom: 90,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(59,130,246,0.85)',
-            color: '#fff',
+            background: 'rgba(255,255,255,0.85)',
+            color: '#0a0a0b',
             border: 'none',
             borderRadius: '20px',
             padding: '6px 16px',
@@ -643,8 +643,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '12px',
     padding: '12px 16px',
-    background: 'rgba(59,130,246,0.1)',
-    border: '1px solid rgba(59,130,246,0.2)',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '10px',
     marginBottom: '12px',
     flexWrap: 'wrap',
@@ -663,8 +663,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 14px',
     fontSize: '13px',
     fontWeight: 600,
-    background: '#3b82f6',
-    color: '#fff',
+    background: '#fff',
+    color: '#0a0a0b',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
@@ -699,12 +699,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: '32px',
     height: '32px',
     borderRadius: '50%',
-    background: 'rgba(59,130,246,0.15)',
-    border: '1px solid rgba(59,130,246,0.3)',
+    background: 'rgba(167,139,250,0.15)',
+    border: '1px solid rgba(167,139,250,0.3)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#60a5fa',
+    color: '#c4b5fd',
     flexShrink: 0,
     marginTop: '4px',
   },
@@ -749,12 +749,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: '6px',
     height: '6px',
     borderRadius: '50%',
-    background: '#60a5fa',
+    background: 'rgba(255, 255, 255, 0.7)',
     animation: 'bounce 1.4s infinite ease-in-out both',
   },
   cursor: {
     animation: 'blink 1s step-end infinite',
-    color: '#60a5fa',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: '14px',
   },
 
@@ -822,9 +822,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: '42px',
     height: '42px',
     borderRadius: '12px',
-    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    background: '#fff',
     border: 'none',
-    color: '#fff',
+    color: '#0a0a0b',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
