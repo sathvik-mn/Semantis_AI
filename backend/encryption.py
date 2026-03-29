@@ -240,8 +240,8 @@ def decrypt_cache_entry(text: str, tenant_id: str) -> str:
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
         return plaintext.decode("utf-8")
     except Exception as e:
-        log.error(f"Cache decryption failed for tenant {tenant_id}: {e}")
-        return text
+        log.warning(f"Cache decryption failed for tenant {tenant_id}, treating as cache miss: {e}")
+        return ""
 
 
 def generate_cache_encryption_key() -> str:
