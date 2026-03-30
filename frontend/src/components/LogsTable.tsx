@@ -53,7 +53,7 @@ export function LogsTable({ events, isLoading }: LogsTableProps) {
   const getDecisionColor = (decision: string) => {
     if (!decision) return '#f59e0b';
     if (decision.includes('exact')) return '#10b981';
-    if (decision.includes('semantic')) return '#a78bfa';
+    if (decision.includes('semantic')) return 'rgba(255,255,255,0.7)';
     return '#f59e0b';
   };
 

@@ -324,7 +324,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const getBadgeColor = (hit: string) => {
     switch (hit) {
       case 'exact': return '#10b981';
-      case 'semantic': return '#a78bfa';
+      case 'semantic': return 'rgba(255,255,255,0.7)';
       case 'miss': return '#f59e0b';
       default: return '#6b7280';
     }
@@ -663,11 +663,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 14px',
     fontSize: '13px',
     fontWeight: 600,
-    background: '#fff',
-    color: '#0a0a0b',
-    border: 'none',
-    borderRadius: '6px',
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,0.18)',
+    borderRadius: '8px',
     cursor: 'pointer',
+    backdropFilter: 'blur(20px)',
   },
 
   // Chat area
@@ -699,12 +700,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: '32px',
     height: '32px',
     borderRadius: '50%',
-    background: 'rgba(167,139,250,0.15)',
-    border: '1px solid rgba(167,139,250,0.3)',
+    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.15)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#c4b5fd',
+    color: 'rgba(255,255,255,0.8)',
     flexShrink: 0,
     marginTop: '4px',
   },
@@ -712,18 +713,18 @@ const styles: Record<string, React.CSSProperties> = {
     width: '32px',
     height: '32px',
     borderRadius: '50%',
-    background: 'rgba(139,92,246,0.15)',
-    border: '1px solid rgba(139,92,246,0.3)',
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#a78bfa',
+    color: 'rgba(255,255,255,0.7)',
     flexShrink: 0,
     marginTop: '4px',
   },
   userBubble: {
-    background: 'rgba(139,92,246,0.12)',
-    border: '1px solid rgba(139,92,246,0.2)',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.12)',
     borderRadius: '16px 16px 4px 16px',
     padding: '12px 16px',
     color: 'rgba(255,255,255,0.9)',
@@ -822,15 +823,16 @@ const styles: Record<string, React.CSSProperties> = {
     width: '42px',
     height: '42px',
     borderRadius: '12px',
-    background: '#fff',
-    border: 'none',
-    color: '#0a0a0b',
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06))',
+    border: '1px solid rgba(255,255,255,0.2)',
+    color: '#fff',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    transition: 'opacity 0.15s',
+    transition: 'all 0.2s',
+    backdropFilter: 'blur(20px)',
   },
   settingsToggle: {
     width: '42px',

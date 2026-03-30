@@ -22,9 +22,7 @@ export function NotFoundPage() {
           </button>
           <Link
             to="/"
-            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white
-                       text-[#0a0a0b] font-medium no-underline
-                       hover:bg-[#e5e5e5] transition-all"
+            className="btn-liquid-glass flex items-center gap-2 px-5 py-3 no-underline"
           >
             <Home size={18} /> Home
           </Link>

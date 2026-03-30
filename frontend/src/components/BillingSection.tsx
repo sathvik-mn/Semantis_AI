@@ -99,7 +99,7 @@ export function BillingSection() {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <CreditCard size={20} style={{ color: '#a78bfa' }} />
+        <CreditCard size={20} style={{ color: 'rgba(255,255,255,0.8)' }} />
         <h3 style={styles.sectionTitle}>Billing & Plan</h3>
       </div>
 
@@ -141,7 +141,7 @@ export function BillingSection() {
               <div style={{
                 ...styles.progressFill,
                 width: `${usagePercent}%`,
-                background: usagePercent > 90 ? '#ef4444' : usagePercent > 70 ? '#f59e0b' : '#a78bfa',
+                background: usagePercent > 90 ? '#ef4444' : usagePercent > 70 ? '#f59e0b' : 'rgba(255,255,255,0.7)',
               }} />
             </div>
           </div>
@@ -288,7 +288,7 @@ const styles: Record<string, React.CSSProperties> = {
   upgradeButton: {
     display: 'flex', alignItems: 'center', gap: '8px',
     padding: '12px 20px', fontSize: '14px', fontWeight: '600',
-    background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', border: 'none',
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))', border: '1px solid rgba(255,255,255,0.18)', backdropFilter: 'blur(20px)',
     borderRadius: '10px', color: '#fff', cursor: 'pointer', transition: 'opacity 0.2s',
   },
   upgradeButtonSecondary: {

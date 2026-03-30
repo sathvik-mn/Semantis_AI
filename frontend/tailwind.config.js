@@ -15,10 +15,10 @@ export default {
           300: '#27272a',
         },
         accent: {
-          DEFAULT: '#a78bfa',
-          light: '#c4b5fd',
-          dark: '#7c3aed',
-          muted: '#6d6875',
+          DEFAULT: 'rgba(255,255,255,0.85)',
+          light: 'rgba(255,255,255,0.95)',
+          dark: 'rgba(255,255,255,0.6)',
+          muted: 'rgba(255,255,255,0.4)',
         },
       },
       fontFamily: {
@@ -45,8 +45,8 @@ export default {
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         glow: {
-          '0%': { boxShadow: '0 0 20px rgba(167,139,250,0.1)' },
-          '100%': { boxShadow: '0 0 40px rgba(167,139,250,0.15)' },
+          '0%': { boxShadow: '0 0 20px rgba(255,255,255,0.05)' },
+          '100%': { boxShadow: '0 0 40px rgba(255,255,255,0.08)' },
         },
         gradientX: {
           '0%, 100%': { backgroundPosition: '0% 50%' },
@@ -73,7 +73,7 @@ export default {
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-accent': 'linear-gradient(135deg, #a78bfa 0%, #c4b5fd 100%)',
+        'gradient-accent': 'linear-gradient(135deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.95) 100%)',
         'gradient-card': 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
       },
     },
