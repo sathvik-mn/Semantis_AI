@@ -141,10 +141,12 @@ app_log         = make_rotating_logger("application", "application.log", logging
 # Domain heuristics (optional)
 # -----------------------------
 DOMAIN_MAP = {
-    "finance":   ["stock", "market", "inflation", "interest", "portfolio"],
-    "legal":     ["contract", "clause", "law", "liability", "nda"],
-    "tech":      ["api", "python", "vector", "fastapi", "kubernetes", "embedding"],
-    "geography": ["capital", "country", "city", "border"],
+    "finance":   ["stock", "market", "inflation", "interest", "portfolio", "revenue", "profit", "dividend", "bond", "equity"],
+    "legal":     ["contract", "clause", "law", "liability", "nda", "compliance", "statute", "regulation", "plaintiff", "defendant"],
+    "tech":      ["api", "python", "vector", "fastapi", "kubernetes", "embedding", "docker", "database", "algorithm", "microservice"],
+    "geography": ["capital", "country", "city", "border", "continent", "population", "region", "territory"],
+    "medical":   ["symptom", "diagnosis", "treatment", "patient", "clinical", "drug", "therapy", "disease"],
+    "education": ["course", "curriculum", "student", "exam", "grade", "university", "lecture", "assignment"],
 }
 
 def domain_hint(text: str) -> str:
@@ -166,17 +168,164 @@ _CONTRACTIONS = {
     "he's": "he is", "she's": "she is", "that's": "that is",
     "what's": "what is", "there's": "there is", "here's": "here is",
     "who's": "who is", "how's": "how is", "where's": "where is",
+    "wouldn't": "would not", "shouldn't": "should not", "couldn't": "could not",
+    "doesn't": "does not", "didn't": "did not", "isn't": "is not",
+    "aren't": "are not", "wasn't": "was not", "weren't": "were not",
+    "hasn't": "has not", "haven't": "have not", "hadn't": "had not",
 }
 _CONTRACTION_RE = re.compile(
     r"\b(" + "|".join(re.escape(k) for k in sorted(_CONTRACTIONS, key=len, reverse=True)) + r")\b",
     re.IGNORECASE,
 )
 _FILLER_RE = re.compile(
-    r"\b(please|pls|plz|hey|hi|hello|um|uh|like|just|actually|basically|literally|ok|okay|thanks|thank you|thx)\b",
+    r"\b(please|pls|plz|hey|hi|hello|um|uh|like|just|actually|basically|literally|ok|okay|thanks|thank you|thx|yo|well|so|anyway|anyways|right)\b",
     re.IGNORECASE,
 )
 _MULTI_SPACE_RE = re.compile(r"\s+")
 _PUNCT_NOISE_RE = re.compile(r"[.!?,;:]+$")
+_PUNCT_INTERNAL_RE = re.compile(r"(?<=\s)[,;:]+|[,;:]+(?=\s)")
+
+# --- Abbreviation / acronym expansion for semantic normalization ---
+_ABBREVIATIONS = {
+    "ml": "machine learning", "ai": "artificial intelligence",
+    "nlp": "natural language processing", "dl": "deep learning",
+    "cv": "computer vision", "rl": "reinforcement learning",
+    "db": "database", "api": "application programming interface",
+    "ui": "user interface", "ux": "user experience",
+    "ci": "continuous integration", "cd": "continuous deployment",
+    "k8s": "kubernetes", "js": "javascript", "ts": "typescript",
+    "py": "python", "sql": "structured query language",
+    "aws": "amazon web services", "gcp": "google cloud platform",
+    "llm": "large language model", "rag": "retrieval augmented generation",
+    "etl": "extract transform load", "orm": "object relational mapping",
+    "sdk": "software development kit", "cli": "command line interface",
+    "http": "hypertext transfer protocol", "tcp": "transmission control protocol",
+    "gpu": "graphics processing unit", "cpu": "central processing unit",
+    "ram": "random access memory", "ssd": "solid state drive",
+    "iot": "internet of things", "saas": "software as a service",
+    "roi": "return on investment", "kpi": "key performance indicator",
+    "hr": "human resources", "ceo": "chief executive officer",
+    "cto": "chief technology officer", "mvp": "minimum viable product",
+    "oop": "object oriented programming", "fp": "functional programming",
+    "tdd": "test driven development", "ddd": "domain driven design",
+    "dns": "domain name system", "ssl": "secure sockets layer",
+    "ssh": "secure shell", "vpn": "virtual private network",
+}
+_ABBREVIATION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in sorted(_ABBREVIATIONS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+# --- Synonym groups: words that mean the same thing in context ---
+_SYNONYM_GROUPS = [
+    {"cost", "price", "fee", "charge", "expense", "rate"},
+    {"buy", "purchase", "acquire", "order", "get"},
+    {"fast", "quick", "rapid", "speedy", "swift"},
+    {"big", "large", "huge", "enormous", "massive"},
+    {"small", "tiny", "little", "miniature", "compact"},
+    {"start", "begin", "initiate", "launch", "commence"},
+    {"end", "stop", "finish", "terminate", "conclude", "halt"},
+    {"create", "make", "build", "generate", "produce", "construct"},
+    {"delete", "remove", "erase", "eliminate", "drop"},
+    {"change", "modify", "alter", "update", "edit", "revise"},
+    {"show", "display", "present", "render", "exhibit"},
+    {"hide", "conceal", "obscure"},
+    {"send", "transmit", "deliver", "dispatch"},
+    {"receive", "get", "obtain", "accept"},
+    {"error", "bug", "issue", "problem", "fault", "defect", "glitch"},
+    {"fix", "repair", "resolve", "patch", "debug", "correct"},
+    {"help", "assist", "support", "aid"},
+    {"use", "utilize", "employ", "leverage"},
+    {"describe", "clarify", "elaborate", "illustrate"},
+    {"difference", "distinction", "comparison", "contrast"},
+    {"advantage", "benefit", "pro", "upside"},
+    {"disadvantage", "drawback", "con", "downside"},
+    {"allow", "permit", "enable", "authorize"},
+    {"prevent", "block", "prohibit", "forbid", "disallow"},
+    {"increase", "raise", "boost", "grow", "escalate"},
+    {"decrease", "reduce", "lower", "diminish", "shrink"},
+    {"important", "crucial", "critical", "vital", "essential", "significant"},
+    {"configure", "setup", "set up", "install", "initialize"},
+    {"connect", "link", "attach", "join", "integrate"},
+    {"disconnect", "detach", "separate", "unlink"},
+]
+# Build a word → canonical form lookup (first word in each group is canonical)
+_SYNONYM_MAP: Dict[str, str] = {}
+for _group in _SYNONYM_GROUPS:
+    _canonical = sorted(_group)[0]  # alphabetically first as canonical
+    for _word in _group:
+        _SYNONYM_MAP[_word] = _canonical
+
+# --- Question type normalization ---
+_QUESTION_PREFIXES = [
+    (re.compile(r"^(what is|what are|what's|whats)\b", re.I), "define"),
+    (re.compile(r"^(how to|how do i|how do you|how can i|how can you|how should i)\b", re.I), "howto"),
+    (re.compile(r"^(why does|why do|why is|why are|why did)\b", re.I), "why"),
+    (re.compile(r"^(when did|when does|when is|when was|when will)\b", re.I), "when"),
+    (re.compile(r"^(where is|where are|where do|where can)\b", re.I), "where"),
+    (re.compile(r"^(can i|can you|is it possible to|am i able to)\b", re.I), "ability"),
+    (re.compile(r"^(tell me about|explain|describe|give me info on)\b", re.I), "define"),
+    (re.compile(r"^(compare|difference between|differences between|vs|versus)\b", re.I), "compare"),
+    (re.compile(r"^(list|enumerate|name|give me a list of|what are the)\b", re.I), "list"),
+]
+
+def _extract_question_type(text: str) -> str:
+    """Extract the semantic intent type from a query."""
+    for pattern, qtype in _QUESTION_PREFIXES:
+        if pattern.search(text):
+            return qtype
+    return "general"
+
+# --- Stopwords for IDF-weighted matching ---
+_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "dare", "ought",
+    "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+    "into", "through", "during", "before", "after", "above", "below",
+    "between", "under", "again", "further", "then", "once", "here",
+    "there", "when", "where", "why", "how", "all", "both", "each",
+    "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+    "only", "own", "same", "so", "than", "too", "very", "and", "but",
+    "or", "if", "while", "about", "up", "out", "off", "over", "down",
+    "i", "me", "my", "we", "our", "you", "your", "he", "him", "his",
+    "she", "her", "it", "its", "they", "them", "their", "what", "which",
+    "who", "whom", "this", "that", "these", "those", "am",
+})
+
+# --- Porter-style suffix stemming (lightweight, no external deps) ---
+_STEM_SUFFIXES = [
+    ("iguration", "igure"),  # configuration → configure
+    ("uration", "ure"),
+    ("ational", "ate"), ("tional", "tion"), ("enci", "ence"),
+    ("anci", "ance"), ("izer", "ize"), ("isation", "ize"),
+    ("ization", "ize"), ("ation", "ate"), ("ator", "ate"),
+    ("alism", "al"), ("iveness", "ive"), ("fulness", "ful"),
+    ("ousness", "ous"), ("aliti", "al"), ("iviti", "ive"),
+    ("biliti", "ble"), ("alli", "al"), ("entli", "ent"),
+    ("eli", "e"), ("ousli", "ous"),
+    ("ment", ""), ("ness", ""),
+    ("nning", "n"), ("tting", "t"), ("pping", "p"), ("dding", "d"),  # doubled consonant + ing
+    ("ings", ""), ("ning", "n"),
+    ("ting", "t"), ("ring", "r"), ("ling", "l"),
+    ("ing", ""),
+    ("ies", "y"),
+    ("tion", "te"), ("sion", "se"), ("able", ""),
+    ("ible", ""), ("ence", ""), ("ance", ""),
+    ("ful", ""), ("less", ""),
+    ("ly", ""), ("ed", ""), ("er", ""), ("es", ""), ("s", ""),
+]
+
+def _light_stem(word: str) -> str:
+    """Lightweight suffix stripping for matching. Only strips common suffixes
+    to reduce word forms without being as aggressive as full Porter stemming."""
+    if len(word) <= 3:
+        return word
+    for suffix, replacement in _STEM_SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) + len(replacement) >= 3:
+            return word[:-len(suffix)] + replacement
+    return word
+
 
 def normalize_query(text: str) -> str:
     """Light normalization for hash-index lookups: expand contractions, strip
@@ -186,12 +335,33 @@ def normalize_query(text: str) -> str:
     t = _CONTRACTION_RE.sub(lambda m: _CONTRACTIONS.get(m.group(0).lower(), m.group(0)), t)
     t = _FILLER_RE.sub("", t)
     t = _PUNCT_NOISE_RE.sub("", t)
+    t = _PUNCT_INTERNAL_RE.sub("", t)  # remove orphaned commas/semicolons after filler removal
     t = _MULTI_SPACE_RE.sub(" ", t).strip()
+    return t
+
+def deep_normalize(text: str) -> str:
+    """Heavy semantic normalization: contractions + abbreviations + synonyms +
+    stemming. Used for the semantic matching pipeline (not for hash lookups)."""
+    t = normalize_query(text)
+    # Expand abbreviations
+    t = _ABBREVIATION_RE.sub(lambda m: _ABBREVIATIONS.get(m.group(0).lower(), m.group(0)), t)
+    # Replace synonyms with canonical forms
+    words = t.split()
+    normalized_words = []
+    for w in words:
+        canonical = _SYNONYM_MAP.get(w, w)
+        normalized_words.append(canonical)
+    t = " ".join(normalized_words)
     return t
 
 def _tokenize(text: str) -> set:
     """Simple word-level tokenizer for overlap scoring."""
     return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+def _tokenize_stemmed(text: str) -> set:
+    """Word-level tokenizer with lightweight stemming."""
+    tokens = re.findall(r"[a-z0-9]+", text.lower())
+    return set(_light_stem(t) for t in tokens)
 
 def token_overlap_score(query: str, candidate: str) -> float:
     """Jaccard token overlap. Returns 0.0..1.0."""
@@ -204,11 +374,170 @@ def token_overlap_score(query: str, candidate: str) -> float:
         return 0.0
     return len(q_tokens & c_tokens) / len(union)
 
-def hybrid_score(cosine_sim: float, token_sim: float) -> float:
-    """Cosine-dominant scoring. Token overlap is only a minor tiebreaker
-    so it never blocks valid semantic matches (typos, abbreviations,
-    paraphrases all have low token overlap but high cosine similarity)."""
-    return 0.97 * cosine_sim + 0.03 * token_sim
+# ── Advanced similarity signals ──
+
+def _char_ngrams(text: str, n: int = 3) -> set:
+    """Extract character n-grams from text (whitespace removed)."""
+    t = re.sub(r"\s+", "", text.lower())
+    if len(t) < n:
+        return {t}
+    return set(t[i:i+n] for i in range(len(t) - n + 1))
+
+def char_ngram_similarity(query: str, candidate: str, n: int = 3) -> float:
+    """Dice coefficient on character n-grams. Excellent for catching typos,
+    misspellings, and morphological variants (e.g., 'running' vs 'run')."""
+    q_ngrams = _char_ngrams(query, n)
+    c_ngrams = _char_ngrams(candidate, n)
+    if not q_ngrams or not c_ngrams:
+        return 0.0
+    intersection = len(q_ngrams & c_ngrams)
+    return (2.0 * intersection) / (len(q_ngrams) + len(c_ngrams))
+
+def stemmed_overlap_score(query: str, candidate: str) -> float:
+    """Jaccard overlap on stemmed tokens. Catches morphological variants
+    like 'configure/configuration', 'running/run', 'better/best'."""
+    q_tokens = _tokenize_stemmed(query)
+    c_tokens = _tokenize_stemmed(candidate)
+    if not q_tokens:
+        return 0.0
+    union = q_tokens | c_tokens
+    if not union:
+        return 0.0
+    return len(q_tokens & c_tokens) / len(union)
+
+def idf_weighted_overlap(query: str, candidate: str) -> float:
+    """IDF-weighted token overlap. Stopwords contribute less, rare/meaningful
+    words contribute more. This prevents 'how do I sort a list' from matching
+    'how do I reverse a list' just because of shared stopwords."""
+    q_tokens = re.findall(r"[a-z0-9]+", query.lower())
+    c_tokens = re.findall(r"[a-z0-9]+", candidate.lower())
+    if not q_tokens or not c_tokens:
+        return 0.0
+
+    # Weight: stopwords=0.1, regular words=1.0
+    def weight(w):
+        return 0.1 if w in _STOPWORDS else 1.0
+
+    q_set = set(q_tokens)
+    c_set = set(c_tokens)
+    all_words = q_set | c_set
+    if not all_words:
+        return 0.0
+
+    weighted_intersection = sum(weight(w) for w in q_set & c_set)
+    weighted_union = sum(weight(w) for w in all_words)
+    return weighted_intersection / weighted_union if weighted_union > 0 else 0.0
+
+def synonym_expanded_overlap(query: str, candidate: str) -> float:
+    """Token overlap after synonym normalization and stemming.
+    'What is the cost?' matches 'What is the price?' through synonym mapping."""
+    q_norm = deep_normalize(query)
+    c_norm = deep_normalize(candidate)
+    q_tokens = _tokenize_stemmed(q_norm)
+    c_tokens = _tokenize_stemmed(c_norm)
+    if not q_tokens:
+        return 0.0
+    union = q_tokens | c_tokens
+    if not union:
+        return 0.0
+    return len(q_tokens & c_tokens) / len(union)
+
+def key_entity_overlap(query: str, candidate: str) -> float:
+    """Overlap of key entities (non-stopword tokens). This signal is critical
+    for preventing false matches where the *topic* differs but structure is
+    similar (e.g., 'capital of France' vs 'capital of Germany')."""
+    q_tokens = set(w for w in re.findall(r"[a-z0-9]+", query.lower()) if w not in _STOPWORDS)
+    c_tokens = set(w for w in re.findall(r"[a-z0-9]+", candidate.lower()) if w not in _STOPWORDS)
+    if not q_tokens or not c_tokens:
+        return 0.0
+    intersection = len(q_tokens & c_tokens)
+    # Use min-denominator (Overlap coefficient) — more lenient than Jaccard
+    # for queries of different lengths
+    return intersection / min(len(q_tokens), len(c_tokens))
+
+def question_type_match(query: str, candidate: str) -> float:
+    """Returns 1.0 if both queries have the same question type, 0.5 if one
+    is 'general', 0.0 if they conflict. Prevents 'how to X' from matching
+    'what is X' when they need different response types."""
+    qt = _extract_question_type(query)
+    ct = _extract_question_type(candidate)
+    if qt == ct:
+        return 1.0
+    if qt == "general" or ct == "general":
+        return 0.5
+    return 0.0
+
+def sorted_token_similarity(query: str, candidate: str) -> float:
+    """Compare queries after sorting their tokens alphabetically.
+    Catches word-order variations like 'python list comprehension'
+    vs 'list comprehension in python'."""
+    q_tokens = sorted(w for w in re.findall(r"[a-z0-9]+", query.lower()) if w not in _STOPWORDS)
+    c_tokens = sorted(w for w in re.findall(r"[a-z0-9]+", candidate.lower()) if w not in _STOPWORDS)
+    if not q_tokens or not c_tokens:
+        return 0.0
+    # Longest common subsequence ratio on sorted tokens
+    m, n = len(q_tokens), len(c_tokens)
+    # Use a simple set overlap on sorted (since sorting already removes order)
+    q_set, c_set = set(q_tokens), set(c_tokens)
+    union = q_set | c_set
+    if not union:
+        return 0.0
+    return len(q_set & c_set) / len(union)
+
+
+def compute_text_similarity(query: str, candidate: str) -> dict:
+    """Compute all text-based similarity signals between query and candidate.
+    Returns a dict of individual scores and a combined 'text_sim' score."""
+    tok = token_overlap_score(query, candidate)
+    ngram = char_ngram_similarity(query, candidate)
+    stemmed = stemmed_overlap_score(query, candidate)
+    idf = idf_weighted_overlap(query, candidate)
+    synonym = synonym_expanded_overlap(query, candidate)
+    entity = key_entity_overlap(query, candidate)
+    qtype = question_type_match(query, candidate)
+    sorted_tok = sorted_token_similarity(query, candidate)
+
+    # Weighted combination of text signals:
+    # - Entity overlap is most important (prevents topic mismatches)
+    # - Synonym + IDF overlap catches paraphrases
+    # - Char n-grams catch typos and morphological variants
+    # - Question type prevents intent mismatches
+    # - Sorted token catches word reordering
+    text_sim = (
+        0.25 * entity +       # key entity match (topic correctness)
+        0.20 * synonym +      # synonym-normalized overlap (paraphrases)
+        0.15 * idf +          # IDF-weighted overlap (meaningful words)
+        0.15 * ngram +        # character n-gram (typos, morphology)
+        0.10 * stemmed +      # stemmed overlap (word forms)
+        0.10 * qtype +        # question type agreement
+        0.05 * sorted_tok     # word-order invariant overlap
+    )
+
+    return {
+        "token_overlap": tok,
+        "char_ngram": ngram,
+        "stemmed_overlap": stemmed,
+        "idf_weighted": idf,
+        "synonym_expanded": synonym,
+        "entity_overlap": entity,
+        "question_type": qtype,
+        "sorted_token": sorted_tok,
+        "text_sim": text_sim,
+    }
+
+
+def hybrid_score(cosine_sim: float, text_sim: float) -> float:
+    """Multi-signal hybrid scoring. Cosine similarity from the embedding model
+    remains dominant (it handles deep semantics, typos, abbreviations, and
+    paraphrases). The text similarity composite boosts confidence when
+    surface-level signals agree, and acts as a safety net when they disagree.
+
+    The weight split is 88% cosine + 12% text because:
+    - Cosine from a good embedding model captures ~95% of semantic meaning
+    - Text signals catch the remaining edge cases (topic drift, entity mismatch)
+    - Too much text weight would penalize valid paraphrases with low token overlap
+    """
+    return 0.88 * cosine_sim + 0.12 * text_sim
 
 # -----------------------------
 # Embeddings & LLM
@@ -441,6 +770,13 @@ class TenantState:
     # Tier 2: local model FAISS index for fast pre-filtering
     local_index: Optional[faiss.IndexFlatIP] = None
     local_dim: Optional[int] = None
+    # Tier 2d: response embedding FAISS index for query-to-response matching
+    # This enables "does any cached ANSWER address this question?" lookups.
+    # Example: "What is ML?" cached → response explains machine learning →
+    #          "What is machine learning?" finds that response is relevant.
+    response_index: Optional[faiss.IndexFlatIP] = None
+    response_dim: Optional[int] = None
+    response_index_map: List[int] = field(default_factory=list)  # maps response_index position → rows index
     # Tier 3: cluster centroids for routing
     cluster_centroids: Optional[np.ndarray] = None
     n_clusters: int = 0
@@ -598,6 +934,9 @@ class SemanticCacheService:
                 norm_key = normalize_query(prompt_norm)
                 if norm_key:
                     T.norm_hash_index[norm_key] = entry
+                deep_key = deep_normalize(prompt_norm)
+                if deep_key and deep_key != norm_key:
+                    T.norm_hash_index[deep_key] = entry
                 T.rows.append(entry)
                 self._faiss_add(T, emb, tenant_id=tid, entry_id=prompt_hash,
                                 metadata={"model": entry.model, "domain": entry.domain})
@@ -723,6 +1062,20 @@ class SemanticCacheService:
             T.local_index = faiss.IndexFlatIP(T.local_dim)
         T.local_index.add(v)  # type: ignore[call-arg]
 
+    def _response_faiss_add(self, T: TenantState, resp_emb: np.ndarray, row_idx: int):
+        """Add response embedding to the response FAISS index.
+        This enables query-to-response matching: finding cached answers that
+        are relevant to the incoming query, even when the original query text
+        was completely different.
+        """
+        v = resp_emb.astype("float32").reshape(1, -1)
+        faiss.normalize_L2(v)
+        if T.response_index is None:
+            T.response_dim = v.shape[1]
+            T.response_index = faiss.IndexFlatIP(T.response_dim)
+        T.response_index.add(v)  # type: ignore[call-arg]
+        T.response_index_map.append(row_idx)
+
     def _upgrade_to_ivf(self, T: TenantState):
         """Upgrade from IndexFlatIP to IndexIVFFlat for O(sqrt(n)) search."""
         try:
@@ -807,7 +1160,12 @@ class SemanticCacheService:
                 return entry.response_text, meta
 
         # ── 2) Normalized-hash O(1) lookup (Tier 1b) ──
+        # Try standard normalization first, then deep normalization with
+        # abbreviation expansion + synonym mapping for broader hash matching.
         deep_norm = normalize_query(prompt_norm)
+        if not (deep_norm and deep_norm in T.norm_hash_index):
+            # Try deeper normalization (abbreviation + synonym expansion)
+            deep_norm = deep_normalize(prompt_norm)
         if deep_norm and deep_norm in T.norm_hash_index:
             entry = T.norm_hash_index[deep_norm]
             if entry.fresh() and entry.model == model:
@@ -822,13 +1180,14 @@ class SemanticCacheService:
                 return entry.response_text, meta
 
         # ── 3) Local model pre-filter gate (Tier 2c) ──
-        # Use normalized text (with abbreviation expansion) for the local gate
-        # so "Explain ML" gets expanded to "Explain machine learning" before
-        # comparing to cached embeddings.
+        # Use deep-normalized text (with abbreviation + synonym expansion) for
+        # the local gate so "Explain ML" → "Explain machine learning" and
+        # "What's the cost?" → "what is the charge" before comparing.
         local_gate_passed = True
+        local_gate_text = deep_normalize(prompt_norm)
         if T.local_index is not None and len(T.rows) > 0 and LOCAL_MODEL_ENABLED:
             try:
-                local_emb = get_local_embedding(prompt_norm)
+                local_emb = get_local_embedding(local_gate_text)
                 if local_emb is not None:
                     lq = local_emb.astype("float32").reshape(1, -1)
                     faiss.normalize_L2(lq)
@@ -836,7 +1195,9 @@ class SemanticCacheService:
                     if local_k > 0:
                         local_sims, _ = T.local_index.search(lq, local_k)  # type: ignore[call-arg]
                         best_local_sim = float(local_sims[0][0])
-                        if best_local_sim < 0.40:
+                        # Lowered gate from 0.40→0.35 to allow more borderline
+                        # paraphrases through to the more accurate OpenAI stage.
+                        if best_local_sim < 0.35:
                             local_gate_passed = False
                             semantic_log.debug(
                                 f"{tenant_id} | local_gate_reject | best_local_sim={best_local_sim:.3f} | "
@@ -879,9 +1240,9 @@ class SemanticCacheService:
                         continue
                     if not entry.fresh() or entry.model != model:
                         continue
-                    tok_sim = token_overlap_score(query_text, entry.prompt_norm)
-                    h_score = hybrid_score(cosine_sim, tok_sim)
-                    candidates.append((entry, cosine_sim, tok_sim, h_score, -1))
+                    text_sims = compute_text_similarity(query_text, entry.prompt_norm)
+                    h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
+                    candidates.append((entry, cosine_sim, text_sims, h_score, -1))
             elif has_local_index:
                 # ── FAISS path: in-process vector search (fallback) ──
                 # Tier 3b: cluster routing — narrow search to nearest clusters
@@ -914,9 +1275,72 @@ class SemanticCacheService:
                     entry = T.rows[idx]
                     if not entry.fresh() or entry.model != model:
                         continue
-                    tok_sim = token_overlap_score(query_text, entry.prompt_norm)
-                    h_score = hybrid_score(cosine_sim, tok_sim)
-                    candidates.append((entry, cosine_sim, tok_sim, h_score, idx))
+                    text_sims = compute_text_similarity(query_text, entry.prompt_norm)
+                    h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
+                    candidates.append((entry, cosine_sim, text_sims, h_score, idx))
+
+            # ── Tier 3.5: Query-to-Response matching ──
+            # Search the response embedding index: "does any cached ANSWER
+            # address this question?" This catches the key scenario where
+            # the original query text was different but the response is
+            # clearly relevant. Example: cached "What is ML?" → response
+            # explains machine learning → new query "What is machine
+            # learning?" matches because the response embedding is close.
+            if query_emb is not None and T.response_index is not None and T.response_index.ntotal > 0:
+                try:
+                    rq = query_emb.astype("float32").reshape(1, -1)
+                    faiss.normalize_L2(rq)
+                    resp_k = min(5, T.response_index.ntotal)
+                    resp_sims, resp_idxs = T.response_index.search(rq, resp_k)  # type: ignore[call-arg]
+
+                    # Track which row indices are already in candidates
+                    existing_rows = set()
+                    for c in candidates:
+                        if c[4] >= 0:
+                            existing_rows.add(c[4])
+
+                    for i in range(resp_k):
+                        resp_idx = int(resp_idxs[0][i])
+                        query_to_resp_sim = float(resp_sims[0][i])
+                        if resp_idx < 0 or resp_idx >= len(T.response_index_map):
+                            continue
+                        row_idx = T.response_index_map[resp_idx]
+                        if row_idx < 0 or row_idx >= len(T.rows):
+                            continue
+                        if row_idx in existing_rows:
+                            # Already a candidate — boost its score with the
+                            # response relevance signal instead of adding a dupe.
+                            for j, c in enumerate(candidates):
+                                if c[4] == row_idx:
+                                    entry, cosine_sim, text_sims, h_score, idx = c
+                                    # Blend: if the response is very relevant to the
+                                    # query, boost the hybrid score.
+                                    resp_boost = max(0.0, query_to_resp_sim - 0.3) * 0.15
+                                    candidates[j] = (entry, cosine_sim, text_sims, h_score + resp_boost, idx)
+                                    break
+                            continue
+
+                        # This entry wasn't found by query-to-query search but
+                        # its RESPONSE is relevant to the query. Add it as a
+                        # candidate with the response similarity as its cosine score.
+                        entry = T.rows[row_idx]
+                        if not entry.fresh() or entry.model != model:
+                            continue
+                        # Only add if response similarity is strong enough
+                        if query_to_resp_sim < 0.45:
+                            continue
+                        text_sims = compute_text_similarity(query_text, entry.prompt_norm)
+                        # Use response similarity as the primary score (it
+                        # measures "does this answer address the question?")
+                        h_score = hybrid_score(query_to_resp_sim, text_sims["text_sim"])
+                        candidates.append((entry, query_to_resp_sim, text_sims, h_score, row_idx))
+                        existing_rows.add(row_idx)
+                        semantic_log.debug(
+                            f"{tenant_id} | resp_index_candidate | resp_sim={query_to_resp_sim:.3f} | "
+                            f"row={row_idx} | key={entry.prompt_norm[:60]}"
+                        )
+                except Exception as e:
+                    error_log.debug(f"Response index search error (non-fatal): {e}")
 
             # Tier 3a: cross-encoder re-ranking on top candidates
             if len(candidates) >= 2 and CROSS_ENCODER_ENABLED:
@@ -925,38 +1349,94 @@ class SemanticCacheService:
                     ce_scores = cross_encoder_score(query_text, cand_texts)
                     if ce_scores is not None:
                         for j, score in enumerate(ce_scores):
-                            entry, cosine_sim, tok_sim, h_score, idx = candidates[j]
-                            # Blend: 60% hybrid, 40% cross-encoder (CE is more accurate)
+                            entry, cosine_sim, text_sims, h_score, idx = candidates[j]
+                            # Blend: 55% hybrid, 45% cross-encoder (CE is more accurate)
                             ce_norm = max(0.0, min(1.0, (score + 5) / 10))  # normalize ~[-5,5] to [0,1]
-                            blended = 0.60 * h_score + 0.40 * ce_norm
-                            candidates[j] = (entry, cosine_sim, tok_sim, blended, idx)
+                            blended = 0.55 * h_score + 0.45 * ce_norm
+                            candidates[j] = (entry, cosine_sim, text_sims, blended, idx)
                 except Exception as e:
                     error_log.debug(f"Cross-encoder error (non-fatal): {e}")
 
             candidates.sort(key=lambda c: c[3], reverse=True)
 
             if candidates:
-                best_entry, best_cosine, best_tok, best_hybrid, _ = candidates[0]
+                best_entry, best_cosine, best_text_sims, best_hybrid, _ = candidates[0]
                 threshold = self._resolve_threshold(T, query_domain)
+                best_text_sim = best_text_sims["text_sim"]
+                best_entity = best_text_sims["entity_overlap"]
+                best_synonym = best_text_sims["synonym_expanded"]
+                best_ngram = best_text_sims["char_ngram"]
+                best_qtype = best_text_sims["question_type"]
 
                 is_match = False
                 confidence_tier = "none"
 
-                # Primary decision: trust the cosine similarity from the
-                # embedding model. It already understands abbreviations (ML),
-                # typos ("artifical inteligence"), and paraphrases.
+                # ── Multi-signal confidence decision ──
+                # The system uses layered decision logic that combines the
+                # embedding model's deep semantic understanding with surface-
+                # level text analysis for maximum recall + precision.
+
+                # Signal agreement bonus: when cosine AND text signals both
+                # indicate a match, we can be more confident and accept
+                # slightly lower individual scores.
+                signals_agree = (best_cosine >= threshold - 0.03) and (best_text_sim >= 0.35)
+
                 if best_cosine >= threshold + 0.10:
+                    # Very high cosine — strong semantic match
                     is_match = True
                     confidence_tier = "high"
                 elif best_cosine >= threshold:
+                    # Good cosine — standard semantic match
                     is_match = True
                     confidence_tier = "medium"
-                elif best_cosine >= threshold - 0.05 and best_tok >= 0.3:
-                    # Low-confidence match only if there's also meaningful
-                    # token overlap — prevents false positives on unrelated
-                    # queries that happen to be close in embedding space.
+                elif best_cosine >= threshold - 0.05 and best_text_sim >= 0.30:
+                    # Slightly below threshold but strong text signals agree
+                    # (synonym matches, entity overlap, n-gram similarity)
                     is_match = True
                     confidence_tier = "low"
+                elif best_cosine >= threshold - 0.08 and best_synonym >= 0.50:
+                    # Below threshold but very high synonym+stem overlap means
+                    # the queries use different words for the same concept.
+                    # Example: "What's the cost?" vs "What is the price?"
+                    is_match = True
+                    confidence_tier = "low"
+                elif best_cosine >= threshold - 0.08 and best_ngram >= 0.60:
+                    # Below threshold but very high character n-gram overlap
+                    # means near-identical text (likely a typo or minor rewording).
+                    # Example: "artifical inteligence" vs "artificial intelligence"
+                    is_match = True
+                    confidence_tier = "low"
+                elif signals_agree and best_entity >= 0.60:
+                    # Both cosine and text agree, AND key entities match.
+                    # Catches paraphrases that embedding model scores slightly low.
+                    # Example: "How to sort an array in JS" vs "JavaScript array sorting"
+                    is_match = True
+                    confidence_tier = "low"
+
+                # ── Safety checks ──
+
+                # Entity mismatch guard: if cosine is medium-confidence but
+                # key entities don't overlap at all, downgrade or reject.
+                # Prevents: "capital of France" matching "capital of Germany"
+                if is_match and confidence_tier != "high" and best_entity < 0.15 and best_text_sim < 0.20:
+                    is_match = False
+                    confidence_tier = "entity_mismatch"
+                    semantic_log.info(
+                        f"{tenant_id} | entity_mismatch | cosine={best_cosine:.3f} | "
+                        f"entity_overlap={best_entity:.3f} | text_sim={best_text_sim:.3f} | "
+                        f"key={prompt_norm[:80]}"
+                    )
+
+                # Question type conflict guard: if the question types clearly
+                # differ (e.g., "how to X" vs "what is X"), require higher cosine.
+                if is_match and confidence_tier == "low" and best_qtype == 0.0:
+                    # Different question types at low confidence — reject
+                    is_match = False
+                    confidence_tier = "intent_mismatch"
+                    semantic_log.info(
+                        f"{tenant_id} | intent_mismatch | cosine={best_cosine:.3f} | "
+                        f"qtype_match={best_qtype} | key={prompt_norm[:80]}"
+                    )
 
                 # Response embedding sanity check — only reject if the
                 # response is truly unrelated (very low threshold).
@@ -984,18 +1464,24 @@ class SemanticCacheService:
                         "hit": "semantic",
                         "similarity": round(best_cosine, 4),
                         "hybrid_score": round(best_hybrid, 4),
-                        "token_overlap": round(best_tok, 4),
+                        "text_sim": round(best_text_sim, 4),
+                        "entity_overlap": round(best_entity, 4),
+                        "synonym_overlap": round(best_synonym, 4),
+                        "char_ngram_sim": round(best_ngram, 4),
+                        "token_overlap": round(best_text_sims["token_overlap"], 4),
                         "confidence": confidence_tier,
                         "latency_ms": latency,
-                        "strategy": "hybrid_semantic",
+                        "strategy": "multi_signal_semantic",
                         "threshold_used": round(threshold, 3),
                         "domain": query_domain,
                     }
                     semantic_log.info(
                         f"{tenant_id} | semantic | cosine={best_cosine:.3f} | "
-                        f"hybrid={best_hybrid:.3f} | token_overlap={best_tok:.3f} | "
-                        f"confidence={confidence_tier} | threshold={threshold:.3f} | "
-                        f"domain={query_domain} | key={prompt_norm[:80]}"
+                        f"hybrid={best_hybrid:.3f} | text_sim={best_text_sim:.3f} | "
+                        f"entity={best_entity:.3f} | synonym={best_synonym:.3f} | "
+                        f"ngram={best_ngram:.3f} | confidence={confidence_tier} | "
+                        f"threshold={threshold:.3f} | domain={query_domain} | "
+                        f"key={prompt_norm[:80]}"
                     )
                     self._append_event(T, tenant_id, prompt_hash, "semantic",
                                        round(best_cosine, 4), latency)
@@ -1006,7 +1492,8 @@ class SemanticCacheService:
 
                 semantic_log.info(
                     f"{tenant_id} | near-miss | cosine={best_cosine:.3f} | "
-                    f"hybrid={best_hybrid:.3f} | token_overlap={best_tok:.3f} | "
+                    f"hybrid={best_hybrid:.3f} | text_sim={best_text_sim:.3f} | "
+                    f"entity={best_entity:.3f} | synonym={best_synonym:.3f} | "
                     f"threshold={threshold:.3f} | domain={query_domain} | "
                     f"key={prompt_norm[:80]}"
                 )
@@ -1057,6 +1544,12 @@ class SemanticCacheService:
                     norm_key = normalize_query(prompt_norm)
                     if norm_key:
                         T.norm_hash_index[norm_key] = entry
+                    # Also store under deep-normalized key (abbreviation +
+                    # synonym expansion) so "What is ML?" is findable via
+                    # "what is machine learning" hash lookup.
+                    deep_key = deep_normalize(prompt_norm)
+                    if deep_key and deep_key != norm_key:
+                        T.norm_hash_index[deep_key] = entry
                     T.rows.append(entry)
                     self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
                                     metadata={"model": model, "domain": entry_domain})
@@ -1085,7 +1578,8 @@ class SemanticCacheService:
                 except Exception as _db_err:
                     error_log.warning(f"DB cache store failed: {_db_err}")
 
-                # Enrich asynchronously: response embedding, local embedding, clusters
+                # Enrich asynchronously: response embedding, local embedding,
+                # response index, clusters
                 def _enrich():
                     try:
                         resp_emb = None
@@ -1093,13 +1587,21 @@ class SemanticCacheService:
                             resp_emb = get_embedding(response_text[:500], user_id=user_id)
                         except Exception:
                             pass
-                        local_emb = get_local_embedding(prompt_norm) if LOCAL_MODEL_ENABLED else None
+                        # Use deep-normalized text for local embedding so
+                        # abbreviations/synonyms are expanded before encoding.
+                        local_text = deep_normalize(prompt_norm)
+                        local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
 
                         with self._cache_lock:
                             entry.response_embedding = resp_emb
                             entry.local_embedding = local_emb
                             if local_emb is not None:
                                 self._local_faiss_add(T, local_emb)
+                            # Add response embedding to response index for
+                            # query-to-response matching.
+                            if resp_emb is not None:
+                                row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
+                                self._response_faiss_add(T, resp_emb, row_idx)
                             if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
                                 self._rebuild_clusters(T)
                     except Exception as e:
@@ -1204,6 +1706,9 @@ class SemanticCacheService:
                     norm_key = normalize_query(prompt_norm)
                     if norm_key:
                         T.norm_hash_index[norm_key] = entry
+                    deep_key = deep_normalize(prompt_norm)
+                    if deep_key and deep_key != norm_key:
+                        T.norm_hash_index[deep_key] = entry
                     T.rows.append(entry)
                     self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
                                     metadata={"model": model, "domain": entry_domain})
@@ -1240,12 +1745,16 @@ class SemanticCacheService:
                             resp_emb = get_embedding(response_text[:500], user_id=user_id)
                         except Exception:
                             pass
-                        local_emb = get_local_embedding(prompt_norm) if LOCAL_MODEL_ENABLED else None
+                        local_text = deep_normalize(prompt_norm)
+                        local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
                         with self._cache_lock:
                             entry.response_embedding = resp_emb
                             entry.local_embedding = local_emb
                             if local_emb is not None:
                                 self._local_faiss_add(T, local_emb)
+                            if resp_emb is not None:
+                                row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
+                                self._response_faiss_add(T, resp_emb, row_idx)
                             if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
                                 self._rebuild_clusters(T)
                     except Exception:
@@ -1378,7 +1887,8 @@ class SemanticCacheService:
                     resp_emb = get_embedding(response_text[:500], user_id=user_id)
                 except Exception:
                     pass
-                local_emb = get_local_embedding(prompt_norm) if LOCAL_MODEL_ENABLED else None
+                local_text = deep_normalize(prompt_norm)
+                local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
 
                 entry = CacheEntry(
                     prompt_norm=prompt_norm,
@@ -1397,11 +1907,16 @@ class SemanticCacheService:
                     norm_key = normalize_query(prompt_norm)
                     if norm_key:
                         T.norm_hash_index[norm_key] = entry
+                    deep_key = deep_normalize(prompt_norm)
+                    if deep_key and deep_key != norm_key:
+                        T.norm_hash_index[deep_key] = entry
                     T.rows.append(entry)
                     self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=warmup_hash,
                                     metadata={"model": model, "domain": domain_hint(user_text)})
                     if local_emb is not None:
                         self._local_faiss_add(T, local_emb)
+                    if resp_emb is not None:
+                        self._response_faiss_add(T, resp_emb, len(T.rows) - 1)
                 added += 1
                 try:
                     from redis_cache import store_exact_match, store_embedding
