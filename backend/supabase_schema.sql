@@ -8,12 +8,15 @@
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.update_updated_at()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- =============================================================================
 -- 2. Profiles table (extends auth.users with app-specific data)
@@ -241,9 +244,9 @@ ALTER TABLE public.cache_entries ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile" ON public.profiles
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING ((select auth.uid()) = id);
 CREATE POLICY "Users can update own profile" ON public.profiles
-  FOR UPDATE USING (auth.uid() = id);
+  FOR UPDATE USING ((select auth.uid()) = id);
 
 -- Organizations: members can see their org
 DROP POLICY IF EXISTS "Org members can view organization" ON public.organizations;
@@ -251,14 +254,14 @@ DROP POLICY IF EXISTS "Org owners can update organization" ON public.organizatio
 DROP POLICY IF EXISTS "Authenticated users can create organizations" ON public.organizations;
 CREATE POLICY "Org members can view organization" ON public.organizations
   FOR SELECT USING (
-    id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 CREATE POLICY "Org owners can update organization" ON public.organizations
   FOR UPDATE USING (
-    id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid() AND role = 'owner')
+    id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()) AND role = 'owner')
   );
 CREATE POLICY "Authenticated users can create organizations" ON public.organizations
-  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+  FOR INSERT WITH CHECK ((select auth.uid()) IS NOT NULL);
 
 -- Org Members: members can see fellow members; owners/admins can manage
 DROP POLICY IF EXISTS "Org members can view members" ON public.org_members;
@@ -266,15 +269,15 @@ DROP POLICY IF EXISTS "Org admins can insert members" ON public.org_members;
 DROP POLICY IF EXISTS "Org admins can delete members" ON public.org_members;
 CREATE POLICY "Org members can view members" ON public.org_members
   FOR SELECT USING (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 CREATE POLICY "Org admins can insert members" ON public.org_members
   FOR INSERT WITH CHECK (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin'))
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()) AND role IN ('owner', 'admin'))
   );
 CREATE POLICY "Org admins can delete members" ON public.org_members
   FOR DELETE USING (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin'))
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()) AND role IN ('owner', 'admin'))
   );
 
 -- API Keys: users can manage their own keys
@@ -282,22 +285,22 @@ DROP POLICY IF EXISTS "Users can view own API keys" ON public.api_keys;
 DROP POLICY IF EXISTS "Users can insert own API keys" ON public.api_keys;
 DROP POLICY IF EXISTS "Users can update own API keys" ON public.api_keys;
 CREATE POLICY "Users can view own API keys" ON public.api_keys
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING ((select auth.uid()) = user_id);
 CREATE POLICY "Users can insert own API keys" ON public.api_keys
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+  FOR INSERT WITH CHECK ((select auth.uid()) = user_id);
 CREATE POLICY "Users can update own API keys" ON public.api_keys
-  FOR UPDATE USING (auth.uid() = user_id);
+  FOR UPDATE USING ((select auth.uid()) = user_id);
 
 -- Usage Logs: users can view their own logs
 DROP POLICY IF EXISTS "Users can view own usage" ON public.usage_logs;
 CREATE POLICY "Users can view own usage" ON public.usage_logs
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING ((select auth.uid()) = user_id);
 
 -- Audit Logs: org members can view their org audit logs
 DROP POLICY IF EXISTS "Org members can view audit logs" ON public.audit_logs;
 CREATE POLICY "Org members can view audit logs" ON public.audit_logs
   FOR SELECT USING (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 
 -- Cache Entries: org members can view/manage their org cache
@@ -306,15 +309,15 @@ DROP POLICY IF EXISTS "Org members can insert cache entries" ON public.cache_ent
 DROP POLICY IF EXISTS "Org members can update cache entries" ON public.cache_entries;
 CREATE POLICY "Org members can view cache entries" ON public.cache_entries
   FOR SELECT USING (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 CREATE POLICY "Org members can insert cache entries" ON public.cache_entries
   FOR INSERT WITH CHECK (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 CREATE POLICY "Org members can update cache entries" ON public.cache_entries
   FOR UPDATE USING (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 
 -- =============================================================================
@@ -322,7 +325,11 @@ CREATE POLICY "Org members can update cache entries" ON public.cache_entries
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   new_org_id UUID;
   user_slug TEXT;
@@ -354,7 +361,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -409,7 +416,7 @@ ALTER TABLE public.credits_ledger ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Org members can view credits" ON public.credits_ledger;
 CREATE POLICY "Org members can view credits" ON public.credits_ledger
   FOR SELECT USING (
-    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = auth.uid())
+    org_id IN (SELECT org_id FROM public.org_members WHERE user_id = (select auth.uid()))
   );
 
 -- =============================================================================
@@ -418,12 +425,16 @@ CREATE POLICY "Org members can view credits" ON public.credits_ledger
 
 -- Function: delete usage_logs older than 90 days and audit_logs older than 365 days
 CREATE OR REPLACE FUNCTION public.cleanup_old_logs()
-RETURNS void AS $$
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   DELETE FROM public.usage_logs WHERE logged_at < NOW() - INTERVAL '90 days';
   DELETE FROM public.audit_logs WHERE created_at < NOW() - INTERVAL '365 days';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- To run this automatically, enable pg_cron in Supabase:
 --   1. Go to Database > Extensions > Enable pg_cron

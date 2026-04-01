@@ -10,16 +10,13 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from semantic_cache_server import (
-    normalize_query,
     deep_normalize,
-    token_overlap_score,
     char_ngram_similarity,
     stemmed_overlap_score,
     idf_weighted_overlap,
     synonym_expanded_overlap,
     key_entity_overlap,
     question_type_match,
-    sorted_token_similarity,
     compute_text_similarity,
     hybrid_score,
     _extract_question_type,
@@ -323,22 +320,28 @@ def main():
     total_tests = 0
 
     p, t = test_normalization()
-    total_passed += p; total_tests += t
+    total_passed += p
+    total_tests += t
 
     p, t = test_stemming()
-    total_passed += p; total_tests += t
+    total_passed += p
+    total_tests += t
 
     p, t = test_question_type()
-    total_passed += p; total_tests += t
+    total_passed += p
+    total_tests += t
 
     p, t = test_should_match_pairs()
-    total_passed += p; total_tests += t
+    total_passed += p
+    total_tests += t
 
     p, t = test_should_not_match_pairs()
-    total_passed += p; total_tests += t
+    total_passed += p
+    total_tests += t
 
     p, t = test_hybrid_scoring()
-    total_passed += p; total_tests += t
+    total_passed += p
+    total_tests += t
 
     test_individual_signals()
 

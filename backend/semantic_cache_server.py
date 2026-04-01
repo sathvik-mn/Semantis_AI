@@ -499,8 +499,6 @@ def sorted_token_similarity(query: str, candidate: str) -> float:
     c_tokens = sorted(w for w in re.findall(r"[a-z0-9]+", candidate.lower()) if w not in _STOPWORDS)
     if not q_tokens or not c_tokens:
         return 0.0
-    # Longest common subsequence ratio on sorted tokens
-    m, n = len(q_tokens), len(c_tokens)
     # Use a simple set overlap on sorted (since sorting already removes order)
     q_set, c_set = set(q_tokens), set(c_tokens)
     union = q_set | c_set
@@ -2051,7 +2049,6 @@ def _schedule_log_cleanup():
 _schedule_log_cleanup()
 
 
-from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 @app.exception_handler(StarletteHTTPException)

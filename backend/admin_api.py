@@ -50,7 +50,6 @@ def _check_admin_rate_limit(request: Request):
     _admin_rate_limit[ip].append(now)
     # Evict stale IPs periodically (keep dict small)
     if len(_admin_rate_limit) > 1000:
-        cutoff = now - _ADMIN_RATE_WINDOW
         _admin_rate_limit.clear()
 
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
