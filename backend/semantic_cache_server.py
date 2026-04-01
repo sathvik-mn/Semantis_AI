@@ -149,6 +149,30 @@ DOMAIN_MAP = {
     "education": ["course", "curriculum", "student", "exam", "grade", "university", "lecture", "assignment"],
 }
 
+def models_compatible(requested: str, cached: str) -> bool:
+    """Check if a cached entry's model is compatible with the requested model.
+    For semantic caching, the cached RESPONSE content is what matters — not
+    which specific model variant generated it. A response about 'What is AI?'
+    from gpt-4o-mini is equally valid when the user asks via gpt-4o.
+
+    Returns True if the models are in the same family or either is a
+    general-purpose chat model (gpt-4o variants, gpt-3.5, etc.)."""
+    if requested == cached:
+        return True
+    # Normalize model names to family
+    def _family(m: str) -> str:
+        m = m.lower().strip()
+        if m.startswith("gpt-4o"):
+            return "gpt-4o"
+        if m.startswith("gpt-4"):
+            return "gpt-4"
+        if m.startswith("gpt-3.5"):
+            return "gpt-3.5"
+        if m.startswith("claude"):
+            return "claude"
+        return m
+    return _family(requested) == _family(cached)
+
 def domain_hint(text: str) -> str:
     t = text.lower()
     best, hits = "general", 0
@@ -1148,7 +1172,7 @@ class SemanticCacheService:
         # ── 1) Exact match on original normalized text (sub-ms) ──
         if prompt_norm in T.exact:
             entry = T.exact[prompt_norm]
-            if entry.fresh() and entry.model == model:
+            if entry.fresh() and models_compatible(model, entry.model):
                 entry.use_count += 1
                 entry.last_used_at = time.time()
                 T.hits += 1
@@ -1168,7 +1192,7 @@ class SemanticCacheService:
             deep_norm = deep_normalize(prompt_norm)
         if deep_norm and deep_norm in T.norm_hash_index:
             entry = T.norm_hash_index[deep_norm]
-            if entry.fresh() and entry.model == model:
+            if entry.fresh() and models_compatible(model, entry.model):
                 entry.use_count += 1
                 entry.last_used_at = time.time()
                 T.hits += 1
@@ -1238,7 +1262,7 @@ class SemanticCacheService:
                     entry = row_lookup.get(entry_id)
                     if entry is None:
                         continue
-                    if not entry.fresh() or entry.model != model:
+                    if not entry.fresh() or not models_compatible(model, entry.model):
                         continue
                     text_sims = compute_text_similarity(query_text, entry.prompt_norm)
                     h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
@@ -1273,7 +1297,7 @@ class SemanticCacheService:
                     if search_rows_mask is not None and idx not in search_rows_mask:
                         continue
                     entry = T.rows[idx]
-                    if not entry.fresh() or entry.model != model:
+                    if not entry.fresh() or not models_compatible(model, entry.model):
                         continue
                     text_sims = compute_text_similarity(query_text, entry.prompt_norm)
                     h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
@@ -1324,7 +1348,7 @@ class SemanticCacheService:
                         # its RESPONSE is relevant to the query. Add it as a
                         # candidate with the response similarity as its cosine score.
                         entry = T.rows[row_idx]
-                        if not entry.fresh() or entry.model != model:
+                        if not entry.fresh() or not models_compatible(model, entry.model):
                             continue
                         # Only add if response similarity is strong enough
                         if query_to_resp_sim < 0.45:
