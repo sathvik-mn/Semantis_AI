@@ -4058,6 +4058,70 @@ def get_credits_history_endpoint(request: Request, limit: int = Query(50, ge=1, 
 
 
 # -----------------------------
+# Public product assistant (no auth required)
+# -----------------------------
+
+ASSISTANT_SYSTEM_PROMPT = """You are the Semantis AI product assistant. You ONLY answer questions about Semantis AI and its features. If a question is not related to Semantis AI, politely decline and redirect the user to ask about Semantis AI.
+
+About Semantis AI:
+- Semantis AI is an intelligent semantic caching layer that sits between your application and LLM providers (OpenAI, Anthropic, etc.)
+- It reduces LLM API costs by up to 80% by caching and reusing responses for semantically similar queries.
+- Response latency drops to under 50ms for cache hits vs 1-3 seconds for fresh LLM calls.
+- It's a drop-in replacement: just change your base URL. Works with any OpenAI-compatible SDK.
+- Multi-tier caching: L1 (Redis in-memory), L2 (FAISS vector similarity), L3 (PostgreSQL persistence).
+- Features: real-time analytics dashboard, cache warmup, configurable similarity thresholds, TTL controls, multi-tenant support, API key management.
+- SDKs available: Python, TypeScript, with integrations for LangChain, LlamaIndex, FastAPI, Express, Django.
+- Enterprise ready: SOC-2 compliant architecture, rate limiting, audit logs, team management.
+- Pricing: Free tier available, usage-based paid plans with credits system.
+- Getting started: Sign up, get an API key, point your OpenAI SDK base URL to Semantis AI, done.
+
+Keep answers concise (2-3 sentences max). Be friendly and helpful."""
+
+
+class AssistantRequest(BaseModel):
+    message: str
+    history: List[Dict[str, str]] = []
+
+    @validator("message")
+    def message_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("message cannot be empty")
+        if len(v) > 1000:
+            raise ValueError("message too long (max 1000 chars)")
+        return v.strip()
+
+    @validator("history")
+    def history_limit(cls, v):
+        return v[-10:]  # keep last 10 messages
+
+
+@app.post("/api/assistant")
+@limiter.limit("20/minute")
+def product_assistant(request: Request, body: AssistantRequest):
+    """Public product assistant endpoint — no auth required.
+    Rate-limited to prevent abuse."""
+    try:
+        messages = [{"role": "system", "content": ASSISTANT_SYSTEM_PROMPT}]
+        for h in body.history:
+            if h.get("role") in ("user", "assistant") and h.get("content"):
+                messages.append({"role": h["role"], "content": h["content"][:500]})
+        messages.append({"role": "user", "content": body.message})
+
+        client = _get_openai_client(OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=300,
+        )
+        reply = response.choices[0].message.content or "Sorry, I couldn't generate a response."
+        return {"reply": reply}
+    except Exception as e:
+        error_log.exception(f"Assistant endpoint error: {e}")
+        raise HTTPException(status_code=500, detail="Assistant unavailable")
+
+
+# -----------------------------
 # Entry point
 # -----------------------------
 if __name__ == "__main__":

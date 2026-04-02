@@ -3,10 +3,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { TubesBackground } from '../components/TubesBackground';
 import { NeonRGBTextEffect } from '../components/ui/neon-rgbtext-effect';
 import TextMarquee from '../components/ui/text-marquee';
+import { FloatingAssistant } from '../components/FloatingAssistant';
 
 export function LandingPage() {
   const { isAuthenticated } = useAuth();
   return (
+    <>
     <TubesBackground className="min-h-screen" enableClickInteraction>
       <div className="pointer-events-auto">
         {/* Navigation */}
@@ -67,7 +69,7 @@ export function LandingPage() {
               Reduce costs and latency by serving cached responses for semantically similar queries.
             </p>
 
-            <div className="flex gap-4 justify-center flex-wrap mb-20 opacity-0 animate-slide-up" style={{ animationDelay: '1.15s' }}>
+            <div id="hero-cta" className="flex gap-4 justify-center flex-wrap mb-20 opacity-0 animate-slide-up" style={{ animationDelay: '1.15s' }}>
               {isAuthenticated ? (
                 <Link to="/playground" className="btn-liquid-glass text-lg px-8 py-4 no-underline">
                   Go to Playground &rarr;
@@ -230,5 +232,7 @@ print(response.choices[0].message.content)  # Instant on cache hit!`}</code>
         </footer>
       </div>
     </TubesBackground>
+    <FloatingAssistant />
+  </>
   );
 }
