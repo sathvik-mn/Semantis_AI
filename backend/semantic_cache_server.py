@@ -697,14 +697,54 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
         )
         raise
 
+_DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful AI assistant. Provide clear, focused, and substantive answers. "
+    "When the user asks about a topic (even briefly), explain the topic directly — "
+    "do not list every possible meaning of an abbreviation unless the user explicitly "
+    "asks what it stands for. Interpret short queries as requests to explain the topic."
+)
+
+
+def _enrich_messages_for_llm(messages: List[dict]) -> List[dict]:
+    """Enrich messages before sending to the LLM.
+
+    1. Expand abbreviations in short user queries so the LLM understands intent.
+    2. Prepend a system prompt if none is present for better response quality.
+    """
+    enriched = []
+    has_system = any(m.get("role") == "system" for m in messages)
+
+    if not has_system:
+        enriched.append({"role": "system", "content": _DEFAULT_SYSTEM_PROMPT})
+
+    for m in messages:
+        if m.get("role") == "user":
+            content = m["content"].strip()
+            # For short queries (≤ 5 words), expand abbreviations so the LLM
+            # understands "ML?" as "machine learning?" rather than guessing.
+            word_count = len(content.split())
+            if word_count <= 5:
+                expanded = _ABBREVIATION_RE.sub(
+                    lambda match: _ABBREVIATIONS.get(match.group(0).lower(), match.group(0)),
+                    content,
+                )
+                if expanded != content:
+                    enriched.append({**m, "content": expanded})
+                    continue
+        enriched.append(m)
+
+    return enriched
+
+
 def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Optional[str] = None, model: Optional[str] = None):
     """OpenAI chat call with streaming. Yields SSE chunks."""
     _model = model or CHAT_MODEL
     key = _resolve_openai_key(user_id)
     client = _get_openai_client(key)
+    enriched = _enrich_messages_for_llm(messages)
     stream = client.chat.completions.create(
         model=_model,
-        messages=messages,  # type: ignore[arg-type]
+        messages=enriched,  # type: ignore[arg-type]
         temperature=temperature,
         max_tokens=1024,
         stream=True,
@@ -723,9 +763,10 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
 
     try:
         client = _get_openai_client(key)
+        enriched = _enrich_messages_for_llm(messages)
         resp = client.chat.completions.create(
             model=_model,
-            messages=messages,  # type: ignore[arg-type]
+            messages=enriched,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=1024,
         )
@@ -1525,7 +1566,7 @@ class SemanticCacheService:
                 if len(T._near_misses) > 100:
                     T._near_misses = T._near_misses[-100:]
 
-        # ── 5) Cache miss — LLM call + async storage ──
+        # ── 5) Cache miss — LLM call + two-phase storage ──
         T.misses += 1
         response_text = call_llm(messages, temperature, user_id, model=model)
 
@@ -1536,54 +1577,65 @@ class SemanticCacheService:
         meta = {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "miss"}
         self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, latency)
 
-        # Store immediately with query embedding (fast path)
-        _cached_emb = query_emb
-        # Capture org_id before entering thread
+        # Phase 1 (synchronous): exact + hash indexes — guarantees next
+        # identical/normalized query is a cache hit regardless of embedding health.
+        user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
+        entry_domain = domain_hint(user_text)
+        entry = CacheEntry(
+            prompt_norm=prompt_norm,
+            response_text=response_text,
+            embedding=query_emb,  # may be None if semantic search was skipped
+            model=model,
+            ttl_seconds=ttl_seconds,
+            domain=entry_domain,
+            strategy="miss",
+        )
+        with self._cache_lock:
+            T.exact[prompt_norm] = entry
+            norm_key = normalize_query(prompt_norm)
+            if norm_key:
+                T.norm_hash_index[norm_key] = entry
+            deep_key = deep_normalize(prompt_norm)
+            if deep_key and deep_key != norm_key:
+                T.norm_hash_index[deep_key] = entry
+            T.rows.append(entry)
+            # If we already have the embedding from semantic search, add to FAISS now
+            if query_emb is not None:
+                self._faiss_add(T, query_emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                metadata={"model": model, "domain": entry_domain})
+
+        # Phase 2 (background): embeddings (if missing), DB, Redis, enrichment
         try:
             _query_org_id = _current_api_key_var.get().get("org_id")
         except Exception:
             _query_org_id = None
-        def _store_fast():
-            """Store entry in cache ASAP with just the query embedding."""
-            try:
-                emb = _cached_emb
-                if emb is None:
-                    emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
-                user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
-                entry_domain = domain_hint(user_text)
 
-                entry = CacheEntry(
-                    prompt_norm=prompt_norm,
-                    response_text=response_text,
-                    embedding=emb,
-                    model=model,
-                    ttl_seconds=ttl_seconds,
-                    domain=entry_domain,
-                    strategy="miss",
-                )
-                with self._cache_lock:
-                    T.exact[prompt_norm] = entry
-                    norm_key = normalize_query(prompt_norm)
-                    if norm_key:
-                        T.norm_hash_index[norm_key] = entry
-                    # Also store under deep-normalized key (abbreviation +
-                    # synonym expansion) so "What is ML?" is findable via
-                    # "what is machine learning" hash lookup.
-                    deep_key = deep_normalize(prompt_norm)
-                    if deep_key and deep_key != norm_key:
-                        T.norm_hash_index[deep_key] = entry
-                    T.rows.append(entry)
-                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
-                                    metadata={"model": model, "domain": entry_domain})
-                    if len(T.rows) % 10 == 0:
-                        _bg_executor.submit(self._save_cache)
+        def _embed_and_persist():
+            try:
+                emb = entry.embedding
+                if emb is None:
+                    try:
+                        emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
+                        with self._cache_lock:
+                            entry.embedding = emb
+                            self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                            metadata={"model": model, "domain": entry_domain})
+                    except Exception as emb_err:
+                        error_log.warning(f"{tenant_id} | embedding failed (non-fatal): {emb_err}")
+
+                if len(T.rows) % 10 == 0:
+                    self._save_cache()
+
+                # Redis (best-effort)
                 try:
                     from redis_cache import store_exact_match, store_embedding
                     store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
-                    store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
+                    if emb is not None:
+                        store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
-                # Persist to DB (encrypted if configured)
+
+                # DB persistence (best-effort)
                 try:
                     if _query_org_id:
                         from database import store_cache_entry
@@ -1596,43 +1648,34 @@ class SemanticCacheService:
                             model=model, ttl_expires_at=ttl_dt,
                             domain=entry_domain, tenant_id=tenant_id,
                         )
-                        access_log.info(f"{tenant_id} | DB cache stored | encrypted={bool(os.getenv('CACHE_ENCRYPTION_KEY'))}")
                 except Exception as _db_err:
                     error_log.warning(f"DB cache store failed: {_db_err}")
 
-                # Enrich asynchronously: response embedding, local embedding,
-                # response index, clusters
-                def _enrich():
+                # Enrichment: response + local embeddings
+                try:
+                    resp_emb = None
                     try:
-                        resp_emb = None
-                        try:
-                            resp_emb = get_embedding(response_text[:500], user_id=user_id)
-                        except Exception:
-                            pass
-                        # Use deep-normalized text for local embedding so
-                        # abbreviations/synonyms are expanded before encoding.
-                        local_text = deep_normalize(prompt_norm)
-                        local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
-
-                        with self._cache_lock:
-                            entry.response_embedding = resp_emb
-                            entry.local_embedding = local_emb
-                            if local_emb is not None:
-                                self._local_faiss_add(T, local_emb)
-                            # Add response embedding to response index for
-                            # query-to-response matching.
-                            if resp_emb is not None:
-                                row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
-                                self._response_faiss_add(T, resp_emb, row_idx)
-                            if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
-                                self._rebuild_clusters(T)
-                    except Exception as e:
-                        error_log.debug(f"Enrich failed (non-fatal) | tenant={tenant_id} | {e}")
-                _bg_executor.submit(_enrich)
-
+                        resp_emb = get_embedding(response_text[:500], user_id=user_id)
+                    except Exception:
+                        pass
+                    local_text = deep_normalize(prompt_norm)
+                    local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
+                    with self._cache_lock:
+                        entry.response_embedding = resp_emb
+                        entry.local_embedding = local_emb
+                        if local_emb is not None:
+                            self._local_faiss_add(T, local_emb)
+                        if resp_emb is not None:
+                            row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
+                            self._response_faiss_add(T, resp_emb, row_idx)
+                        if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
+                            self._rebuild_clusters(T)
+                except Exception:
+                    pass
             except Exception as e:
-                error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
-        _bg_executor.submit(_store_fast)
+                error_log.warning(f"Cache embed/persist failed (non-fatal) | tenant={tenant_id} | {e}")
+
+        _bg_executor.submit(_embed_and_persist)
 
         return response_text, meta
 
@@ -1690,59 +1733,77 @@ class SemanticCacheService:
         user_id: Optional[str] = None,
         org_id: Optional[str] = None,
     ):
-        """Store a response after a cache miss (e.g. after streaming completes)."""
+        """Store a response after a cache miss (e.g. after streaming completes).
+
+        Architecture: two-phase storage for resilience.
+          Phase 1 (synchronous): Create the CacheEntry and insert into exact +
+              hash indexes immediately.  This guarantees that the very next
+              identical or normalized-match query will be a cache hit — even if
+              embeddings or external services are down.
+          Phase 2 (background): Compute embeddings, add to FAISS / Pinecone /
+              Redis / DB, and enrich with response embeddings.  Failures here
+              degrade semantic matching gracefully but never break exact/hash.
+        """
         T = self.tenant(tenant_id)
         T.misses += 1
         prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()
-        latency = 0.0  # already recorded by caller
-        self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, latency)
+        self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, 0.0)
 
-        query_emb = None
-        try:
-            query_emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
-        except Exception:
-            pass
+        user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
+        entry_domain = domain_hint(user_text)
 
-        _cached_emb = query_emb
+        # ── Phase 1: Synchronous — exact + hash index (no embedding needed) ──
+        entry = CacheEntry(
+            prompt_norm=prompt_norm,
+            response_text=response_text,
+            embedding=None,  # populated async in Phase 2
+            model=model,
+            ttl_seconds=ttl_seconds,
+            domain=entry_domain,
+            strategy="miss",
+        )
+        with self._cache_lock:
+            T.exact[prompt_norm] = entry
+            norm_key = normalize_query(prompt_norm)
+            if norm_key:
+                T.norm_hash_index[norm_key] = entry
+            deep_key = deep_normalize(prompt_norm)
+            if deep_key and deep_key != norm_key:
+                T.norm_hash_index[deep_key] = entry
+            T.rows.append(entry)
+        access_log.info(
+            f"{tenant_id} | store_miss | phase1 done | exact+hash stored | "
+            f"norm_key={norm_key!r} | deep_key={deep_key!r}"
+        )
+
+        # ── Phase 2: Background — embeddings, FAISS, DB, enrichment ──
         _store_org_id = org_id
-        def _store_fast():
-            access_log.info(f"{tenant_id} | _store_fast ENTERED | org={_store_org_id}")
+        def _embed_and_persist():
             try:
-                emb = _cached_emb
-                if emb is None:
+                emb = None
+                try:
                     emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
-                user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
-                entry_domain = domain_hint(user_text)
+                except Exception as emb_err:
+                    error_log.warning(f"{tenant_id} | embedding failed (non-fatal): {emb_err}")
 
-                entry = CacheEntry(
-                    prompt_norm=prompt_norm,
-                    response_text=response_text,
-                    embedding=emb,
-                    model=model,
-                    ttl_seconds=ttl_seconds,
-                    domain=entry_domain,
-                    strategy="miss",
-                )
                 with self._cache_lock:
-                    T.exact[prompt_norm] = entry
-                    norm_key = normalize_query(prompt_norm)
-                    if norm_key:
-                        T.norm_hash_index[norm_key] = entry
-                    deep_key = deep_normalize(prompt_norm)
-                    if deep_key and deep_key != norm_key:
-                        T.norm_hash_index[deep_key] = entry
-                    T.rows.append(entry)
-                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
-                                    metadata={"model": model, "domain": entry_domain})
+                    entry.embedding = emb
+                    if emb is not None:
+                        self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                        metadata={"model": model, "domain": entry_domain})
                     if len(T.rows) % 10 == 0:
-                        _bg_executor.submit(self._save_cache)
+                        self._save_cache()
+
+                # Redis (best-effort)
                 try:
                     from redis_cache import store_exact_match, store_embedding
                     store_exact_match(tenant_id, prompt_hash, response_text, model, ttl_seconds)
-                    store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
+                    if emb is not None:
+                        store_embedding(tenant_id, prompt_hash, emb, ttl_seconds)
                 except Exception:
                     pass
-                # Persist to DB (encrypted if configured)
+
+                # DB persistence (best-effort)
                 try:
                     if _store_org_id:
                         from database import store_cache_entry
@@ -1760,32 +1821,33 @@ class SemanticCacheService:
                         error_log.warning(f"{tenant_id} | DB cache skipped: org_id is None")
                 except Exception as _db_err:
                     error_log.warning(f"DB cache store failed: {_db_err}")
-                def _enrich():
+
+                # Enrichment: response embedding + local embedding
+                try:
+                    resp_emb = None
                     try:
-                        resp_emb = None
-                        try:
-                            resp_emb = get_embedding(response_text[:500], user_id=user_id)
-                        except Exception:
-                            pass
-                        local_text = deep_normalize(prompt_norm)
-                        local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
-                        with self._cache_lock:
-                            entry.response_embedding = resp_emb
-                            entry.local_embedding = local_emb
-                            if local_emb is not None:
-                                self._local_faiss_add(T, local_emb)
-                            if resp_emb is not None:
-                                row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
-                                self._response_faiss_add(T, resp_emb, row_idx)
-                            if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
-                                self._rebuild_clusters(T)
+                        resp_emb = get_embedding(response_text[:500], user_id=user_id)
                     except Exception:
                         pass
-                _bg_executor.submit(_enrich)
+                    local_text = deep_normalize(prompt_norm)
+                    local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
+                    with self._cache_lock:
+                        entry.response_embedding = resp_emb
+                        entry.local_embedding = local_emb
+                        if local_emb is not None:
+                            self._local_faiss_add(T, local_emb)
+                        if resp_emb is not None:
+                            row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
+                            self._response_faiss_add(T, resp_emb, row_idx)
+                        if len(T.rows) % 100 == 0 and len(T.rows) >= 50:
+                            self._rebuild_clusters(T)
+                except Exception:
+                    pass
+
             except Exception as e:
-                error_log.warning(f"Cache store failed | tenant={tenant_id} | {e}")
-        access_log.info(f"{tenant_id} | store_miss | submitting _store_fast | org={_store_org_id}")
-        _bg_executor.submit(_store_fast)
+                error_log.warning(f"Cache embed/persist failed (non-fatal) | tenant={tenant_id} | {e}")
+
+        _bg_executor.submit(_embed_and_persist)
 
     def metrics(self, tenant_id: str) -> dict:
         T = self.tenant(tenant_id)
