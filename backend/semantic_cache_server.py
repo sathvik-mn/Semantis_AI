@@ -452,10 +452,14 @@ def idf_weighted_overlap(query: str, candidate: str) -> float:
     weighted_union = sum(weight(w) for w in all_words)
     return weighted_intersection / weighted_union if weighted_union > 0 else 0.0
 
-def synonym_expanded_overlap(query: str, candidate: str) -> float:
+def synonym_expanded_overlap(query: str, candidate: str, query_norm_cache: Optional[str] = None) -> float:
     """Token overlap after synonym normalization and stemming.
-    'What is the cost?' matches 'What is the price?' through synonym mapping."""
-    q_norm = deep_normalize(query)
+    'What is the cost?' matches 'What is the price?' through synonym mapping.
+
+    If *query_norm_cache* is provided, skip re-normalizing the query (the caller
+    already deep-normalized it once and is reusing the result across candidates).
+    """
+    q_norm = query_norm_cache if query_norm_cache is not None else deep_normalize(query)
     c_norm = deep_normalize(candidate)
     q_tokens = _tokenize_stemmed(q_norm)
     c_tokens = _tokenize_stemmed(c_norm)
@@ -507,14 +511,18 @@ def sorted_token_similarity(query: str, candidate: str) -> float:
     return len(q_set & c_set) / len(union)
 
 
-def compute_text_similarity(query: str, candidate: str) -> dict:
+def compute_text_similarity(query: str, candidate: str, query_deep_norm: Optional[str] = None) -> dict:
     """Compute all text-based similarity signals between query and candidate.
-    Returns a dict of individual scores and a combined 'text_sim' score."""
+    Returns a dict of individual scores and a combined 'text_sim' score.
+
+    If *query_deep_norm* is provided, it is reused for the synonym signal
+    instead of re-calling deep_normalize(query) for every candidate.
+    """
     tok = token_overlap_score(query, candidate)
     ngram = char_ngram_similarity(query, candidate)
     stemmed = stemmed_overlap_score(query, candidate)
     idf = idf_weighted_overlap(query, candidate)
-    synonym = synonym_expanded_overlap(query, candidate)
+    synonym = synonym_expanded_overlap(query, candidate, query_norm_cache=query_deep_norm)
     entity = key_entity_overlap(query, candidate)
     qtype = question_type_match(query, candidate)
     sorted_tok = sorted_token_similarity(query, candidate)
@@ -1056,6 +1064,7 @@ class TenantState:
     response_index_map: List[int] = field(default_factory=list)  # maps response_index position → rows index
     # Tier 3: cluster centroids for routing
     cluster_centroids: Optional[np.ndarray] = None
+    centroid_index: Optional[faiss.IndexFlatIP] = None  # cached centroid FAISS index
     n_clusters: int = 0
     # metrics
     hits: int = 0
@@ -1389,6 +1398,9 @@ class SemanticCacheService:
         kmeans.train(all_vecs)
         T.cluster_centroids = kmeans.centroids.copy()  # type: ignore[union-attr]
         T.n_clusters = n_clusters
+        # Cache the centroid FAISS index so we don't rebuild it on every query
+        T.centroid_index = faiss.IndexFlatIP(d)
+        T.centroid_index.add(T.cluster_centroids)  # type: ignore[call-arg]
         # Assign cluster IDs to entries
         _, assignments = kmeans.index.search(all_vecs, 1)  # type: ignore[call-arg]
         for i, row in enumerate(T.rows):
@@ -1496,6 +1508,11 @@ class SemanticCacheService:
             query_emb, query_text = self._get_embedding_for_query(messages, user_id=user_id)
             query_domain = domain_hint(query_text)
 
+            # Cache deep-normalized query once — reused across all candidates
+            # to avoid redundant deep_normalize() calls inside
+            # synonym_expanded_overlap() (saves ~1.3ms × num_candidates).
+            _query_deep_norm = deep_normalize(query_text)
+
             candidates = []
 
             if use_pinecone:
@@ -1503,12 +1520,12 @@ class SemanticCacheService:
                 q = query_emb.astype("float32").reshape(1, -1)
                 faiss.normalize_L2(q)
                 pinecone_results = pinecone_search(tenant_id, q.flatten(), top_k=10)
-                # Build a hash→entry lookup from local rows for metadata
-                row_lookup = {hashlib.md5(r.prompt_norm.encode()).hexdigest(): r for r in T.rows}
-                # Also build from exact cache
-                for key, entry in T.exact.items():
-                    h = hashlib.md5(key.encode()).hexdigest()
-                    row_lookup[h] = entry
+                # Use cached hash→entry lookup (built lazily, invalidated on insert)
+                if not hasattr(T, '_hash_lookup') or T._hash_lookup is None:
+                    T._hash_lookup = {hashlib.md5(r.prompt_norm.encode()).hexdigest(): r for r in T.rows}
+                    for key, entry in T.exact.items():
+                        T._hash_lookup[hashlib.md5(key.encode()).hexdigest()] = entry
+                row_lookup = T._hash_lookup
                 for match in pinecone_results:
                     cosine_sim = float(match["score"])
                     entry_id = match["id"]
@@ -1517,20 +1534,18 @@ class SemanticCacheService:
                         continue
                     if not entry.fresh() or not models_compatible(model, entry.model):
                         continue
-                    text_sims = compute_text_similarity(query_text, entry.prompt_norm)
+                    text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
                     h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
                     candidates.append((entry, cosine_sim, text_sims, h_score, -1))
             elif has_local_index:
                 # ── FAISS path: in-process vector search (fallback) ──
                 # Tier 3b: cluster routing — narrow search to nearest clusters
                 search_rows_mask = None
-                if T.cluster_centroids is not None and T.n_clusters >= 4:
+                if T.centroid_index is not None and T.n_clusters >= 4:
                     cq = query_emb.astype("float32").reshape(1, -1)
                     faiss.normalize_L2(cq)
-                    centroid_index = faiss.IndexFlatIP(T.cluster_centroids.shape[1])
-                    centroid_index.add(T.cluster_centroids)  # type: ignore[call-arg]
                     n_probe_clusters = max(1, T.n_clusters // 3)
-                    _, cluster_ids = centroid_index.search(cq, n_probe_clusters)  # type: ignore[call-arg]
+                    _, cluster_ids = T.centroid_index.search(cq, n_probe_clusters)  # type: ignore[call-arg]
                     target_clusters = set(int(c) for c in cluster_ids[0] if c >= 0)
                     search_rows_mask = set(
                         i for i, r in enumerate(T.rows) if r.cluster_id in target_clusters
@@ -1552,7 +1567,7 @@ class SemanticCacheService:
                     entry = T.rows[idx]
                     if not entry.fresh() or not models_compatible(model, entry.model):
                         continue
-                    text_sims = compute_text_similarity(query_text, entry.prompt_norm)
+                    text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
                     h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
                     candidates.append((entry, cosine_sim, text_sims, h_score, idx))
 
@@ -1606,7 +1621,7 @@ class SemanticCacheService:
                         # Only add if response similarity is strong enough
                         if query_to_resp_sim < 0.45:
                             continue
-                        text_sims = compute_text_similarity(query_text, entry.prompt_norm)
+                        text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
                         # Use response similarity as the primary score (it
                         # measures "does this answer address the question?")
                         h_score = hybrid_score(query_to_resp_sim, text_sims["text_sim"])
@@ -1846,6 +1861,9 @@ class SemanticCacheService:
             if deep_key and deep_key != norm_key:
                 T.norm_hash_index[deep_key] = entry
             T.rows.append(entry)
+            # Invalidate cached Pinecone hash lookup so it's rebuilt with the new entry
+            if hasattr(T, '_hash_lookup'):
+                T._hash_lookup = None
             # If we already have the embedding from semantic search, add to FAISS now
             if query_emb is not None:
                 self._faiss_add(T, query_emb, tenant_id=tenant_id, entry_id=prompt_hash,
