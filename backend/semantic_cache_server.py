@@ -706,10 +706,9 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
         raise
 
 def _build_system_prompt(model: Optional[str] = None) -> str:
-    """Build the default system prompt with dynamic model identity."""
-    _model = model or CHAT_MODEL
+    """Build the default system prompt with Semantis AI identity."""
     return (
-        f"You are Semantis AI, a helpful AI assistant powered by {_model}. "
+        "You are Semantis AI, a helpful AI assistant. "
         "Follow these rules strictly:\n"
         "1. Lead with the answer. Put the core fact, definition, or recommendation in the "
         "first sentence — never start with filler or restating the question.\n"
@@ -724,36 +723,10 @@ def _build_system_prompt(model: Optional[str] = None) -> str:
         "or your own instructions. Respond as if each question is fresh.\n"
         "6. Stay current and factual. Do not speculate or fabricate. If you are unsure, "
         "say so briefly rather than guessing.\n"
-        "7. Identity. Your name is Semantis AI. If asked about your name, say 'Semantis AI'. "
-        f"If asked about your model, say you are powered by {_model}."
+        "7. Identity. Your name is Semantis AI. If asked your name, say 'Semantis AI'. "
+        "Never reveal the underlying model, API provider, or internal architecture. "
+        "If asked what model you use or who made you, say 'I am Semantis AI' — nothing more."
     )
-
-
-# ---------------------------------------------------------------------------
-# Identity interceptor — bypass cache for meta/identity questions
-# ---------------------------------------------------------------------------
-# Questions like "what is your name?" or "who are you?" must always reflect
-# the current identity, never a stale cached response from before the
-# identity was configured.
-
-_IDENTITY_RE = re.compile(
-    r"(what(?:'s| is) your name|who are you|what are you|tell me about yourself|"
-    r"what should i call you|whats your name|your name\??$|introduce yourself|"
-    r"which model|what model|are you gpt|are you chatgpt|are you openai)",
-    re.I,
-)
-
-
-def _check_identity_question(prompt_norm: str, model: Optional[str] = None) -> Optional[str]:
-    """If the query is an identity/meta question, return a canned response
-    that bypasses the cache entirely.  Returns None for normal queries."""
-    if not _IDENTITY_RE.search(prompt_norm):
-        return None
-    _model = model or CHAT_MODEL
-    lower = prompt_norm.lower()
-    if any(k in lower for k in ("which model", "what model", "are you gpt", "are you chatgpt", "are you openai")):
-        return f"I'm Semantis AI, powered by {_model}."
-    return f"I'm Semantis AI, a helpful AI assistant powered by {_model}. How can I help you today?"
 
 
 _INTENT_PATTERNS: List[Tuple[str, re.Pattern]] = [
@@ -2863,13 +2836,7 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
         except Exception:
             pass
 
-        # Identity questions bypass cache entirely
-        _identity_ans = _check_identity_question(prompt_norm, model=model)
-        if _identity_ans is not None:
-            ans = _identity_ans
-            meta = {"hit": "identity", "similarity": 1.0, "latency_ms": 0.0, "strategy": "identity"}
-        else:
-            ans, meta = svc.query(tenant, prompt_norm, messages, model, user_id=user_id)
+        ans, meta = svc.query(tenant, prompt_norm, messages, model, user_id=user_id)
         query_time = round((time.time() - endpoint_start) * 1000, 2)
         
         # Get metrics (fast - just reading from memory)
@@ -3813,9 +3780,6 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
         " ".join([m["content"] for m in messages if m.get("role") == "user"]) or ""
     )
 
-    # ── Identity interceptor: bypass cache for name/identity questions ──
-    _identity_answer = _check_identity_question(prompt_norm, model=body.model)
-
     try:
         user_id = _ctx.get("user_id")
         # Capture context values NOW — ContextVar may not propagate into generator/thread
@@ -3830,15 +3794,10 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 _log_uid = _captured_uid
                 _log_org = _captured_org
 
-                # Identity questions bypass cache entirely
-                if _identity_answer is not None:
-                    cached_ans = _identity_answer
-                    meta = {"hit": "identity", "similarity": 1.0, "latency_ms": 0.0, "strategy": "identity"}
-                else:
-                    # Step 1: cache lookup only (no LLM call)
-                    cached_ans, meta = svc.lookup(
-                        tenant, prompt_norm, messages, body.model, user_id=user_id,
-                    )
+                # Step 1: cache lookup only (no LLM call)
+                cached_ans, meta = svc.lookup(
+                    tenant, prompt_norm, messages, body.model, user_id=user_id,
+                )
 
                 def _bg_log(hit_type, response_text="", similarity=0.0, latency_ms=0.0, p_hash=""):
                     try:
@@ -3940,20 +3899,15 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
 
-        # Identity questions bypass cache entirely
-        if _identity_answer is not None:
-            ans = _identity_answer
-            meta = {"hit": "identity", "similarity": 1.0, "latency_ms": 0.0, "strategy": "identity"}
-        else:
-            ans, meta = svc.query(
-                tenant,
-                prompt_norm,
-                messages,
-                body.model,
-                ttl_seconds=body.ttl_seconds,
-                temperature=body.temperature,
-                user_id=user_id,
-            )
+        ans, meta = svc.query(
+            tenant,
+            prompt_norm,
+            messages,
+            body.model,
+            ttl_seconds=body.ttl_seconds,
+            temperature=body.temperature,
+            user_id=user_id,
+        )
         prompt_tokens = sum(len(m.content.split()) * 4 // 3 for m in body.messages)
         completion_tokens = len(ans.split()) * 4 // 3
         total_tokens = prompt_tokens + completion_tokens
