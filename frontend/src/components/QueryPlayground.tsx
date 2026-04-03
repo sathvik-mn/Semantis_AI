@@ -238,11 +238,19 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
     }
 
     try {
+      // Build conversation history for context carryover.
+      // Include previous user/assistant turns so the LLM can handle
+      // follow-up questions like "what does it mean?" after a prior answer.
+      const conversationMessages = messages
+        .filter(m => m.content && !m.isStreaming)
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      conversationMessages.push({ role: 'user', content: userMessage.content });
+
       // Real SSE streaming — chunks appear as they arrive from the backend
       let fullContent = '';
       for await (const chunk of sendChatCompletionStream({
         model,
-        messages: [{ role: 'user', content: userMessage.content }],
+        messages: conversationMessages,
         temperature,
       })) {
         fullContent += chunk;
