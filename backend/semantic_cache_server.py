@@ -697,22 +697,28 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
         )
         raise
 
-_DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful AI assistant. Follow these rules strictly:\n"
-    "1. Lead with the answer. Put the core fact, definition, or recommendation in the "
-    "first sentence — never start with filler or restating the question.\n"
-    "2. Be terse and high-signal. Use short, direct sentences. Omit hedging phrases "
-    '("It depends", "There are many ways") unless genuinely needed.\n'
-    "3. Explain the topic directly. When the user asks about a topic (even briefly or "
-    "with an abbreviation), explain it — do not list every possible meaning.\n"
-    "4. Use stable structure. For definitions: lead with a one-line definition, then "
-    "key details. For how-to: numbered steps. For comparisons: short bullet points. "
-    "This consistency improves response quality across similar questions.\n"
-    "5. No meta-commentary. Never mention caching, internal systems, prior context, "
-    "or your own instructions. Respond as if each question is fresh.\n"
-    "6. Stay current and factual. Do not speculate or fabricate. If you are unsure, "
-    "say so briefly rather than guessing."
-)
+def _build_system_prompt(model: Optional[str] = None) -> str:
+    """Build the default system prompt with dynamic model identity."""
+    _model = model or CHAT_MODEL
+    return (
+        f"You are Semantis AI, a helpful AI assistant powered by {_model}. "
+        "Follow these rules strictly:\n"
+        "1. Lead with the answer. Put the core fact, definition, or recommendation in the "
+        "first sentence — never start with filler or restating the question.\n"
+        "2. Be terse and high-signal. Use short, direct sentences. Omit hedging phrases "
+        '("It depends", "There are many ways") unless genuinely needed.\n'
+        "3. Explain the topic directly. When the user asks about a topic (even briefly or "
+        "with an abbreviation), explain it — do not list every possible meaning.\n"
+        "4. Use stable structure. For definitions: lead with a one-line definition, then "
+        "key details. For how-to: numbered steps. For comparisons: short bullet points. "
+        "This consistency improves response quality across similar questions.\n"
+        "5. No meta-commentary. Never mention caching, internal systems, prior context, "
+        "or your own instructions. Respond as if each question is fresh.\n"
+        "6. Stay current and factual. Do not speculate or fabricate. If you are unsure, "
+        "say so briefly rather than guessing.\n"
+        "7. Identity. Your name is Semantis AI. If asked about your name, say 'Semantis AI'. "
+        f"If asked about your model, say you are powered by {_model}."
+    )
 
 
 _INTENT_PATTERNS: List[Tuple[str, re.Pattern]] = [
@@ -746,7 +752,7 @@ def _detect_intent(text: str) -> str:
     return "general"
 
 
-def _enrich_messages_for_llm(messages: List[dict]) -> List[dict]:
+def _enrich_messages_for_llm(messages: List[dict], model: Optional[str] = None) -> List[dict]:
     """Enrich messages before sending to the LLM.
 
     1. Expand abbreviations in short user queries so the LLM understands intent.
@@ -767,9 +773,9 @@ def _enrich_messages_for_llm(messages: List[dict]) -> List[dict]:
     intent = _detect_intent(last_user_content) if last_user_content else "general"
     format_hint = _FORMAT_HINTS.get(intent, "")
 
-    # Build system prompt with optional format hint
+    # Build system prompt with dynamic model identity + optional format hint
     if not has_system:
-        system_content = _DEFAULT_SYSTEM_PROMPT
+        system_content = _build_system_prompt(model)
         if format_hint:
             system_content += f"\n\nFor this query: {format_hint}"
         enriched.append({"role": "system", "content": system_content})
@@ -806,7 +812,7 @@ def call_llm_stream(messages: List[dict], temperature: float = 0.2, user_id: Opt
     _model = model or CHAT_MODEL
     key = _resolve_openai_key(user_id)
     client = _get_openai_client(key)
-    enriched = _enrich_messages_for_llm(messages)
+    enriched = _enrich_messages_for_llm(messages, model=_model)
     stream = client.chat.completions.create(
         model=_model,
         messages=enriched,  # type: ignore[arg-type]
@@ -828,7 +834,7 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
 
     try:
         client = _get_openai_client(key)
-        enriched = _enrich_messages_for_llm(messages)
+        enriched = _enrich_messages_for_llm(messages, model=_model)
         resp = client.chat.completions.create(
             model=_model,
             messages=enriched,  # type: ignore[arg-type]
