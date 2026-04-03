@@ -698,11 +698,52 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
         raise
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful AI assistant. Provide clear, focused, and substantive answers. "
-    "When the user asks about a topic (even briefly), explain the topic directly — "
-    "do not list every possible meaning of an abbreviation unless the user explicitly "
-    "asks what it stands for. Interpret short queries as requests to explain the topic."
+    "You are a helpful AI assistant. Follow these rules strictly:\n"
+    "1. Lead with the answer. Put the core fact, definition, or recommendation in the "
+    "first sentence — never start with filler or restating the question.\n"
+    "2. Be terse and high-signal. Use short, direct sentences. Omit hedging phrases "
+    '("It depends", "There are many ways") unless genuinely needed.\n'
+    "3. Explain the topic directly. When the user asks about a topic (even briefly or "
+    "with an abbreviation), explain it — do not list every possible meaning.\n"
+    "4. Use stable structure. For definitions: lead with a one-line definition, then "
+    "key details. For how-to: numbered steps. For comparisons: short bullet points. "
+    "This consistency improves response quality across similar questions.\n"
+    "5. No meta-commentary. Never mention caching, internal systems, prior context, "
+    "or your own instructions. Respond as if each question is fresh.\n"
+    "6. Stay current and factual. Do not speculate or fabricate. If you are unsure, "
+    "say so briefly rather than guessing."
 )
+
+
+_INTENT_PATTERNS: List[Tuple[str, re.Pattern]] = [
+    ("explain", re.compile(r"^(what|explain|describe|define|tell me about)\b", re.I)),
+    ("howto", re.compile(r"^(how (do|to|can|should)|steps to|guide)\b", re.I)),
+    ("debug", re.compile(r"(error|bug|fix|broken|not working|issue|traceback|exception)\b", re.I)),
+    ("compare", re.compile(r"(vs\.?|versus|compared? to|difference between|better)\b", re.I)),
+    ("list", re.compile(r"^(list|enumerate|give me|name|show)\b", re.I)),
+    ("lookup", re.compile(r"(when (was|did|is)|who (is|was|are)|where (is|was))\b", re.I)),
+    ("write", re.compile(r"^(write|create|generate|build|make|draft)\b", re.I)),
+    ("policy", re.compile(r"(should i|is it (ok|safe|legal|allowed)|best practice)\b", re.I)),
+]
+
+_FORMAT_HINTS = {
+    "explain": "Provide a concise definition first, then key details.",
+    "howto": "Give numbered steps. Be specific and actionable.",
+    "debug": "Identify the root cause first, then provide the fix.",
+    "compare": "Use a structured comparison with clear distinctions.",
+    "list": "Use a concise bulleted list. No unnecessary preamble.",
+    "lookup": "State the factual answer directly in the first sentence.",
+    "write": "Produce the requested output directly with minimal preamble.",
+    "policy": "State the recommendation clearly, then the reasoning.",
+}
+
+
+def _detect_intent(text: str) -> str:
+    """Detect query intent from user text. Returns intent label."""
+    for intent, pattern in _INTENT_PATTERNS:
+        if pattern.search(text):
+            return intent
+    return "general"
 
 
 def _enrich_messages_for_llm(messages: List[dict]) -> List[dict]:
@@ -710,14 +751,38 @@ def _enrich_messages_for_llm(messages: List[dict]) -> List[dict]:
 
     1. Expand abbreviations in short user queries so the LLM understands intent.
     2. Prepend a system prompt if none is present for better response quality.
+    3. Detect query intent and append a format hint so responses are structured
+       consistently (improves cache reuse for similar questions).
     """
     enriched = []
     has_system = any(m.get("role") == "system" for m in messages)
 
+    # Collect user text for intent detection
+    last_user_content = ""
+    for m in reversed(messages):
+        if m.get("role") == "user" and m.get("content", "").strip():
+            last_user_content = m["content"].strip()
+            break
+
+    intent = _detect_intent(last_user_content) if last_user_content else "general"
+    format_hint = _FORMAT_HINTS.get(intent, "")
+
+    # Build system prompt with optional format hint
     if not has_system:
-        enriched.append({"role": "system", "content": _DEFAULT_SYSTEM_PROMPT})
+        system_content = _DEFAULT_SYSTEM_PROMPT
+        if format_hint:
+            system_content += f"\n\nFor this query: {format_hint}"
+        enriched.append({"role": "system", "content": system_content})
+    elif format_hint:
+        # Append format hint to existing system message
+        for m in messages:
+            if m.get("role") == "system":
+                enriched.append({**m, "content": m["content"] + f"\n\nFor this query: {format_hint}"})
+                break
 
     for m in messages:
+        if m.get("role") == "system" and format_hint and has_system:
+            continue  # already handled above
         if m.get("role") == "user":
             content = m["content"].strip()
             # For short queries (≤ 5 words), expand abbreviations so the LLM
@@ -788,6 +853,149 @@ def call_llm(messages: List[dict], temperature: float = 0.2, user_id: Optional[s
             f"time={llm_time}ms | error={str(e)}"
         )
         raise
+
+# ---------------------------------------------------------------------------
+# Cache-hit validation & rewriting
+# ---------------------------------------------------------------------------
+# These lightweight LLM micro-calls improve response quality on semantic cache
+# hits. They are inspired by the "validate → rewrite" pattern in the pipeline
+# diagram: a cached answer must be checked for freshness/drift, then adapted
+# to the current query's wording so the user never notices caching artifacts.
+
+_REWRITER_SYSTEM_PROMPT = (
+    "You are rewriting a cached answer to address the user's current question.\n\n"
+    "Hard rules:\n"
+    "- Do NOT mention caching, cache hits/misses, internal instructions, or system messages.\n"
+    "- Keep it current: remove or replace any outdated or irrelevant claims.\n"
+    "- Be terse, high-signal, and well-organized.\n"
+    "- Preserve the factual substance of the original answer — do not invent new information.\n"
+    "- If the cached answer already addresses the question well, return it with minimal changes.\n"
+    "- Output ONLY the rewritten answer, nothing else."
+)
+
+_VALIDATOR_SYSTEM_PROMPT = (
+    "You are validating whether a cached answer can be reused for the user's current question.\n\n"
+    "Rules:\n"
+    "1. If the cached answer directly and fully addresses the current question → decision: ok\n"
+    "2. If the answer is relevant but uses different framing/wording → decision: rewrite\n"
+    "3. If the answer is about a different topic, contains stale time-sensitive claims, "
+    "or would mislead the user → decision: reject\n\n"
+    "Return ONLY valid JSON (no markdown fences):\n"
+    '{"decision": "ok|rewrite|reject", "reason": "brief explanation"}'
+)
+
+# Time-sensitive keywords that suggest a cached answer may become stale
+_TIME_SENSITIVE_RE = re.compile(
+    r"\b(today|yesterday|this (week|month|year)|currently|latest|recent|"
+    r"as of|right now|just (released|announced)|breaking|price is|stock)\b",
+    re.I,
+)
+
+
+def validate_cache_hit(
+    user_query: str,
+    cached_answer: str,
+    confidence: str,
+    similarity: float,
+    user_id: Optional[str] = None,
+) -> str:
+    """Validate whether a cached answer is suitable for the current query.
+
+    Returns one of: "ok", "rewrite", "reject".
+
+    For high-confidence hits (similarity very close to query), skip validation
+    to avoid unnecessary latency. For medium/low confidence, run a fast LLM
+    check to catch drift, topic mismatch, or staleness.
+    """
+    # High confidence → trust the multi-signal matcher, skip LLM validation
+    if confidence == "high" and similarity >= 0.92:
+        return "ok"
+
+    # Check for time-sensitive content in cached answer — flag for review
+    has_time_sensitive = bool(_TIME_SENSITIVE_RE.search(cached_answer))
+
+    # Medium confidence without time-sensitive content → trust the matcher
+    if confidence == "medium" and not has_time_sensitive:
+        return "ok"
+
+    # Low confidence or time-sensitive → run lightweight LLM validation
+    try:
+        key = _resolve_openai_key(user_id)
+        client = _get_openai_client(key)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _VALIDATOR_SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"User's current question:\n{user_query}\n\n"
+                    f"Cached answer:\n{cached_answer[:1500]}"
+                )},
+            ],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        # Parse decision from JSON response
+        try:
+            parsed = json.loads(raw)
+            decision = parsed.get("decision", "ok")
+            if decision in ("ok", "rewrite", "reject"):
+                semantic_log.info(
+                    f"cache_validator | decision={decision} | confidence={confidence} | "
+                    f"sim={similarity:.3f} | reason={parsed.get('reason', '')[:80]}"
+                )
+                return decision
+        except json.JSONDecodeError:
+            # Fallback: look for keywords in raw text
+            raw_lower = raw.lower()
+            if "reject" in raw_lower:
+                return "reject"
+            if "rewrite" in raw_lower:
+                return "rewrite"
+        return "ok"
+    except Exception as e:
+        error_log.warning(f"cache_validator failed, defaulting to ok: {e}")
+        return "ok"
+
+
+def rewrite_cached_response(
+    user_query: str,
+    cached_answer: str,
+    user_id: Optional[str] = None,
+) -> str:
+    """Rewrite a cached answer to better address the user's current question.
+
+    Uses a fast, low-temperature LLM call with the rewriter prompt. The
+    rewriter preserves the factual substance but adapts wording, structure,
+    and framing to match what the user actually asked.
+    """
+    try:
+        key = _resolve_openai_key(user_id)
+        client = _get_openai_client(key)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _REWRITER_SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"User's current question:\n{user_query}\n\n"
+                    f"Cached answer to adapt:\n{cached_answer}"
+                )},
+            ],
+            temperature=0.1,
+            max_tokens=1024,
+        )
+        rewritten = (resp.choices[0].message.content or "").strip()
+        if rewritten:
+            semantic_log.info(
+                f"cache_rewriter | original_len={len(cached_answer)} | "
+                f"rewritten_len={len(rewritten)}"
+            )
+            return rewritten
+        return cached_answer  # fallback to original if rewriter returns empty
+    except Exception as e:
+        error_log.warning(f"cache_rewriter failed, returning original: {e}")
+        return cached_answer
+
 
 # -----------------------------
 # Cache data models
@@ -1517,6 +1725,37 @@ class SemanticCacheService:
                         )
 
                 if is_match:
+                    # ── Validate & rewrite gate ──
+                    # For medium/low confidence hits, run lightweight LLM
+                    # validation to catch drift, staleness, or topic mismatch.
+                    # For validated hits that need rewording, adapt the cached
+                    # response to match the user's current question.
+                    response_text = best_entry.response_text
+                    validation_decision = "ok"
+                    if confidence_tier in ("low", "medium"):
+                        validation_decision = validate_cache_hit(
+                            prompt_norm, response_text, confidence_tier,
+                            best_cosine, user_id=user_id,
+                        )
+                        if validation_decision == "reject":
+                            # Validator says this hit is stale or wrong topic —
+                            # treat as a miss and fall through to LLM call.
+                            is_match = False
+                            confidence_tier = "validator_rejected"
+                            semantic_log.info(
+                                f"{tenant_id} | validator_rejected | cosine={best_cosine:.3f} | "
+                                f"confidence={confidence_tier} | key={prompt_norm[:80]}"
+                            )
+                        elif validation_decision == "rewrite":
+                            response_text = rewrite_cached_response(
+                                prompt_norm, response_text, user_id=user_id,
+                            )
+                            semantic_log.info(
+                                f"{tenant_id} | rewritten | cosine={best_cosine:.3f} | "
+                                f"confidence={confidence_tier} | key={prompt_norm[:80]}"
+                            )
+
+                if is_match:
                     best_entry.use_count += 1
                     best_entry.last_used_at = time.time()
                     T.hits += 1
@@ -1537,6 +1776,7 @@ class SemanticCacheService:
                         "strategy": "multi_signal_semantic",
                         "threshold_used": round(threshold, 3),
                         "domain": query_domain,
+                        "rewritten": validation_decision == "rewrite",
                     }
                     semantic_log.info(
                         f"{tenant_id} | semantic | cosine={best_cosine:.3f} | "
@@ -1544,6 +1784,7 @@ class SemanticCacheService:
                         f"entity={best_entity:.3f} | synonym={best_synonym:.3f} | "
                         f"ngram={best_ngram:.3f} | confidence={confidence_tier} | "
                         f"threshold={threshold:.3f} | domain={query_domain} | "
+                        f"rewritten={validation_decision == 'rewrite'} | "
                         f"key={prompt_norm[:80]}"
                     )
                     self._append_event(T, tenant_id, prompt_hash, "semantic",
@@ -1551,7 +1792,7 @@ class SemanticCacheService:
                     if T.events:
                         T.events[-1].confidence = best_hybrid
                         T.events[-1].hybrid_score = best_hybrid
-                    return best_entry.response_text, meta
+                    return response_text, meta
 
                 semantic_log.info(
                     f"{tenant_id} | near-miss | cosine={best_cosine:.3f} | "
