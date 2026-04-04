@@ -38,6 +38,9 @@ python-json-logger>=2.0.0  # JSON logging
 uvloop>=0.19.0  # Fast event loop (Linux/Mac)
 orjson>=3.9.0  # Fast JSON parser
 
+# Spelling correction
+symspellpy>=6.7.0  # Fast spelling correction for query preprocessing
+
 # Testing
 pytest>=7.4.0
 pytest-asyncio>=0.21.0

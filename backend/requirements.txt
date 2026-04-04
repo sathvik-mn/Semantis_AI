@@ -17,5 +17,6 @@ prometheus-client
 sentence-transformers
 pinecone
 sentry-sdk[fastapi]
+symspellpy>=6.7.0
 resend
 psutil

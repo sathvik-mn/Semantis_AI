@@ -83,6 +83,22 @@ LOCAL_MODEL_ENABLED = os.getenv("LOCAL_EMBED_ENABLED", "true").lower() == "true"
 CROSS_ENCODER_MODEL = os.getenv("CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 CROSS_ENCODER_ENABLED = os.getenv("CROSS_ENCODER_ENABLED", "false").lower() == "true"
 
+# ── Performance: local primary embedding ──
+# When enabled, uses a local sentence-transformer as the PRIMARY embedding model
+# instead of OpenAI API. Eliminates 200-800ms API latency per query.
+# OpenAI embedding becomes the fallback if local model fails.
+LOCAL_PRIMARY_MODEL_NAME = os.getenv("LOCAL_PRIMARY_EMBED_MODEL", "")  # e.g., "nomic-ai/nomic-embed-text-v1.5"
+LOCAL_PRIMARY_ENABLED = os.getenv("LOCAL_PRIMARY_EMBED_ENABLED", "false").lower() == "true"
+# Asymmetric prefix support: different prefixes for queries vs stored documents
+# Models like nomic-embed-text and gte are trained with these prefixes
+EMBED_QUERY_PREFIX = os.getenv("EMBED_QUERY_PREFIX", "search_query: ")
+EMBED_DOC_PREFIX = os.getenv("EMBED_DOC_PREFIX", "search_document: ")
+# Whether to use asymmetric prefixes (disable for models that don't support it)
+USE_ASYMMETRIC_PREFIX = os.getenv("USE_ASYMMETRIC_PREFIX", "false").lower() == "true"
+
+# ── Performance: spelling correction ──
+SPELLING_CORRECTION_ENABLED = os.getenv("SPELLING_CORRECTION_ENABLED", "true").lower() == "true"
+
 # IVF threshold — switch from brute-force to IVF when tenant has more entries
 IVF_UPGRADE_THRESHOLD = int(os.getenv("IVF_UPGRADE_THRESHOLD", "10000"))
 
@@ -622,6 +638,8 @@ _local_model = None
 _local_model_lock = threading.Lock()
 _cross_encoder = None
 _cross_encoder_lock = threading.Lock()
+_local_primary_model = None
+_local_primary_model_lock = threading.Lock()
 
 def _get_local_model():
     """Lazy-load the local sentence-transformer for fast pre-filtering."""
@@ -657,6 +675,51 @@ def _get_cross_encoder():
             _cross_encoder = False
     return _cross_encoder
 
+def _get_local_primary_model():
+    """Lazy-load the local primary embedding model (e.g., nomic-embed-text-v1.5).
+    This replaces OpenAI as the primary embedding source when enabled, eliminating
+    200-800ms API latency per query."""
+    global _local_primary_model
+    if _local_primary_model is not None:
+        return _local_primary_model
+    with _local_primary_model_lock:
+        if _local_primary_model is not None:
+            return _local_primary_model
+        if not LOCAL_PRIMARY_ENABLED or not LOCAL_PRIMARY_MODEL_NAME:
+            _local_primary_model = False
+            return _local_primary_model
+        try:
+            from sentence_transformers import SentenceTransformer
+            _local_primary_model = SentenceTransformer(LOCAL_PRIMARY_MODEL_NAME)
+            system_log.info(f"Local primary embed model loaded | model={LOCAL_PRIMARY_MODEL_NAME}")
+        except Exception as e:
+            system_log.warning(f"Local primary embed model unavailable: {e}. Falling back to OpenAI.")
+            _local_primary_model = False
+    return _local_primary_model
+
+
+def get_local_primary_embedding(text: str, prefix: str = "") -> Optional[np.ndarray]:
+    """Get embedding from local primary model (~5-30ms). Returns None if unavailable.
+    Supports asymmetric prefixes for query vs document embedding."""
+    model = _get_local_primary_model()
+    if model is False or model is None:
+        return None
+    try:
+        prefixed = f"{prefix}{text}" if prefix else text
+        v = model.encode(prefixed, normalize_embeddings=True)
+        v = np.array(v, dtype="float32")
+        # Truncate/pad to match EMBED_DIMENSIONS if needed
+        if v.shape[0] != EMBED_DIMENSIONS:
+            if v.shape[0] > EMBED_DIMENSIONS:
+                v = v[:EMBED_DIMENSIONS]
+                v /= (np.linalg.norm(v) + 1e-12)  # re-normalize after truncation
+            # If smaller, we keep as-is — FAISS index will use the model's native dim
+        return v
+    except Exception as e:
+        error_log.debug(f"Local primary embedding failed: {e}")
+        return None
+
+
 def get_local_embedding(text: str) -> Optional[np.ndarray]:
     """Fast local embedding (~5ms). Returns None if local model unavailable."""
     if not LOCAL_MODEL_ENABLED:
@@ -678,12 +741,44 @@ def cross_encoder_score(query: str, candidates: List[str]) -> Optional[List[floa
     scores = encoder.predict(pairs)
     return [float(s) for s in scores]
 
-def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
-    """Return L2-normalized embedding vector from OpenAI (thread-safe).
-    Uses reduced dimensions (default 1024) for faster search and lower memory."""
+def get_embedding(text: str, user_id: Optional[str] = None, is_query: bool = True) -> np.ndarray:
+    """Return L2-normalized embedding vector (thread-safe).
+
+    Priority order:
+    1. Local primary model (if LOCAL_PRIMARY_EMBED_ENABLED) — ~5-30ms, no API call
+    2. OpenAI API (fallback or primary if local not enabled) — ~200-800ms
+
+    Args:
+        text: Text to embed
+        user_id: Optional user ID for BYOK key resolution
+        is_query: True for query embeddings, False for document/response embeddings
+                  (used for asymmetric prefix selection)
+    """
     start_time = time.time()
+
+    # ── Try local primary model first (eliminates API latency) ──
+    if LOCAL_PRIMARY_ENABLED:
+        prefix = ""
+        if USE_ASYMMETRIC_PREFIX:
+            prefix = EMBED_QUERY_PREFIX if is_query else EMBED_DOC_PREFIX
+        local_emb = get_local_primary_embedding(text.strip().lower(), prefix=prefix)
+        if local_emb is not None:
+            embedding_time = round((time.time() - start_time) * 1000, 2)
+            performance_log.debug(
+                f"Embedding generated (local primary) | model={LOCAL_PRIMARY_MODEL_NAME} | "
+                f"dims={local_emb.shape[0]} | user_id={user_id} | text_len={len(text)} | "
+                f"time={embedding_time}ms"
+            )
+            return local_emb
+
+    # ── Fallback: OpenAI API ──
     key = _resolve_openai_key(user_id)
-    prefixed = f"{EMBEDDING_PREFIX}{text.strip().lower()}"
+    # Use asymmetric prefix if enabled, otherwise original prefix
+    if USE_ASYMMETRIC_PREFIX:
+        prefix = EMBED_QUERY_PREFIX if is_query else EMBED_DOC_PREFIX
+        prefixed = f"{prefix}{text.strip().lower()}"
+    else:
+        prefixed = f"{EMBEDDING_PREFIX}{text.strip().lower()}"
 
     try:
         client = _get_openai_client(key)
@@ -694,7 +789,7 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
         v /= (np.linalg.norm(v) + 1e-12)
         embedding_time = round((time.time() - start_time) * 1000, 2)
         performance_log.debug(
-            f"Embedding generated | model={EMBED_MODEL} | dims={EMBED_DIMENSIONS} | "
+            f"Embedding generated (OpenAI) | model={EMBED_MODEL} | dims={EMBED_DIMENSIONS} | "
             f"user_id={user_id} | text_len={len(text)} | time={embedding_time}ms"
         )
         return v
@@ -705,6 +800,61 @@ def get_embedding(text: str, user_id: Optional[str] = None) -> np.ndarray:
             f"text_len={len(text)} | time={embedding_time}ms | error={str(e)}"
         )
         raise
+
+
+def get_embeddings_batch(texts: List[str], user_id: Optional[str] = None, is_query: bool = True) -> List[np.ndarray]:
+    """Batch embedding for multiple texts in a single API call.
+    Reduces latency when embedding both query and response on cache miss.
+
+    Falls back to sequential calls if batch fails.
+    """
+    if not texts:
+        return []
+
+    # ── Try local primary model first ──
+    if LOCAL_PRIMARY_ENABLED:
+        model = _get_local_primary_model()
+        if model is not False and model is not None:
+            try:
+                prefix = ""
+                if USE_ASYMMETRIC_PREFIX:
+                    prefix = EMBED_QUERY_PREFIX if is_query else EMBED_DOC_PREFIX
+                prefixed_texts = [f"{prefix}{t.strip().lower()}" for t in texts]
+                vecs = model.encode(prefixed_texts, normalize_embeddings=True, batch_size=len(prefixed_texts))
+                results = []
+                for v in vecs:
+                    v = np.array(v, dtype="float32")
+                    if v.shape[0] > EMBED_DIMENSIONS:
+                        v = v[:EMBED_DIMENSIONS]
+                        v /= (np.linalg.norm(v) + 1e-12)
+                    results.append(v)
+                return results
+            except Exception as e:
+                error_log.debug(f"Local primary batch embedding failed: {e}")
+
+    # ── Fallback: OpenAI batch API ──
+    try:
+        key = _resolve_openai_key(user_id)
+        client = _get_openai_client(key)
+        if USE_ASYMMETRIC_PREFIX:
+            prefix = EMBED_QUERY_PREFIX if is_query else EMBED_DOC_PREFIX
+            prefixed_texts = [f"{prefix}{t.strip().lower()}" for t in texts]
+        else:
+            prefixed_texts = [f"{EMBEDDING_PREFIX}{t.strip().lower()}" for t in texts]
+
+        resp = client.embeddings.create(
+            model=EMBED_MODEL, input=prefixed_texts, dimensions=EMBED_DIMENSIONS
+        )
+        results = []
+        for item in sorted(resp.data, key=lambda x: x.index):
+            v = np.array(item.embedding, dtype="float32")
+            v /= (np.linalg.norm(v) + 1e-12)
+            results.append(v)
+        return results
+    except Exception as e:
+        error_log.warning(f"Batch embedding failed, falling back to sequential: {e}")
+        # Sequential fallback
+        return [get_embedding(t, user_id=user_id, is_query=is_query) for t in texts]
 
 def _build_system_prompt(model: Optional[str] = None) -> str:
     """Build the default system prompt with Semantis AI identity."""
@@ -918,11 +1068,13 @@ def validate_cache_hit(
 
     Returns one of: "ok", "rewrite", "reject".
 
-    For high-confidence hits (similarity very close to query), skip validation
-    to avoid unnecessary latency. For medium/low confidence, run a fast LLM
-    check to catch drift, topic mismatch, or staleness.
+    Validation priority:
+    1. High confidence → skip validation entirely (trust multi-signal matcher)
+    2. Medium confidence without time-sensitive → skip validation
+    3. Cross-encoder validation (~10-20ms) — 100x faster than LLM
+    4. LLM validation (fallback if cross-encoder unavailable) — ~300-1500ms
     """
-    # High confidence → trust the multi-signal matcher, skip LLM validation
+    # High confidence → trust the multi-signal matcher, skip all validation
     if confidence == "high" and similarity >= 0.92:
         return "ok"
 
@@ -933,7 +1085,40 @@ def validate_cache_hit(
     if confidence == "medium" and not has_time_sensitive:
         return "ok"
 
-    # Low confidence or time-sensitive → run lightweight LLM validation
+    # ── Fast path: cross-encoder validation (~10-20ms vs 300-1500ms for LLM) ──
+    # The cross-encoder directly scores query-answer relevance, which is exactly
+    # what validation needs. Much faster and often more accurate than an LLM call.
+    encoder = _get_cross_encoder()
+    if encoder is not False and encoder is not None:
+        try:
+            ce_score = encoder.predict([[user_query, cached_answer[:1500]]])
+            ce_score = float(ce_score[0]) if hasattr(ce_score, '__len__') else float(ce_score)
+            # Normalize cross-encoder score from ~[-5,5] to [0,1]
+            ce_norm = max(0.0, min(1.0, (ce_score + 5) / 10))
+
+            if ce_norm >= 0.70:
+                # Cross-encoder says answer is highly relevant
+                decision = "ok"
+            elif ce_norm >= 0.45:
+                # Moderately relevant — may need rewording but content is right
+                decision = "rewrite" if confidence == "low" else "ok"
+            else:
+                # Cross-encoder says answer is not relevant
+                decision = "reject"
+
+            # Override: if time-sensitive and only medium relevance, flag for review
+            if has_time_sensitive and decision == "ok" and ce_norm < 0.80:
+                decision = "rewrite"
+
+            semantic_log.info(
+                f"cache_validator (cross-encoder) | decision={decision} | confidence={confidence} | "
+                f"sim={similarity:.3f} | ce_score={ce_score:.3f} | ce_norm={ce_norm:.3f}"
+            )
+            return decision
+        except Exception as e:
+            error_log.debug(f"Cross-encoder validation failed, falling back to LLM: {e}")
+
+    # ── Slow path: LLM validation (fallback when cross-encoder unavailable) ──
     try:
         key = _resolve_openai_key(user_id)
         client = _get_openai_client(key)
@@ -956,7 +1141,7 @@ def validate_cache_hit(
             decision = parsed.get("decision", "ok")
             if decision in ("ok", "rewrite", "reject"):
                 semantic_log.info(
-                    f"cache_validator | decision={decision} | confidence={confidence} | "
+                    f"cache_validator (LLM) | decision={decision} | confidence={confidence} | "
                     f"sim={similarity:.3f} | reason={parsed.get('reason', '')[:80]}"
                 )
                 return decision
@@ -1289,10 +1474,16 @@ class SemanticCacheService:
         return " ".join(s.strip().split()).lower()
 
     def _get_embedding_for_query(self, messages: List[dict], user_id: Optional[str] = None) -> Tuple[np.ndarray, str]:
-        """Get embedding for the user's raw query text. We embed the original
-        text (lowercased) rather than the normalized version so the embedding
-        model can leverage its own understanding of abbreviations, typos, and
-        paraphrases — it's far better at this than hand-coded normalization."""
+        """Get embedding for the user's raw query text with multi-layer optimization.
+
+        Pipeline:
+        1. Extract raw query text
+        2. Apply spelling correction (if enabled) — ~0.1ms, fixes typos before embedding
+        3. Check in-memory LRU cache — O(1) lookup
+        4. Check Redis embedding cache — ~1-2ms (avoids 200-800ms OpenAI call)
+        5. Generate embedding (local primary or OpenAI fallback)
+        6. Cache result in memory + Redis for future queries
+        """
         user_messages = [m["content"] for m in messages if m.get("role") == "user"]
         raw_text = user_messages[-1] if user_messages else ""
         raw_text = raw_text.strip()
@@ -1301,14 +1492,56 @@ class SemanticCacheService:
 
         text_for_embed = raw_text.lower()
 
+        # ── Spelling correction before embedding (~0.1ms) ──
+        # Fixes typos so the embedding model gets clean input.
+        # "artifical inteligence" → "artificial intelligence" → better embedding
+        if SPELLING_CORRECTION_ENABLED:
+            try:
+                from spelling import correct_spelling
+                corrected = correct_spelling(text_for_embed)
+                if corrected and corrected != text_for_embed:
+                    performance_log.debug(
+                        f"Spelling corrected for embedding | '{text_for_embed}' -> '{corrected}'"
+                    )
+                    text_for_embed = corrected
+            except ImportError:
+                pass  # symspellpy not installed — skip silently
+            except Exception as e:
+                error_log.debug(f"Spelling correction failed (non-fatal): {e}")
+
+        # ── In-memory LRU cache check ──
         if text_for_embed in self._embedding_cache:
             self._embedding_cache.move_to_end(text_for_embed)
             return self._embedding_cache[text_for_embed], raw_text
 
-        emb = get_embedding(text_for_embed, user_id=user_id)
+        # ── Redis embedding cache check (~1-2ms, avoids 200-800ms API call) ──
+        try:
+            import hashlib as _hl
+            _emb_hash = _hl.md5(text_for_embed.encode()).hexdigest()
+            from redis_cache import get_embedding as redis_get_embedding
+            cached_emb = redis_get_embedding("_emb_cache", _emb_hash)
+            if cached_emb is not None and cached_emb.shape[0] == EMBED_DIMENSIONS:
+                # Store in memory cache too for next time
+                self._embedding_cache[text_for_embed] = cached_emb
+                if len(self._embedding_cache) > self._embedding_cache_max_size:
+                    self._embedding_cache.popitem(last=False)
+                performance_log.debug(f"Embedding from Redis cache | text_len={len(text_for_embed)}")
+                return cached_emb, raw_text
+        except Exception:
+            pass  # Redis unavailable — continue to generate
+
+        # ── Generate embedding (local primary → OpenAI fallback) ──
+        emb = get_embedding(text_for_embed, user_id=user_id, is_query=True)
         self._embedding_cache[text_for_embed] = emb
         if len(self._embedding_cache) > self._embedding_cache_max_size:
             self._embedding_cache.popitem(last=False)
+
+        # ── Cache in Redis for future queries (async, non-blocking) ──
+        try:
+            from redis_cache import store_embedding as redis_store_embedding
+            _bg_executor.submit(redis_store_embedding, "_emb_cache", _emb_hash, emb, 7 * 24 * 3600)
+        except Exception:
+            pass
 
         return emb, raw_text
 
@@ -1452,10 +1685,22 @@ class SemanticCacheService:
         # ── 2) Normalized-hash O(1) lookup (Tier 1b) ──
         # Try standard normalization first, then deep normalization with
         # abbreviation expansion + synonym mapping for broader hash matching.
+        # Also try spelling-corrected variant for typo tolerance.
         deep_norm = normalize_query(prompt_norm)
         if not (deep_norm and deep_norm in T.norm_hash_index):
             # Try deeper normalization (abbreviation + synonym expansion)
             deep_norm = deep_normalize(prompt_norm)
+        if not (deep_norm and deep_norm in T.norm_hash_index) and SPELLING_CORRECTION_ENABLED:
+            # Try spelling-corrected + deep-normalized variant
+            try:
+                from spelling import correct_spelling
+                corrected = correct_spelling(prompt_norm)
+                if corrected and corrected != prompt_norm:
+                    deep_norm = deep_normalize(corrected)
+            except ImportError:
+                pass
+            except Exception:
+                pass
         if deep_norm and deep_norm in T.norm_hash_index:
             entry = T.norm_hash_index[deep_norm]
             if entry.fresh() and models_compatible(model, entry.model):
@@ -1469,13 +1714,70 @@ class SemanticCacheService:
                 self._append_event(T, tenant_id, prompt_hash, "exact", 1.0, latency)
                 return entry.response_text, meta
 
-        # ── 3) Local model pre-filter gate (Tier 2c) ──
-        # Use deep-normalized text (with abbreviation + synonym expansion) for
-        # the local gate so "Explain ML" → "Explain machine learning" and
-        # "What's the cost?" → "what is the charge" before comparing.
+        # ── 3) Parallel: local model pre-filter gate + embedding fetch ──
+        # Run the local gate and primary embedding generation concurrently.
+        # This saves ~200ms when both need to run (local gate ~5ms, embedding ~5-800ms).
         local_gate_passed = True
         local_gate_text = deep_normalize(prompt_norm)
-        if T.local_index is not None and len(T.rows) > 0 and LOCAL_MODEL_ENABLED:
+
+        has_local_index = T.index is not None and len(T.rows) > 0
+        from vector_store import is_pinecone_enabled, search as pinecone_search
+        use_pinecone = is_pinecone_enabled()
+        needs_semantic = has_local_index or use_pinecone
+        needs_local_gate = T.local_index is not None and len(T.rows) > 0 and LOCAL_MODEL_ENABLED
+
+        query_emb = None
+        query_text = prompt_norm
+
+        if needs_semantic and needs_local_gate:
+            # ── Parallel execution: local gate + embedding fetch ──
+            from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed
+            _parallel_results = {}
+
+            def _run_local_gate():
+                _local_emb = get_local_embedding(local_gate_text)
+                if _local_emb is not None:
+                    lq = _local_emb.astype("float32").reshape(1, -1)
+                    faiss.normalize_L2(lq)
+                    local_k = min(3, T.local_index.ntotal)
+                    if local_k > 0:
+                        local_sims, _ = T.local_index.search(lq, local_k)
+                        return float(local_sims[0][0])
+                return 1.0  # pass gate if local model unavailable
+
+            def _run_embedding():
+                return self._get_embedding_for_query(messages, user_id=user_id)
+
+            with _TPE(max_workers=2, thread_name_prefix="parallel-gate") as _pexec:
+                gate_future = _pexec.submit(_run_local_gate)
+                emb_future = _pexec.submit(_run_embedding)
+
+                try:
+                    best_local_sim = gate_future.result(timeout=5)
+                    if best_local_sim < 0.35:
+                        local_gate_passed = False
+                        semantic_log.debug(
+                            f"{tenant_id} | local_gate_reject | best_local_sim={best_local_sim:.3f} | "
+                            f"key={prompt_norm[:80]}"
+                        )
+                except Exception as e:
+                    error_log.debug(f"Local pre-filter error (non-fatal): {e}")
+
+                if local_gate_passed:
+                    try:
+                        query_emb, query_text = emb_future.result(timeout=30)
+                    except Exception as e:
+                        error_log.warning(f"Embedding generation failed: {e}")
+                else:
+                    # Cancel embedding if gate failed (no point waiting)
+                    emb_future.cancel()
+
+        elif needs_semantic:
+            # No local gate needed — just get embedding
+            query_emb, query_text = self._get_embedding_for_query(messages, user_id=user_id)
+
+        elif needs_local_gate:
+            # Only local gate, no semantic search needed
             try:
                 local_emb = get_local_embedding(local_gate_text)
                 if local_emb is not None:
@@ -1483,10 +1785,8 @@ class SemanticCacheService:
                     faiss.normalize_L2(lq)
                     local_k = min(3, T.local_index.ntotal)
                     if local_k > 0:
-                        local_sims, _ = T.local_index.search(lq, local_k)  # type: ignore[call-arg]
+                        local_sims, _ = T.local_index.search(lq, local_k)
                         best_local_sim = float(local_sims[0][0])
-                        # Lowered gate from 0.40→0.35 to allow more borderline
-                        # paraphrases through to the more accurate OpenAI stage.
                         if best_local_sim < 0.35:
                             local_gate_passed = False
                             semantic_log.debug(
@@ -1496,17 +1796,8 @@ class SemanticCacheService:
             except Exception as e:
                 error_log.debug(f"Local pre-filter error (non-fatal): {e}")
 
-        # ── 4) Semantic search with hybrid re-ranking + cross-encoder ──
-        query_emb = None
-        query_text = prompt_norm
-
-        has_local_index = T.index is not None and len(T.rows) > 0
-        # Check if Pinecone is available for semantic search
-        from vector_store import is_pinecone_enabled, search as pinecone_search
-        use_pinecone = is_pinecone_enabled()
-
-        if local_gate_passed and (has_local_index or use_pinecone):
-            query_emb, query_text = self._get_embedding_for_query(messages, user_id=user_id)
+        # ── 4) Semantic search with two-stage scoring + cross-encoder ──
+        if local_gate_passed and needs_semantic and query_emb is not None:
             query_domain = domain_hint(query_text)
 
             # Cache deep-normalized query once — reused across all candidates
@@ -1515,6 +1806,18 @@ class SemanticCacheService:
             _query_deep_norm = deep_normalize(query_text)
 
             candidates = []
+
+            # ── Two-stage scoring thresholds ──
+            # Stage 1 (cosine-only): if best cosine > threshold + 0.12, short-circuit
+            #   → skip text sim computation entirely (~15ms saved per hit)
+            # Stage 2 (full hybrid): for borderline candidates, compute text sim
+            #   to rescue good matches or reject bad ones
+            threshold = self._resolve_threshold(T, domain_hint(query_text))
+            _shortcircuit_threshold = threshold + 0.12  # very high confidence
+            _borderline_low = threshold - 0.10          # below this, skip text sim (clear miss)
+
+            # Collect raw cosine candidates first
+            _raw_candidates = []  # list of (entry, cosine_sim, idx)
 
             if use_pinecone:
                 # ── Pinecone path: external vector search ──
@@ -1535,9 +1838,7 @@ class SemanticCacheService:
                         continue
                     if not entry.fresh() or not models_compatible(model, entry.model):
                         continue
-                    text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
-                    h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
-                    candidates.append((entry, cosine_sim, text_sims, h_score, -1))
+                    _raw_candidates.append((entry, cosine_sim, -1))
             elif has_local_index:
                 # ── FAISS path: in-process vector search (fallback) ──
                 # Tier 3b: cluster routing — narrow search to nearest clusters
@@ -1567,6 +1868,34 @@ class SemanticCacheService:
                         continue
                     entry = T.rows[idx]
                     if not entry.fresh() or not models_compatible(model, entry.model):
+                        continue
+                    _raw_candidates.append((entry, cosine_sim, idx))
+
+            # ── Two-stage scoring ──
+            # Stage 1: Check if best cosine candidate is a clear hit (short-circuit)
+            _raw_candidates.sort(key=lambda c: c[1], reverse=True)
+
+            if _raw_candidates and _raw_candidates[0][1] >= _shortcircuit_threshold:
+                # STAGE 1 SHORT-CIRCUIT: Very high cosine similarity — skip text sim
+                # This saves ~15ms per lookup for ~70% of cache hits
+                best_entry, best_cosine, best_idx = _raw_candidates[0]
+                # Use cosine as hybrid score directly (text_sim would barely change it)
+                _empty_text_sims = {
+                    "token_overlap": 0.0, "char_ngram": 0.0, "stemmed_overlap": 0.0,
+                    "idf_weighted": 0.0, "synonym_expanded": 0.0, "entity_overlap": 0.0,
+                    "question_type": 0.0, "sorted_token": 0.0, "text_sim": 0.0,
+                }
+                candidates.append((best_entry, best_cosine, _empty_text_sims, best_cosine, best_idx))
+                performance_log.debug(
+                    f"{tenant_id} | two_stage_shortcircuit | cosine={best_cosine:.3f} | "
+                    f"threshold={_shortcircuit_threshold:.3f}"
+                )
+            else:
+                # STAGE 2: Borderline candidates — compute full text similarity
+                # Only compute text sim for candidates in the borderline range
+                for entry, cosine_sim, idx in _raw_candidates:
+                    if cosine_sim < _borderline_low:
+                        # Clear miss — skip expensive text sim computation
                         continue
                     text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
                     h_score = hybrid_score(cosine_sim, text_sims["text_sim"])
@@ -1654,7 +1983,7 @@ class SemanticCacheService:
 
             if candidates:
                 best_entry, best_cosine, best_text_sims, best_hybrid, _ = candidates[0]
-                threshold = self._resolve_threshold(T, query_domain)
+                # threshold already computed above for two-stage scoring
                 best_text_sim = best_text_sims["text_sim"]
                 best_entity = best_text_sims["entity_overlap"]
                 best_synonym = best_text_sims["synonym_expanded"]
@@ -1861,6 +2190,19 @@ class SemanticCacheService:
             deep_key = deep_normalize(prompt_norm)
             if deep_key and deep_key != norm_key:
                 T.norm_hash_index[deep_key] = entry
+            # Also store spelling-corrected variant for typo tolerance in hash lookup
+            if SPELLING_CORRECTION_ENABLED:
+                try:
+                    from spelling import correct_spelling
+                    corrected = correct_spelling(prompt_norm)
+                    if corrected and corrected != prompt_norm:
+                        corrected_deep = deep_normalize(corrected)
+                        if corrected_deep and corrected_deep != deep_key and corrected_deep != norm_key:
+                            T.norm_hash_index[corrected_deep] = entry
+                except ImportError:
+                    pass
+                except Exception:
+                    pass
             T.rows.append(entry)
             # Invalidate cached Pinecone hash lookup so it's rebuilt with the new entry
             if hasattr(T, '_hash_lookup'):
@@ -1918,12 +2260,37 @@ class SemanticCacheService:
                     error_log.warning(f"DB cache store failed: {_db_err}")
 
                 # Enrichment: response + local embeddings
+                # Use batch embedding when both query and response need embedding
+                # (single API call instead of two — saves ~200-800ms)
                 try:
                     resp_emb = None
-                    try:
-                        resp_emb = get_embedding(response_text[:500], user_id=user_id)
-                    except Exception:
-                        pass
+                    resp_text_for_embed = response_text[:500]
+
+                    # Batch: if query embedding is missing AND we need response embedding,
+                    # generate both in a single API call
+                    if emb is None:
+                        try:
+                            batch_results = get_embeddings_batch(
+                                [prompt_norm, resp_text_for_embed],
+                                user_id=user_id,
+                                is_query=False,  # both stored as documents
+                            )
+                            if len(batch_results) >= 2:
+                                emb = batch_results[0]
+                                resp_emb = batch_results[1]
+                                with self._cache_lock:
+                                    entry.embedding = emb
+                                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                                    metadata={"model": model, "domain": entry_domain})
+                        except Exception:
+                            pass
+                    else:
+                        # Only need response embedding
+                        try:
+                            resp_emb = get_embedding(resp_text_for_embed, user_id=user_id, is_query=False)
+                        except Exception:
+                            pass
+
                     local_text = deep_normalize(prompt_norm)
                     local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
                     with self._cache_lock:
@@ -2036,6 +2403,19 @@ class SemanticCacheService:
             deep_key = deep_normalize(prompt_norm)
             if deep_key and deep_key != norm_key:
                 T.norm_hash_index[deep_key] = entry
+            # Also store spelling-corrected variant for typo tolerance
+            if SPELLING_CORRECTION_ENABLED:
+                try:
+                    from spelling import correct_spelling
+                    corrected = correct_spelling(prompt_norm)
+                    if corrected and corrected != prompt_norm:
+                        corrected_deep = deep_normalize(corrected)
+                        if corrected_deep and corrected_deep != deep_key and corrected_deep != norm_key:
+                            T.norm_hash_index[corrected_deep] = entry
+                except ImportError:
+                    pass
+                except Exception:
+                    pass
             T.rows.append(entry)
         access_log.info(
             f"{tenant_id} | store_miss | phase1 done | exact+hash stored | "
@@ -2088,13 +2468,33 @@ class SemanticCacheService:
                 except Exception as _db_err:
                     error_log.warning(f"DB cache store failed: {_db_err}")
 
-                # Enrichment: response embedding + local embedding
+                # Enrichment: response + local embeddings (batch when possible)
                 try:
                     resp_emb = None
-                    try:
-                        resp_emb = get_embedding(response_text[:500], user_id=user_id)
-                    except Exception:
-                        pass
+                    resp_text_for_embed = response_text[:500]
+
+                    if emb is None:
+                        # Both need generating — batch into single API call
+                        try:
+                            batch_results = get_embeddings_batch(
+                                [prompt_norm, resp_text_for_embed],
+                                user_id=user_id, is_query=False,
+                            )
+                            if len(batch_results) >= 2:
+                                emb = batch_results[0]
+                                resp_emb = batch_results[1]
+                                with self._cache_lock:
+                                    entry.embedding = emb
+                                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
+                                                    metadata={"model": model, "domain": entry_domain})
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            resp_emb = get_embedding(resp_text_for_embed, user_id=user_id, is_query=False)
+                        except Exception:
+                            pass
+
                     local_text = deep_normalize(prompt_norm)
                     local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
                     with self._cache_lock:

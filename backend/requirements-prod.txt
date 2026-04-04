@@ -18,3 +18,4 @@ pinecone
 sentry-sdk[fastapi]
 resend
 psutil
+symspellpy>=6.7.0
