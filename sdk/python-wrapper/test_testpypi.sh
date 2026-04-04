@@ -15,7 +15,7 @@ if ! command -v twine &> /dev/null; then
 fi
 
 # Check if package is built
-if [ ! -f "dist/semantis_cache-1.0.0-py3-none-any.whl" ]; then
+if [ ! -f "dist/semantys_cache-1.0.0-py3-none-any.whl" ]; then
     echo "Building package..."
     python -m build
 fi
@@ -51,13 +51,13 @@ fi
 
 # Install from Test PyPI
 echo "Installing from Test PyPI..."
-pip install --index-url https://test.pypi.org/simple/ semantis-cache
+pip install --index-url https://test.pypi.org/simple/ semantys-cache
 
 # Test import
 echo ""
 echo "3. Testing imports..."
 python -c "
-from semantis_cache import SemanticCache, ChatCompletion, __version__
+from semantys_cache import SemanticCache, ChatCompletion, __version__
 print(f'  [OK] Import successful (v{__version__})')
 
 cache = SemanticCache(api_key='sc-test-key')
@@ -67,7 +67,7 @@ assert hasattr(cache, 'chat'), 'cache.chat missing'
 assert hasattr(cache, 'query'), 'cache.query missing'
 print('  [OK] All attributes present')
 
-from semantis_cache.openai_proxy import ChatCompletion as ProxyChatCompletion
+from semantys_cache.openai_proxy import ChatCompletion as ProxyChatCompletion
 assert hasattr(ProxyChatCompletion, 'create'), 'ChatCompletion.create missing'
 print('  [OK] OpenAI proxy works')
 
@@ -85,7 +85,7 @@ echo "[SUCCESS] SDK works correctly on Test PyPI!"
 echo "============================================================"
 echo ""
 echo "Next steps:"
-echo "  1. Verify the package on Test PyPI: https://test.pypi.org/project/semantis-cache/"
+echo "  1. Verify the package on Test PyPI: https://test.pypi.org/project/semantys-cache/"
 echo "  2. If everything looks good, upload to production PyPI:"
 echo "     twine upload dist/*"
 echo ""

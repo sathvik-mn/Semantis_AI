@@ -1,5 +1,5 @@
 """
-AWS Lambda Handler for Semantis Cache
+AWS Lambda Handler for Semantys Cache
 
 Lambda function handler for semantic caching in serverless applications.
 """
@@ -16,21 +16,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     
     Example:
         >>> # In Lambda function
-        >>> from semantis_cache.integrations.lambda_handler import lambda_handler
+        >>> from semantys_cache.integrations.lambda_handler import lambda_handler
         >>> 
         >>> # Lambda will automatically cache OpenAI API calls
         >>> def handler(event, context):
         ...     return lambda_handler(event, context)
     """
     try:
-        from semantis import SemantisCache as SemanticCache
+        from semantys import SemantysCache as SemanticCache
         
         # Get API key from environment
-        api_key = os.getenv('SEMANTIS_API_KEY')
+        api_key = os.getenv('SEMANTYS_API_KEY')
         if not api_key:
             return {
                 'statusCode': 500,
-                'body': json.dumps({'error': 'SEMANTIS_API_KEY not set'})
+                'body': json.dumps({'error': 'SEMANTYS_API_KEY not set'})
             }
         
         # Initialize cache client
@@ -143,7 +143,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return {
             'statusCode': 500,
             'body': json.dumps({
-                'error': 'semantis_cache package is required. Install it in Lambda layer.'
+                'error': 'semantys_cache package is required. Install it in Lambda layer.'
             })
         }
     except Exception as e:

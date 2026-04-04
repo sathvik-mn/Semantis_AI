@@ -1,5 +1,5 @@
 """
-API Key Generator for Semantis AI
+API Key Generator for Semantys AI
 Generates API keys in the format: sc-{tenant}-{random}
 """
 import secrets
@@ -183,7 +183,7 @@ def extract_tenant(api_key: str) -> str:
 
 def main():
     """Main function for CLI."""
-    parser = argparse.ArgumentParser(description="Generate API keys for Semantis AI")
+    parser = argparse.ArgumentParser(description="Generate API keys for Semantys AI")
     parser.add_argument("--tenant", type=str, help="Tenant identifier (e.g., 'user123', 'company-abc'). If not provided, auto-generates unique tenant IDs")
     parser.add_argument("--count", type=int, default=1, help="Number of keys to generate (default: 1)")
     parser.add_argument("--length", type=int, default=32, help="Length of random string (default: 32)")

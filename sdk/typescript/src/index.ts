@@ -1,5 +1,5 @@
 /**
- * Semantis Cache - TypeScript SDK
+ * Semantys Cache - TypeScript SDK
  *
  * Drop-in semantic caching layer for LLM applications.
  */
@@ -75,13 +75,13 @@ export interface MetricsResponse {
 
 // ── Error class ──
 
-export class SemantisError extends Error {
+export class SemantysError extends Error {
   status?: number;
   code?: string;
 
   constructor(message: string, status?: number, code?: string) {
     super(message);
-    this.name = 'SemantisError';
+    this.name = 'SemantysError';
     this.status = status;
     this.code = code;
   }
@@ -96,11 +96,11 @@ export class SemanticCache {
 
   constructor(options: SemanticCacheOptions) {
     if (!options.apiKey) {
-      throw new SemantisError('apiKey is required');
+      throw new SemantysError('apiKey is required');
     }
     this.apiKey = options.apiKey;
     this.maxRetries = options.maxRetries ?? 3;
-    const baseURL = (options.baseUrl || 'https://api.semantis.ai').replace(/\/+$/, '');
+    const baseURL = (options.baseUrl || 'https://api.semantys.ai').replace(/\/+$/, '');
 
     this.client = axios.create({
       baseURL,
@@ -108,7 +108,7 @@ export class SemanticCache {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'semantis-typescript/1.0.0',
+        'User-Agent': 'semantys-typescript/1.0.0',
       },
     });
   }
@@ -138,17 +138,17 @@ export class SemanticCache {
     throw this.wrapError(lastError);
   }
 
-  private wrapError(err: unknown): SemantisError {
-    if (err instanceof SemantisError) return err;
+  private wrapError(err: unknown): SemantysError {
+    if (err instanceof SemantysError) return err;
     if (err instanceof AxiosError) {
       const status = err.response?.status;
       const body = err.response?.data as Record<string, unknown> | undefined;
       const message =
         (body?.detail as string) || (body?.error as string) || err.message;
-      return new SemantisError(message, status, err.code);
+      return new SemantysError(message, status, err.code);
     }
-    if (err instanceof Error) return new SemantisError(err.message);
-    return new SemantisError(String(err));
+    if (err instanceof Error) return new SemantysError(err.message);
+    return new SemantysError(String(err));
   }
 
   // ── Public API ──

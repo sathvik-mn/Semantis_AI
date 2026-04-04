@@ -1,4 +1,4 @@
-# Semantis AI — Backend API & Cache Engine
+# Semantys AI — Backend API & Cache Engine
 
 ## The 5-Tier Cache Engine
 

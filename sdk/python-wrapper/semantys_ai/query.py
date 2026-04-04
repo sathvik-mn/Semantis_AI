@@ -12,10 +12,10 @@ if _openapi_client_path.exists():
     sys.path.insert(0, str(_openapi_client_path))
 
 try:
-    from semantis_ai_semantic_cache_api_client.api.default import simple_query_query_get
+    from semantys_ai_semantic_cache_api_client.api.default import simple_query_query_get
 except ImportError:
     try:
-        from semantis_ai_semantic_cache_api_client.api.default import simple_query_query_get
+        from semantys_ai_semantic_cache_api_client.api.default import simple_query_query_get
     except ImportError:
         simple_query_query_get = None
 

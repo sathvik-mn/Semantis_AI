@@ -5,7 +5,7 @@ AWS Lambda handler for semantic caching in serverless applications.
 ## Installation
 
 ```bash
-pip install semantis-cache -t .
+pip install semantys-cache -t .
 ```
 
 Or add to Lambda Layer.
@@ -15,7 +15,7 @@ Or add to Lambda Layer.
 ### Lambda Function
 
 ```python
-from semantis_cache.integrations.lambda_handler import lambda_handler
+from semantys_cache.integrations.lambda_handler import lambda_handler
 
 def handler(event, context):
     return lambda_handler(event, context)
@@ -24,8 +24,8 @@ def handler(event, context):
 ### Environment Variables
 
 ```bash
-SEMANTIS_API_KEY=sc-your-key
-SEMANTIS_API_URL=https://api.semantis.ai
+SEMANTYS_API_KEY=sc-your-key
+SEMANTYS_API_URL=https://api.semantys.ai
 ```
 
 ## API Gateway Configuration

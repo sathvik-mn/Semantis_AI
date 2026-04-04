@@ -1,4 +1,4 @@
-# Semantis AI - Semantic Caching SDK
+# Semantys AI - Semantic Caching SDK
 
 Production-ready semantic caching SDK for LLM applications. Provides automatic caching with semantic matching, reducing LLM API costs and improving response times.
 
@@ -7,11 +7,11 @@ Production-ready semantic caching SDK for LLM applications. Provides automatic c
 ### Python
 
 ```bash
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 ```python
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
 cache = SemanticCache(api_key="sc-your-key")
 response = cache.query("What is our refund policy?")
@@ -22,11 +22,11 @@ print(f"Cache hit: {response.cache_hit}")  # 'exact', 'semantic', or 'miss'
 ### TypeScript
 
 ```bash
-npm install semantis-cache
+npm install semantys-cache
 ```
 
 ```typescript
-import { SemanticCache } from 'semantis-cache';
+import { SemanticCache } from 'semantys-cache';
 
 const cache = new SemanticCache({ apiKey: 'sc-your-key' });
 const response = await cache.query('What is AI?');
@@ -54,8 +54,8 @@ All documentation is available in the [`docs/`](docs/) directory:
 
 ## 🔧 Integrations
 
-- **LangChain**: `from semantis_cache.integrations.langchain import SemantisCacheLLM`
-- **LlamaIndex**: `from semantis_cache.integrations.llamaindex import SemantisCacheLLM`
+- **LangChain**: `from semantys_cache.integrations.langchain import SemantysCacheLLM`
+- **LlamaIndex**: `from semantys_cache.integrations.llamaindex import SemantysCacheLLM`
 - **FastAPI**: `app.add_middleware(SemanticCacheMiddleware, api_key="...")`
 - **Express**: `app.use(semanticCacheMiddleware({ apiKey: '...' }))`
 - **Django**: Add to `MIDDLEWARE` in `settings.py`
@@ -84,13 +84,13 @@ See [Integration Documentation](sdk/integrations/) for details.
 ### Python
 
 ```bash
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 ### TypeScript
 
 ```bash
-npm install semantis-cache
+npm install semantys-cache
 ```
 
 ## 💡 Usage Examples
@@ -98,7 +98,7 @@ npm install semantis-cache
 ### Simple Query
 
 ```python
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
 cache = SemanticCache(api_key="sc-your-key")
 response = cache.query("What is our refund policy?")
@@ -119,7 +119,7 @@ print(response.choices[0].message.content)
 ### OpenAI Proxy (Drop-in Replacement)
 
 ```python
-from semantis_cache.openai_proxy import ChatCompletion
+from semantys_cache.openai_proxy import ChatCompletion
 
 response = ChatCompletion.create(
     model="gpt-4o-mini",

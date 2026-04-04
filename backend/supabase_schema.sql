@@ -1,5 +1,5 @@
 -- =============================================================================
--- Semantis AI - Supabase Database Schema (Phase 1.1: Organization Tenancy)
+-- Semantys AI - Supabase Database Schema (Phase 1.1: Organization Tenancy)
 -- Run this in your Supabase SQL Editor (Dashboard > SQL Editor > New Query)
 -- =============================================================================
 
@@ -372,7 +372,7 @@ CREATE TRIGGER on_auth_user_created
 -- so all admin and logging operations work without policy restrictions.
 
 -- =============================================================================
--- 12. Credits Ledger (prepaid credits for Semantis Key users)
+-- 12. Credits Ledger (prepaid credits for Semantys Key users)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.credits_ledger (

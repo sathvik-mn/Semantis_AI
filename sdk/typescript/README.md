@@ -1,22 +1,22 @@
-# Semantis Cache - TypeScript SDK
+# Semantys Cache - TypeScript SDK
 
-TypeScript/JavaScript SDK for Semantis AI Semantic Caching.
+TypeScript/JavaScript SDK for Semantys AI Semantic Caching.
 
 ## Installation
 
 ```bash
-npm install semantis-cache
+npm install semantys-cache
 ```
 
 ## Quick Start
 
 ```typescript
-import { SemanticCache } from 'semantis-cache';
+import { SemanticCache } from 'semantys-cache';
 
 // Initialize client
 const cache = new SemanticCache({
   apiKey: 'sc-your-key',
-  baseUrl: 'https://api.semantis.ai'
+  baseUrl: 'https://api.semantys.ai'
 });
 
 // Simple query

@@ -1,12 +1,12 @@
 """
-Semantis AI Python SDK
+Semantys AI Python SDK
 
 Drop-in replacement for OpenAI with automatic semantic caching.
 
 Usage:
-    from semantis import SemantisCache
+    from semantys import SemantysCache
 
-    cache = SemantisCache(api_key="sc-myorg-xxxxxxxx")
+    cache = SemantysCache(api_key="sc-myorg-xxxxxxxx")
     response = cache.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": "What is ML?"}],
@@ -14,8 +14,8 @@ Usage:
     print(response.choices[0].message.content)
 """
 
-from semantis.client import SemantisCache
-from semantis.models import (
+from semantys.client import SemantysCache
+from semantys.models import (
     ChatCompletion,
     ChatCompletionMessage,
     ChatCompletionChoice,
@@ -28,7 +28,7 @@ from semantis.models import (
 
 __version__ = "0.1.0"
 __all__ = [
-    "SemantisCache",
+    "SemantysCache",
     "ChatCompletion",
     "ChatCompletionMessage",
     "ChatCompletionChoice",

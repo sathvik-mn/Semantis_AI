@@ -7,7 +7,7 @@ from typing import Optional, Union, Dict, Any
 
 # Try to import OpenAPI client from bundled package first
 try:
-    from .semantis_ai_semantic_cache_api_client.api.default import simple_query_query_get
+    from .semantys_ai_semantic_cache_api_client.api.default import simple_query_query_get
 except ImportError:
     # Fallback 1: Try from parent directory (development)
     try:
@@ -15,11 +15,11 @@ except ImportError:
         _openapi_client_path = _parent_dir / "python" / "src"
         if _openapi_client_path.exists():
             sys.path.insert(0, str(_openapi_client_path))
-        from semantis_ai_semantic_cache_api_client.api.default import simple_query_query_get
+        from semantys_ai_semantic_cache_api_client.api.default import simple_query_query_get
     except ImportError:
         # Fallback 2: Try from installed package
         try:
-            from semantis_ai_semantic_cache_api_client.api.default import simple_query_query_get
+            from semantys_ai_semantic_cache_api_client.api.default import simple_query_query_get
         except ImportError:
             simple_query_query_get = None
 

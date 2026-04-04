@@ -1,9 +1,9 @@
-# Semantis AI — SDK, Deployment & Configuration
+# Semantys AI — SDK, Deployment & Configuration
 
 ## Python SDK
 
-**Package**: `semantis-cache` on PyPI (v1.0.0)
-**Install**: `pip install semantis-cache`
+**Package**: `semantys-cache` on PyPI (v1.0.0)
+**Install**: `pip install semantys-cache`
 **Requirements**: Python 3.10+, dependencies: `httpx`, `attrs`, `python-dateutil`
 
 ### Drop-in OpenAI Replacement (Zero Code Changes)
@@ -13,13 +13,13 @@
 from openai import ChatCompletion
 response = ChatCompletion.create(model="gpt-4o-mini", messages=[...])
 
-# After (Semantis — just change the import + add API key)
-from semantis_cache import ChatCompletion
+# After (Semantys — just change the import + add API key)
+from semantys_cache import ChatCompletion
 response = ChatCompletion.create(
     model="gpt-4o-mini",
     messages=[{"role": "user", "content": "What is caching?"}],
     api_key="sc-myapp-abc123",
-    base_url="https://api.semantis.ai"
+    base_url="https://api.semantys.ai"
 )
 # Response includes: response.answer, response.cache_hit, response.similarity
 ```
@@ -27,9 +27,9 @@ response = ChatCompletion.create(
 ### Full Client Usage
 
 ```python
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
-cache = SemanticCache(api_key="sc-myapp-abc123", base_url="https://api.semantis.ai")
+cache = SemanticCache(api_key="sc-myapp-abc123", base_url="https://api.semantys.ai")
 
 # Method 1: Simple query
 result = cache.query("What is machine learning?", model="gpt-4o-mini")
@@ -45,24 +45,24 @@ result = cache.chat.completions.create(
 ### Architecture
 - `SemanticCache` — primary client, wraps auto-generated OpenAPI HTTP client
 - `ChatCompletion` — static `.create()` class mirroring old `openai.ChatCompletion.create()` signature
-- `semantis_cache/integrations/` — pre-built wrappers for LangChain, LlamaIndex, FastAPI, Django, Express, Lambda, RAG, SQL
+- `semantys_cache/integrations/` — pre-built wrappers for LangChain, LlamaIndex, FastAPI, Django, Express, Lambda, RAG, SQL
 
 ---
 
 ## TypeScript SDK
 
-**Package**: `semantis-cache` on npm (v1.0.0)
-**Install**: `npm install semantis-cache`
+**Package**: `semantys-cache` on npm (v1.0.0)
+**Install**: `npm install semantys-cache`
 **Dependencies**: `axios ^1.6.0`, full TypeScript definitions included
 
 ### Usage
 
 ```typescript
-import { SemanticCache } from 'semantis-cache';
+import { SemanticCache } from 'semantys-cache';
 
 const cache = new SemanticCache({
   apiKey: 'sc-myapp-abc123',
-  baseUrl: 'https://api.semantis.ai'
+  baseUrl: 'https://api.semantys.ai'
 });
 
 // Simple query
@@ -79,11 +79,11 @@ const response = await cache.chat.completions.create({
 ### OpenAI Proxy (Full Drop-in)
 
 ```typescript
-import { SemantisOpenAI } from 'semantis-cache/openai-proxy';
+import { SemantysOpenAI } from 'semantys-cache/openai-proxy';
 
-const client = new SemantisOpenAI({
+const client = new SemantysOpenAI({
   apiKey: 'sc-myapp-abc123',
-  baseUrl: 'https://api.semantis.ai'
+  baseUrl: 'https://api.semantys.ai'
 });
 
 // Identical interface to official openai npm package
@@ -95,7 +95,7 @@ const response = await client.chat.completions.create({
 
 ### Features
 - Automatic retry with exponential backoff (3 retries, 8s cap) on 429/5xx
-- Typed `SemantisError` class with `.status` and `.code`
+- Typed `SemantysError` class with `.status` and `.code`
 - Health check: `cache.health()`
 - Metrics: `cache.getMetrics()`
 
@@ -160,7 +160,7 @@ docker-compose up --build
 
 ## Kubernetes Deployment
 
-All resources in namespace `semantis`. Images from `ghcr.io/sathvik-mn/`.
+All resources in namespace `semantys`. Images from `ghcr.io/sathvik-mn/`.
 
 ### Architecture
 
@@ -170,7 +170,7 @@ All resources in namespace `semantis`. Images from `ghcr.io/sathvik-mn/`.
                     │    (Let's Encrypt TLS)        │
                     ├──────────────┬────────────────┤
                     │              │                │
-          api.semantis.ai    app.semantis.ai       │
+          api.semantys.ai    app.semantys.ai       │
                     │              │                │
                     ▼              ▼                │
               ┌──────────┐  ┌──────────┐           │
@@ -195,11 +195,11 @@ All resources in namespace `semantis`. Images from `ghcr.io/sathvik-mn/`.
 
 | File | Resources |
 |------|-----------|
-| `k8s/namespace.yml` | Namespace `semantis` |
+| `k8s/namespace.yml` | Namespace `semantys` |
 | `k8s/backend.yml` | Deployment (2 replicas, 1 CPU / 2Gi), Service (ClusterIP:8000), PVC (5Gi) |
 | `k8s/frontend.yml` | Deployment (2 replicas, 200m CPU / 128Mi), Service (ClusterIP:80) |
 | `k8s/redis.yml` | Deployment (1 replica, 256mb, allkeys-lru), Service (redis-svc:6379), PVC (1Gi) |
-| `k8s/ingress.yml` | nginx ingress, TLS (Let's Encrypt), `api.semantis.ai` → backend, `app.semantis.ai` → frontend |
+| `k8s/ingress.yml` | nginx ingress, TLS (Let's Encrypt), `api.semantys.ai` → backend, `app.semantys.ai` → frontend |
 | `k8s/monitoring.yml` | Prometheus ServiceMonitor, 5 alert rules (error rate, latency, hit ratio, memory, downtime) |
 | `k8s/logging.yml` | Fluent Bit ConfigMap (stdout JSON, optional Elasticsearch/Loki output) |
 | `k8s/secrets.yml.example` | Template for 10 base64-encoded secrets |
@@ -305,8 +305,8 @@ All resources in namespace `semantis`. Images from `ghcr.io/sathvik-mn/`.
 
 ```bash
 # 1. Clone
-git clone https://github.com/sathvik-mn/Semantis-AI.git
-cd Semantis-AI
+git clone https://github.com/sathvik-mn/Semantys-AI.git
+cd Semantys-AI
 
 # 2. Backend
 cd backend

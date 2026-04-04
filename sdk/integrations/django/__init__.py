@@ -1,5 +1,5 @@
 """
-Django Integration for Semantis Cache
+Django Integration for Semantys Cache
 
 Provides Django middleware for automatic semantic caching.
 """

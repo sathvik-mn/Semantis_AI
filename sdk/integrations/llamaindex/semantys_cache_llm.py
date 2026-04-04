@@ -1,21 +1,21 @@
 """
-LlamaIndex LLM wrapper for Semantis Cache
+LlamaIndex LLM wrapper for Semantys Cache
 """
 from typing import Optional, Any, Dict
 from llama_index.llms import CustomLLM
 from llama_index.llms.types import CompletionResponse, CompletionResponseGen, LLMMetadata
 
 
-class SemantisCacheLLM(CustomLLM):
+class SemantysCacheLLM(CustomLLM):
     """
-    LlamaIndex LLM wrapper for Semantis Cache.
+    LlamaIndex LLM wrapper for Semantys Cache.
     
     This provides a LlamaIndex-compatible LLM interface with automatic semantic caching.
     
     Example:
-        >>> from semantis_cache.integrations.llamaindex import SemantisCacheLLM
+        >>> from semantys_cache.integrations.llamaindex import SemantysCacheLLM
         >>> 
-        >>> llm = SemantisCacheLLM(api_key="sc-your-key")
+        >>> llm = SemantysCacheLLM(api_key="sc-your-key")
         >>> 
         >>> # Use like any LlamaIndex LLM
         >>> response = llm.complete("What is AI?")
@@ -31,7 +31,7 @@ class SemantisCacheLLM(CustomLLM):
         timeout: Optional[float] = 30.0,
         **kwargs: Any
     ):
-        """Initialize Semantis Cache LLM."""
+        """Initialize Semantys Cache LLM."""
         super().__init__(**kwargs)
         self.api_key = api_key
         self.base_url = base_url
@@ -50,7 +50,7 @@ class SemantisCacheLLM(CustomLLM):
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
         """Complete a prompt with caching."""
         try:
-            from semantis import SemantisCache as SemanticCache
+            from semantys import SemantysCache as SemanticCache
             
             # Initialize cache client
             cache = SemanticCache(
@@ -67,10 +67,10 @@ class SemantisCacheLLM(CustomLLM):
             
         except ImportError:
             raise ImportError(
-                "semantis_cache package is required. Install it with: pip install semantis-cache"
+                "semantys_cache package is required. Install it with: pip install semantys-cache"
             )
         except Exception as e:
-            raise Exception(f"Error calling Semantis Cache: {e}")
+            raise Exception(f"Error calling Semantys Cache: {e}")
     
     def stream_complete(self, prompt: str, **kwargs: Any) -> CompletionResponseGen:
         """Stream completion (not supported for caching)."""

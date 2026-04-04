@@ -1,7 +1,7 @@
 {
-  "name": "semantis-cache",
+  "name": "semantys-cache",
   "version": "1.0.0",
-  "description": "Semantis Cache - Semantic Caching SDK for LLM Applications",
+  "description": "Semantys Cache - Semantic Caching SDK for LLM Applications",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "files": ["dist/src/**/*"],
@@ -18,7 +18,7 @@
     "ai",
     "semantic search"
   ],
-  "author": "Semantis AI",
+  "author": "Semantys AI",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.0"
@@ -29,10 +29,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/semantis-ai/semantis-cache-typescript"
+    "url": "https://github.com/semantys-ai/semantys-cache-typescript"
   },
   "bugs": {
-    "url": "https://github.com/semantis-ai/semantis-cache-typescript/issues"
+    "url": "https://github.com/semantys-ai/semantys-cache-typescript/issues"
   },
-  "homepage": "https://docs.semantis.ai"
+  "homepage": "https://docs.semantys.ai"
 }

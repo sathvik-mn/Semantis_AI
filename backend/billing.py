@@ -1,5 +1,5 @@
 """
-Stripe Billing Module for Semantis AI
+Stripe Billing Module for Semantys AI
 
 Handles subscription management, usage metering, and payment processing.
 Stripe is optional — if STRIPE_SECRET_KEY is not set, billing is disabled.
@@ -8,7 +8,7 @@ import os
 import logging
 from typing import Optional
 
-logger = logging.getLogger("semantis.billing")
+logger = logging.getLogger("semantys.billing")
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
@@ -38,8 +38,8 @@ def is_enabled() -> bool:
 
 
 # ── Plan definitions ──
-# Service fee tiers (same for Semantis Key and BYOK users).
-# Token costs are separate — only Semantis Key users pay per-token on cache misses.
+# Service fee tiers (same for Semantys Key and BYOK users).
+# Token costs are separate — only Semantys Key users pay per-token on cache misses.
 # BYOK users pay $0 for tokens (they pay OpenAI directly).
 
 PLANS = {
@@ -90,7 +90,7 @@ PLANS = {
     },
 }
 
-# ── Token pricing (Semantis Key users only, charged on cache misses) ──
+# ── Token pricing (Semantys Key users only, charged on cache misses) ──
 # BYOK users pay $0 — they hit their own OpenAI key.
 TOKEN_PRICING = {
     "prompt_per_token": 0.00000020,      # $0.20 / 1M tokens
@@ -112,7 +112,7 @@ def check_plan_limit(plan: str, metric: str, current_value: int) -> bool:
 
 
 def calculate_token_cost(prompt_tokens: int, completion_tokens: int) -> float:
-    """Calculate the token cost for a cache miss (Semantis Key users only).
+    """Calculate the token cost for a cache miss (Semantys Key users only).
     Returns 0.0 for cache hits — call this only on misses."""
     cost = (prompt_tokens * TOKEN_PRICING["prompt_per_token"]) + \
            (completion_tokens * TOKEN_PRICING["completion_per_token"])

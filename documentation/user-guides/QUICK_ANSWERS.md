@@ -29,11 +29,11 @@ python test_sdk.py
 ### Using the SDK
 
 ```python
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import (
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import (
     openai_compatible_v1_chat_completions_post
 )
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 client = Client(
     base_url="http://localhost:8000",

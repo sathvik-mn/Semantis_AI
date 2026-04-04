@@ -1,5 +1,5 @@
 """
-Spelling Correction Module for Semantis AI
+Spelling Correction Module for Semantys AI
 
 Fast spelling correction using SymSpell (Symmetric Delete algorithm).
 Runs in ~0.1ms per query — negligible latency impact with significant
@@ -12,7 +12,7 @@ import logging
 import threading
 from typing import Optional
 
-logger = logging.getLogger("semantis.spelling")
+logger = logging.getLogger("semantys.spelling")
 
 _symspell = None
 _symspell_lock = threading.Lock()

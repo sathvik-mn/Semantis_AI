@@ -59,7 +59,7 @@ export function PricingPage() {
         'Dedicated account manager',
       ],
       cta: 'Contact Sales',
-      ctaLink: 'mailto:sales@semantis.ai',
+      ctaLink: 'mailto:sales@semantys.ai',
     },
   ];
 
@@ -170,8 +170,8 @@ export function PricingPage() {
             <h3 className="text-xl font-bold text-white mb-2">Questions about pricing?</h3>
             <p className="text-white/60">
               Contact our sales team at{' '}
-              <a href="mailto:sales@semantis.ai" className="text-white font-semibold no-underline hover:underline">
-                sales@semantis.ai
+              <a href="mailto:sales@semantys.ai" className="text-white font-semibold no-underline hover:underline">
+                sales@semantys.ai
               </a>
             </p>
           </div>

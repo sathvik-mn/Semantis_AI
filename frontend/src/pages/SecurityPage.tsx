@@ -52,7 +52,7 @@ export function SecurityPage() {
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>Reporting</h2>
           <p style={styles.text}>
-            To report a security vulnerability, contact us at security@semantis.ai. We respond to valid reports promptly.
+            To report a security vulnerability, contact us at security@semantys.ai. We respond to valid reports promptly.
           </p>
         </section>
       </div>

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Semantis AI Semantic Cache API provides an **OpenAPI-compatible SDK** that clients can use to integrate semantic caching into their applications. This guide explains how to generate, install, and use the SDK.
+The Semantys AI Semantic Cache API provides an **OpenAPI-compatible SDK** that clients can use to integrate semantic caching into their applications. This guide explains how to generate, install, and use the SDK.
 
 ## 📦 SDK Generation
 
@@ -49,13 +49,13 @@ pip install -e sdk/python
 ### Python Client Example
 
 ```python
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import (
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import (
     health_health_get,
     get_metrics_metrics_get,
     openai_compatible_v1_chat_completions_post
 )
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 # Initialize client
 client = Client(
@@ -156,7 +156,7 @@ pip install openapi-python-client
 openapi-python-client generate --url http://localhost:8000/openapi.json --output sdk/python
 
 # 3. Verify SDK generated
-ls sdk/python/src/semantis_ai_semantic_cache_api
+ls sdk/python/src/semantys_ai_semantic_cache_api
 ```
 
 ### Test 2: Install and Import SDK
@@ -166,13 +166,13 @@ cd sdk/python
 pip install -e .
 
 # Test import
-python -c "from semantis_ai_semantic_cache_api import Client; print('SDK imported successfully!')"
+python -c "from semantys_ai_semantic_cache_api import Client; print('SDK imported successfully!')"
 ```
 
 ### Test 3: Run SDK Test Script
 
 ```bash
-cd D:\Semantis_AI
+cd D:\Semantys_AI
 python test_sdk.py
 ```
 
@@ -189,12 +189,12 @@ SDK imported successfully!
 Create `test_sdk_manual.py`:
 
 ```python
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import (
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import (
     health_health_get,
     openai_compatible_v1_chat_completions_post
 )
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 # Initialize client
 client = Client(
@@ -295,7 +295,7 @@ openapi-python-client generate --url http://localhost:8000/openapi.json --output
 ```bash
 # Reinstall SDK
 cd sdk/python
-pip uninstall semantis-ai-semantic-cache-api
+pip uninstall semantys-ai-semantic-cache-api
 pip install -e .
 ```
 

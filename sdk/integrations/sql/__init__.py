@@ -1,10 +1,10 @@
 """
-SQL/BI Caching Integration for Semantis Cache
+SQL/BI Caching Integration for Semantys Cache
 
 Provides SQL query caching for natural-language SQL and BI applications.
 """
 
-from .semantis_sql import SemantisSQL
+from .semantys_sql import SemantysSQL
 
-__all__ = ["SemantisSQL"]
+__all__ = ["SemantysSQL"]
 

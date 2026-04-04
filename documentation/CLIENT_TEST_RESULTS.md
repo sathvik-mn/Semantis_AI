@@ -98,15 +98,15 @@ We've tested your service from a **real client's perspective** and everything is
 
 ### Client Code Example:
 ```python
-from semantis_ai_semantic_cache_api_client import Client
-from semantis_ai_semantic_cache_api_client.api.default import (
+from semantys_ai_semantic_cache_api_client import Client
+from semantys_ai_semantic_cache_api_client.api.default import (
     openai_compatible_v1_chat_completions_post
 )
-from semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
 
 # Initialize client
 client = Client(
-    base_url="https://api.semantis.ai",
+    base_url="https://api.semantys.ai",
     headers={"Authorization": "Bearer sc-your-api-key"}
 )
 

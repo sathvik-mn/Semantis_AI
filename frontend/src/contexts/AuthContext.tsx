@@ -135,18 +135,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message);
 
     // Clear chat data only if a different user is logging in
-    const lastUserId = localStorage.getItem('semantis_last_user_id');
+    const lastUserId = localStorage.getItem('semantys_last_user_id');
     if (lastUserId && lastUserId !== data.user.id) {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('semantis_chat_messages_') || k.startsWith('semantis_chat_history_'))) {
+        if (k && (k.startsWith('semantys_chat_messages_') || k.startsWith('semantys_chat_history_'))) {
           keysToRemove.push(k);
         }
       }
       keysToRemove.forEach(k => localStorage.removeItem(k));
     }
-    localStorage.setItem('semantis_last_user_id', data.user.id);
+    localStorage.setItem('semantys_last_user_id', data.user.id);
 
     const mapped = mapSupabaseUser(data.user);
     const enriched = await enrichUserFromBackend(data.session.access_token, mapped);

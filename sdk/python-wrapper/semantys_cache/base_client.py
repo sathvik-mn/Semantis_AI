@@ -1,12 +1,12 @@
 """
-Base client for Semantis AI API
+Base client for Semantys AI API
 """
 import httpx
 from typing import Optional, Dict, Any
 
 
 class BaseClient:
-    """Base HTTP client for Semantis AI API"""
+    """Base HTTP client for Semantys AI API"""
     
     def __init__(
         self,

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide explains how to set up production-ready storage for Semantis AI Cache, including:
+This guide explains how to set up production-ready storage for Semantys AI Cache, including:
 - PostgreSQL for structured data
 - Redis for fast cache lookups
 - S3 for backups
@@ -55,11 +55,11 @@ Create a `.env` file in the `backend/` directory:
 DB_BACKEND=postgresql
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=semantis_cache
-DB_USER=semantis
+DB_NAME=semantys_cache
+DB_USER=semantys
 DB_PASSWORD=your_password
 # Or use full URL:
-# DATABASE_URL=postgresql://user:password@localhost:5432/semantis_cache
+# DATABASE_URL=postgresql://user:password@localhost:5432/semantys_cache
 
 # Redis Configuration
 REDIS_ENABLED=true
@@ -72,7 +72,7 @@ REDIS_DB=0
 
 # S3 Configuration (optional)
 S3_ENABLED=true
-S3_BUCKET=semantis-cache-backups
+S3_BUCKET=semantys-cache-backups
 S3_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
@@ -121,9 +121,9 @@ Download from https://www.postgresql.org/download/windows/
 sudo -u postgres psql
 
 # Create database and user
-CREATE DATABASE semantis_cache;
-CREATE USER semantis WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE semantis_cache TO semantis;
+CREATE DATABASE semantys_cache;
+CREATE USER semantys WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE semantys_cache TO semantys;
 \q
 ```
 
@@ -180,7 +180,7 @@ redis-server /etc/redis/redis.conf
 #### Create S3 Bucket
 
 ```bash
-aws s3 mb s3://semantis-cache-backups --region us-east-1
+aws s3 mb s3://semantys-cache-backups --region us-east-1
 ```
 
 #### Configure IAM User
@@ -218,7 +218,7 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'semantis-cache'
+  - job_name: 'semantys-cache'
     static_configs:
       - targets: ['localhost:8000']
 ```
@@ -323,7 +323,7 @@ python backend/backup_cache.py
 ### Restore from Backup
 
 ```bash
-python backend/restore_cache.py --backup-file s3://semantis-cache-backups/backups/cache_2025-01-13.sql
+python backend/restore_cache.py --backup-file s3://semantys-cache-backups/backups/cache_2025-01-13.sql
 ```
 
 ## Performance Optimization
@@ -353,7 +353,7 @@ Indexes are automatically created for:
 
 ```bash
 # Test PostgreSQL connection
-psql -h localhost -U semantis -d semantis_cache
+psql -h localhost -U semantys -d semantys_cache
 
 # Check Redis connection
 redis-cli -h localhost -p 6379 ping

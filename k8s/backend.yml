@@ -1,33 +1,33 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: semantis-backend
-  namespace: semantis
+  name: semantys-backend
+  namespace: semantys
   labels:
-    app: semantis-backend
+    app: semantys-backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: semantis-backend
+      app: semantys-backend
   template:
     metadata:
       labels:
-        app: semantis-backend
+        app: semantys-backend
     spec:
       containers:
         - name: backend
-          image: ghcr.io/sathvik-mn/semantis-backend:latest
+          image: ghcr.io/sathvik-mn/semantys-backend:latest
           ports:
             - containerPort: 8000
           envFrom:
             - secretRef:
-                name: semantis-secrets
+                name: semantys-secrets
           env:
             - name: REDIS_URL
-              value: redis://redis-svc.semantis.svc.cluster.local:6379/0
+              value: redis://redis-svc.semantys.svc.cluster.local:6379/0
             - name: ALLOWED_ORIGINS
-              value: https://app.semantis.ai
+              value: https://app.semantys.ai
           resources:
             requests:
               cpu: 250m
@@ -63,10 +63,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend-svc
-  namespace: semantis
+  namespace: semantys
 spec:
   selector:
-    app: semantis-backend
+    app: semantys-backend
   ports:
     - port: 8000
       targetPort: 8000
@@ -76,7 +76,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: cache-data-pvc
-  namespace: semantis
+  namespace: semantys
 spec:
   accessModes:
     - ReadWriteOnce

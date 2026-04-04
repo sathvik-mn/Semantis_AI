@@ -14,7 +14,7 @@ class ChatCompletion:
     All caching happens automatically and transparently.
     
     Example:
-        >>> from semantis_ai.openai_proxy import ChatCompletion
+        >>> from semantys_ai.openai_proxy import ChatCompletion
         >>> 
         >>> # Same API as OpenAI
         >>> response = ChatCompletion.create(
@@ -31,8 +31,8 @@ class ChatCompletion:
         Initialize ChatCompletion proxy.
         
         Args:
-            api_key: Semantis AI API key (default: from SEMANTIS_API_KEY env var)
-            base_url: API base URL (default: from SEMANTIS_API_URL env var or https://api.semantis.ai)
+            api_key: Semantys AI API key (default: from SEMANTYS_API_KEY env var)
+            base_url: API base URL (default: from SEMANTYS_API_URL env var or https://api.semantys.ai)
         """
         self._cache = SemanticCache(api_key=api_key, base_url=base_url)
     
@@ -53,7 +53,7 @@ class ChatCompletion:
         Args:
             model: Model to use (e.g., "gpt-4o-mini")
             messages: List of messages (e.g., [{"role": "user", "content": "Hello"}])
-            api_key: Semantis AI API key (optional, uses env var if not provided)
+            api_key: Semantys AI API key (optional, uses env var if not provided)
             base_url: API base URL (optional)
             **kwargs: Additional parameters (temperature, max_tokens, etc.)
         
@@ -68,8 +68,8 @@ class ChatCompletion:
             ...     messages=[{"role": "user", "content": "What is AI?"}]
             ... )
             >>> 
-            >>> # After (Semantis AI - drop-in replacement):
-            >>> from semantis_ai.openai_proxy import ChatCompletion
+            >>> # After (Semantys AI - drop-in replacement):
+            >>> from semantys_ai.openai_proxy import ChatCompletion
             >>> response = ChatCompletion.create(
             ...     model="gpt-4o-mini",
             ...     messages=[{"role": "user", "content": "What is AI?"}]

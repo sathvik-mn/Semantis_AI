@@ -1,25 +1,25 @@
-# Semantis Python SDK
+# Semantys Python SDK
 
 Drop-in replacement for the OpenAI Python client with automatic semantic caching.
 
 ## Installation
 
 ```bash
-pip install semantis
+pip install semantys
 ```
 
-For automatic OpenAI fallback when Semantis is unreachable:
+For automatic OpenAI fallback when Semantys is unreachable:
 
 ```bash
-pip install semantis[openai]
+pip install semantys[openai]
 ```
 
 ## Quick Start
 
 ```python
-from semantis import SemantisCache
+from semantys import SemantysCache
 
-cache = SemantisCache(api_key="sc-myorg-xxxxxxxx")
+cache = SemantysCache(api_key="sc-myorg-xxxxxxxx")
 
 # OpenAI-compatible interface
 response = cache.chat.completions.create(
@@ -32,13 +32,13 @@ print(f"Cache: {response.meta.hit} | Similarity: {response.meta.similarity}")
 
 ## Zero-Code Integration (Proxy Mode)
 
-Point your existing OpenAI client at Semantis:
+Point your existing OpenAI client at Semantys:
 
 ```python
 import openai
 
 client = openai.OpenAI(
-    base_url="https://api.semantis.ai/v1",
+    base_url="https://api.semantys.ai/v1",
     api_key="sc-myorg-xxxxxxxx",
 )
 
@@ -52,7 +52,7 @@ response = client.chat.completions.create(
 ## Self-Hosted
 
 ```python
-cache = SemantisCache(
+cache = SemantysCache(
     api_key="sc-myorg-xxxxxxxx",
     base_url="http://localhost:8000",
 )
@@ -62,6 +62,6 @@ cache = SemantisCache(
 
 - **OpenAI-compatible**: Drop-in replacement, same interface
 - **Automatic retry**: Exponential backoff on 429/5xx errors
-- **Fallback**: If Semantis is unreachable, falls back to direct OpenAI (with `[openai]` extra)
+- **Fallback**: If Semantys is unreachable, falls back to direct OpenAI (with `[openai]` extra)
 - **Cache metadata**: Every response includes `meta.hit`, `meta.similarity`, `meta.latency_ms`
 - **Context manager**: Use with `with` for automatic cleanup

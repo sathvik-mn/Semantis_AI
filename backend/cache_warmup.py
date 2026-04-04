@@ -1,5 +1,5 @@
 """
-Cache Warmup Script for Semantis AI
+Cache Warmup Script for Semantys AI
 Pre-populates the cache with common queries to avoid LLM calls on first requests.
 """
 import requests

@@ -22,12 +22,12 @@
 Customers should be able to:
 ```bash
 # Just install and use - no manual generation!
-pip install semantis-ai
+pip install semantys-ai
 ```
 
 ```python
 # Simple, clean API - just like OpenAI
-from semantis_ai import SemanticCache
+from semantys_ai import SemanticCache
 
 cache = SemanticCache(api_key="sc-your-key")
 
@@ -53,8 +53,8 @@ We'll create a wrapper SDK that:
 
 ### Step 2: Publish to Package Registries
 
-- **Python**: PyPI (`pip install semantis-ai`)
-- **TypeScript/JavaScript**: npm (`npm install semantis-ai`)
+- **Python**: PyPI (`pip install semantys-ai`)
+- **TypeScript/JavaScript**: npm (`npm install semantys-ai`)
 - **Go**: Go modules
 - **Java**: Maven Central
 

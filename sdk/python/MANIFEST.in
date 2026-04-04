@@ -1,7 +1,7 @@
 include README.md
 include pyproject.toml
-recursive-include semantis *.py
-recursive-exclude semantis_ai_semantic_cache_api_client *
+recursive-include semantys *.py
+recursive-exclude semantys_ai_semantic_cache_api_client *
 exclude test_local.py
-prune semantis_ai_semantic_cache_api_client
+prune semantys_ai_semantic_cache_api_client
 prune .ruff_cache

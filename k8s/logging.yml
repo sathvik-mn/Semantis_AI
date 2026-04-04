@@ -1,10 +1,10 @@
-# Fluent Bit DaemonSet config for collecting Semantis logs
+# Fluent Bit DaemonSet config for collecting Semantys logs
 # Sends logs to your preferred backend (Elasticsearch, Loki, Datadog, etc.)
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: fluent-bit-config
-  namespace: semantis
+  namespace: semantys
 data:
   fluent-bit.conf: |
     [SERVICE]
@@ -16,13 +16,13 @@ data:
     [INPUT]
         Name             tail
         Path             /app/logs/*.log
-        Tag              semantis.*
+        Tag              semantys.*
         Refresh_Interval 10
         Read_from_Head   True
 
     [FILTER]
         Name   grep
-        Match  semantis.*
+        Match  semantys.*
         Regex  log .+
 
     [OUTPUT]
@@ -33,23 +33,23 @@ data:
     # Uncomment for Elasticsearch:
     # [OUTPUT]
     #     Name            es
-    #     Match           semantis.*
+    #     Match           semantys.*
     #     Host            elasticsearch.logging.svc.cluster.local
     #     Port            9200
-    #     Index           semantis-logs
+    #     Index           semantys-logs
     #     Type            _doc
 
     # Uncomment for Loki (Grafana):
     # [OUTPUT]
     #     Name            loki
-    #     Match           semantis.*
+    #     Match           semantys.*
     #     Host            loki.monitoring.svc.cluster.local
     #     Port            3100
-    #     Labels          job=semantis,namespace=semantis
+    #     Labels          job=semantys,namespace=semantys
 
   parsers.conf: |
     [PARSER]
-        Name        semantis_log
+        Name        semantys_log
         Format      regex
         Regex       ^(?<time>[^ ]+) \| (?<level>[^ ]+) \| (?<message>.+)$
         Time_Key    time

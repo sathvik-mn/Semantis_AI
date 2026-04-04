@@ -1,10 +1,10 @@
 """
-RAG (Retrieval-Augmented Generation) Integration for Semantis Cache
+RAG (Retrieval-Augmented Generation) Integration for Semantys Cache
 
 Provides RAG-optimized caching for context + question queries.
 """
 
-from .semantis_rag import SemantisRAG
+from .semantys_rag import SemantysRAG
 
-__all__ = ["SemantisRAG"]
+__all__ = ["SemantysRAG"]
 

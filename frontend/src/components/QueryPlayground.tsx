@@ -5,8 +5,8 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { Key, ExternalLink, Copy, Trash2, Clock, Send, Bot, User, Zap, Gauge, Layers, Sparkles } from 'lucide-react';
 
 const MAX_HISTORY = 50;
-const MESSAGES_KEY_PREFIX = 'semantis_chat_messages_';
-const HISTORY_KEY_PREFIX = 'semantis_chat_history_';
+const MESSAGES_KEY_PREFIX = 'semantys_chat_messages_';
+const HISTORY_KEY_PREFIX = 'semantys_chat_history_';
 
 /** Get a tenant-scoped storage key based on the current API key. */
 function getTenantSlug(): string {
@@ -73,24 +73,24 @@ interface QueryPlaygroundProps {
 export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const [prompt, setPrompt] = useState('');
   const [model, setModelState] = useState(() => {
-    try { return localStorage.getItem('semantis_playground_model') || 'gpt-4o-mini'; }
+    try { return localStorage.getItem('semantys_playground_model') || 'gpt-4o-mini'; }
     catch { return 'gpt-4o-mini'; }
   });
   const [temperature, setTemperatureState] = useState(() => {
     try {
-      const stored = localStorage.getItem('semantis_playground_temperature');
+      const stored = localStorage.getItem('semantys_playground_temperature');
       return stored !== null ? parseFloat(stored) : 0.2;
     } catch { return 0.2; }
   });
 
   const setModel = useCallback((value: string) => {
     setModelState(value);
-    try { localStorage.setItem('semantis_playground_model', value); } catch {}
+    try { localStorage.setItem('semantys_playground_model', value); } catch {}
   }, []);
 
   const setTemperature = useCallback((value: number) => {
     setTemperatureState(value);
-    try { localStorage.setItem('semantis_playground_temperature', String(value)); } catch {}
+    try { localStorage.setItem('semantys_playground_temperature', String(value)); } catch {}
   }, []);
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [isLoading, setIsLoading] = useState(false);

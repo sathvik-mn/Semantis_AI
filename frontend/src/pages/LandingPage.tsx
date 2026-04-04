@@ -174,7 +174,7 @@ export function LandingPage() {
 
 # Just point your existing OpenAI client at Semantys
 client = openai.OpenAI(
-    base_url="https://api.semantis.ai/v1",
+    base_url="https://api.semantys.ai/v1",
     api_key="sc-your-api-key"
 )
 

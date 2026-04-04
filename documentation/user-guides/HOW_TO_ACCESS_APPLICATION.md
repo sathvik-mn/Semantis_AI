@@ -1,4 +1,4 @@
-# How to Access the Semantis AI Application
+# How to Access the Semantys AI Application
 
 ## 🚀 Quick Access Guide
 
@@ -35,7 +35,7 @@ You should see output like:
 
 1. Open your web browser
 2. Navigate to: **http://localhost:5173**
-3. You should see the Semantis AI dashboard
+3. You should see the Semantys AI dashboard
 
 ### Step 3: Set Up API Key
 

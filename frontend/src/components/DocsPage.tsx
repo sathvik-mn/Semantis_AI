@@ -14,7 +14,7 @@ export function DocsPage() {
     setTimeout(() => setCopiedSection(null), 2000);
   };
 
-  const pythonExample = `from semantis import Client
+  const pythonExample = `from semantys import Client
 
 client = Client(api_key="${apiKey}")
 response = client.chat("Explain reinforcement learning")
@@ -77,7 +77,7 @@ print(response.text)`;
             <strong>Get your API key</strong> — Sign in, go to Settings → API Keys, and generate a key.
           </li>
           <li style={styles.step}>
-            <strong>Install the client</strong> — <code style={styles.inlineCode}>pip install semantis</code> or <code style={styles.inlineCode}>npm install semantis</code>
+            <strong>Install the client</strong> — <code style={styles.inlineCode}>pip install semantys</code> or <code style={styles.inlineCode}>npm install semantys</code>
           </li>
           <li style={styles.step}>
             <strong>Replace your LLM call</strong> — Use the Semantys client instead of direct OpenAI calls (see examples below).

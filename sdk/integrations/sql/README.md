@@ -1,20 +1,20 @@
 # SQL/BI Caching Integration
 
-SQL/BI-optimized caching for Semantis Cache provides specialized caching for natural-language SQL queries and BI applications.
+SQL/BI-optimized caching for Semantys Cache provides specialized caching for natural-language SQL queries and BI applications.
 
 ## Installation
 
 ```bash
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 ## Usage
 
 ```python
-from semantis_cache.integrations.sql import SemantisSQL
+from semantys_cache.integrations.sql import SemantysSQL
 
 # Initialize SQL cache
-sql_cache = SemantisSQL(api_key="sc-your-key")
+sql_cache = SemantysSQL(api_key="sc-your-key")
 
 # Query with schema
 response = sql_cache.query(
@@ -37,9 +37,9 @@ print(f"Cache hit: {response.cache_hit}")
 ## Configuration
 
 ```python
-sql_cache = SemantisSQL(
+sql_cache = SemantysSQL(
     api_key="sc-your-key",
-    base_url="https://api.semantis.ai",  # Optional
+    base_url="https://api.semantys.ai",  # Optional
     model="gpt-4o-mini",  # Optional
     cache_schema=False  # Include schema in cache key
 )

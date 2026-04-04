@@ -1,4 +1,4 @@
-# Semantis AI - Setup Guide
+# Semantys AI - Setup Guide
 
 ## Prerequisites
 

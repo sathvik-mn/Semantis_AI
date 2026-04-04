@@ -23,7 +23,7 @@ VITE_ADMIN_API_KEY=admin-secret-key-change-me
 After setting the environment variable, restart the frontend:
 
 ```powershell
-cd D:\Semantis_AI\frontend
+cd D:\Semantys_AI\frontend
 # Stop current server (Ctrl+C)
 npm run dev
 ```

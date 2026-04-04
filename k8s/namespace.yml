@@ -1,6 +1,6 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: semantis
+  name: semantys
   labels:
-    app: semantis-ai
+    app: semantys-ai

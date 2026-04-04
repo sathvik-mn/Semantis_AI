@@ -3,15 +3,15 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "semantis-cache"
+name = "semantys-cache"
 version = "1.0.0"
-description = "Semantis Cache - Semantic Caching SDK for LLM Applications"
+description = "Semantys Cache - Semantic Caching SDK for LLM Applications"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    {name = "Semantis AI", email = "support@semantis.ai"}
+    {name = "Semantys AI", email = "support@semantys.ai"}
 ]
 keywords = ["semantic caching", "llm", "openai", "cache", "ai", "semantic search"]
 classifiers = [
@@ -30,14 +30,14 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://docs.semantis.ai"
-Source = "https://github.com/semantis-ai/semantis-cache-python"
-Issues = "https://github.com/semantis-ai/semantis-cache-python/issues"
+Documentation = "https://docs.semantys.ai"
+Source = "https://github.com/semantys-ai/semantys-cache-python"
+Issues = "https://github.com/semantys-ai/semantys-cache-python/issues"
 
 [tool.setuptools]
-packages = ["semantis_cache", "semantis_ai"]
+packages = ["semantys_cache", "semantys_ai"]
 
 [tool.setuptools.package-data]
-semantis_cache = ["py.typed"]
-semantis_ai = ["py.typed"]
+semantys_cache = ["py.typed"]
+semantys_ai = ["py.typed"]
 

@@ -1,20 +1,20 @@
 # LlamaIndex Integration
 
-LlamaIndex integration for Semantis Cache provides a LlamaIndex-compatible LLM wrapper with automatic semantic caching.
+LlamaIndex integration for Semantys Cache provides a LlamaIndex-compatible LLM wrapper with automatic semantic caching.
 
 ## Installation
 
 ```bash
-pip install semantis-cache llama-index
+pip install semantys-cache llama-index
 ```
 
 ## Usage
 
 ```python
-from semantis_cache.integrations.llamaindex import SemantisCacheLLM
+from semantys_cache.integrations.llamaindex import SemantysCacheLLM
 
 # Initialize LLM with caching
-llm = SemantisCacheLLM(api_key="sc-your-key")
+llm = SemantysCacheLLM(api_key="sc-your-key")
 
 # Use like any LlamaIndex LLM
 response = llm.complete("What is AI?")
@@ -38,9 +38,9 @@ index = VectorStoreIndex.from_documents(documents, service_context=service_conte
 ## Configuration
 
 ```python
-llm = SemantisCacheLLM(
+llm = SemantysCacheLLM(
     api_key="sc-your-key",
-    base_url="https://api.semantis.ai",  # Optional
+    base_url="https://api.semantys.ai",  # Optional
     model="gpt-4o-mini",  # Optional
     temperature=0.2,  # Optional
     timeout=30.0  # Optional

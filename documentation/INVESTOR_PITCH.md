@@ -1,4 +1,4 @@
-# Semantis AI - Investor Pitch Document
+# Semantys AI - Investor Pitch Document
 
 ## The Problem
 
@@ -12,9 +12,9 @@ Every company using LLMs (GPT-4, Claude, etc.) faces the same issue: **redundant
 
 ---
 
-## What Semantis AI Does
+## What Semantys AI Does
 
-Semantis AI is a **semantic caching layer** that sits between your application and any LLM provider. It intercepts API calls, recognizes when a semantically similar question has been answered before, and returns the cached response in under 50ms instead of making a new $0.01-$0.10 API call.
+Semantys AI is a **semantic caching layer** that sits between your application and any LLM provider. It intercepts API calls, recognizes when a semantically similar question has been answered before, and returns the cached response in under 50ms instead of making a new $0.01-$0.10 API call.
 
 **One line of code. Up to 80% cost reduction. 100x faster responses on cache hits.**
 
@@ -24,19 +24,19 @@ client = openai.OpenAI(api_key="sk-...")
 
 # After (just change the base_url - everything else stays the same)
 client = openai.OpenAI(
-    base_url="https://api.semantis.ai/v1",
+    base_url="https://api.semantys.ai/v1",
     api_key="sc-your-key"
 )
 ```
 
-That's it. Zero code changes. Every existing OpenAI call now goes through Semantis AI's intelligent caching layer.
+That's it. Zero code changes. Every existing OpenAI call now goes through Semantys AI's intelligent caching layer.
 
 ---
 
 ## How It Works (Simple Version)
 
 1. **User sends a query** ("What is machine learning?")
-2. **Semantis checks the cache** using 8 different similarity signals
+2. **Semantys checks the cache** using 8 different similarity signals
 3. **Cache HIT** (found "What is ML?" answered before) -> Returns cached response in <50ms, **free**
 4. **Cache MISS** (truly new question) -> Forwards to OpenAI, caches the response for next time
 
@@ -54,7 +54,7 @@ The intelligence is in step 2. We don't just compare text strings. We understand
 Drop-in replacement for OpenAI's API. Change one URL, keep all existing code. No SDK required (though we offer Python and TypeScript SDKs for advanced use).
 
 ### 2. Multi-Signal Semantic Intelligence
-Unlike competitors that rely on a single similarity metric, Semantis AI uses **8 complementary similarity signals:**
+Unlike competitors that rely on a single similarity metric, Semantys AI uses **8 complementary similarity signals:**
 - Embedding cosine similarity (deep semantic understanding)
 - Character n-gram matching (catches typos and misspellings)
 - Synonym expansion (30 synonym groups, 55+ abbreviation expansions)
@@ -76,10 +76,10 @@ Responses are found through a cascading pipeline optimized for speed:
 | 5 | Query-to-response match | ~50ms | Different questions, same answer needed |
 
 ### 4. Bring Your Own Key (BYOK)
-Companies can use their own OpenAI API key. Semantis only handles the caching layer. This means:
+Companies can use their own OpenAI API key. Semantys only handles the caching layer. This means:
 - No vendor lock-in on the LLM side
 - Companies maintain their existing OpenAI billing relationship
-- Semantis charges only for the caching service
+- Semantys charges only for the caching service
 
 ### 5. Enterprise-Ready Security
 - AES-256-GCM encryption at rest for all cached data
@@ -112,14 +112,14 @@ Real-time dashboard showing:
 | Pro | $49/mo | Startups & SMBs | 100K requests/mo, advanced algorithms, analytics, priority support |
 | Team | Custom | Enterprise | Unlimited requests, SLA, audit logs, dedicated support, custom thresholds |
 
-**2. Token Usage (Semantis Key users)**
+**2. Token Usage (Semantys Key users)**
 - Cache hits are free (the whole point)
 - Cache misses: $0.20/1M prompt tokens + $0.80/1M completion tokens
 - Prepaid credits system with balance tracking
 
 **3. BYOK Model (Margin on caching service)**
 - Users pay their own OpenAI bills
-- Semantis charges only the subscription fee
+- Semantys charges only the subscription fee
 - Lower margin but higher adoption and stickiness
 
 ### Unit Economics
@@ -186,7 +186,7 @@ Real-time dashboard showing:
 
 ## Competitive Landscape
 
-| Feature | Semantis AI | GPTCache (Open Source) | Redis + Manual | Direct LLM Calls |
+| Feature | Semantys AI | GPTCache (Open Source) | Redis + Manual | Direct LLM Calls |
 |---------|------------|----------------------|----------------|-------------------|
 | Setup time | 1 minute | Hours-days | Days-weeks | N/A |
 | Semantic matching | 8 signals, multi-tier | Basic embedding only | None (exact only) | N/A |

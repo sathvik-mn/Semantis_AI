@@ -1,4 +1,4 @@
-# 📦 Publishing Status - Semantis Cache SDK
+# 📦 Publishing Status - Semantys Cache SDK
 
 ## ✅ Python Package (PyPI) - READY FOR PUBLISHING
 
@@ -9,13 +9,13 @@
 - ✅ **Import Tested**
 
 ### Distribution Files
-- `dist/semantis_cache-1.0.0-py3-none-any.whl` (33.47 KB) - Wheel package
-- `dist/semantis-cache-1.0.0.tar.gz` (18.76 KB) - Source distribution
+- `dist/semantys_cache-1.0.0-py3-none-any.whl` (33.47 KB) - Wheel package
+- `dist/semantys-cache-1.0.0.tar.gz` (18.76 KB) - Source distribution
 
 ### Package Details
-- **Name**: `semantis-cache`
+- **Name**: `semantys-cache`
 - **Version**: `1.0.0`
-- **Author**: Semantis AI
+- **Author**: Semantys AI
 - **License**: MIT
 - **Python**: >=3.10
 
@@ -39,8 +39,8 @@
 
 4. **Verify Installation**:
    ```bash
-   pip install semantis-cache
-   python -c "from semantis_cache import SemanticCache; print('OK')"
+   pip install semantys-cache
+   python -c "from semantys_cache import SemanticCache; print('OK')"
    ```
 
 ## ✅ TypeScript Package (npm) - READY FOR PUBLISHING
@@ -52,9 +52,9 @@
 - ✅ **README Created**
 
 ### Package Details
-- **Name**: `semantis-cache`
+- **Name**: `semantys-cache`
 - **Version**: `1.0.0`
-- **Author**: Semantis AI
+- **Author**: Semantys AI
 - **License**: MIT
 
 ### To Publish to npm
@@ -78,8 +78,8 @@
 
 4. **Verify Installation**:
    ```bash
-   npm install semantis-cache
-   node -e "const { SemanticCache } = require('semantis-cache'); console.log('OK')"
+   npm install semantys-cache
+   node -e "const { SemanticCache } = require('semantys-cache'); console.log('OK')"
    ```
 
 ## 📋 Pre-Publishing Checklist
@@ -143,10 +143,10 @@ npm publish
 
 ## 🔗 Useful Links
 
-- **PyPI**: https://pypi.org/project/semantis-cache/
-- **Test PyPI**: https://test.pypi.org/project/semantis-cache/
-- **npm**: https://www.npmjs.com/package/semantis-cache
-- **Documentation**: https://docs.semantis.ai
+- **PyPI**: https://pypi.org/project/semantys-cache/
+- **Test PyPI**: https://test.pypi.org/project/semantys-cache/
+- **npm**: https://www.npmjs.com/package/semantys-cache
+- **Documentation**: https://docs.semantys.ai
 
 ## ✅ Status Summary
 

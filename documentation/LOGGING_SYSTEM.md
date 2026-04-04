@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Semantis AI backend now has a comprehensive, production-ready logging system that captures **all interactions** from both user and application sides.
+The Semantys AI backend now has a comprehensive, production-ready logging system that captures **all interactions** from both user and application sides.
 
 ## Log Files
 

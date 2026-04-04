@@ -1,13 +1,13 @@
 """
-SQL/BI Caching Integration for Semantis Cache
+SQL/BI Caching Integration for Semantys Cache
 
 Provides specialized caching for natural-language SQL queries and BI applications.
 """
 from typing import Optional, Dict, Any
-from semantis import SemantisCache as SemanticCache
+from semantys import SemantysCache as SemanticCache
 
 
-class SemantisSQL:
+class SemantysSQL:
     """
     SQL/BI-optimized caching for semantic cache.
     
@@ -15,9 +15,9 @@ class SemantisSQL:
     and BI applications where similar questions should return cached SQL results.
     
     Example:
-        >>> from semantis_cache.integrations.sql import SemantisSQL
+        >>> from semantys_cache.integrations.sql import SemantysSQL
         >>> 
-        >>> sql_cache = SemantisSQL(api_key="sc-your-key")
+        >>> sql_cache = SemantysSQL(api_key="sc-your-key")
         >>> 
         >>> # Cache SQL queries
         >>> response = sql_cache.query(
@@ -38,7 +38,7 @@ class SemantisSQL:
         Initialize SQL cache.
         
         Args:
-            api_key: Semantis AI API key
+            api_key: Semantys AI API key
             base_url: API base URL (optional)
             model: Model to use (default: "gpt-4o-mini")
             cache_schema: Whether to include schema in cache key (default: False)

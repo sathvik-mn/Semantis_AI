@@ -10,7 +10,7 @@ services:
     environment:
       - REDIS_URL=${REDIS_URL}
       - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_INDEX=${PINECONE_INDEX:-semantis}
+      - PINECONE_INDEX=${PINECONE_INDEX:-semantys}
       - SENTRY_DSN=${SENTRY_DSN}
       - RESEND_API_KEY=${RESEND_API_KEY}
     volumes:

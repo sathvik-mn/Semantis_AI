@@ -1,20 +1,20 @@
 # RAG Integration
 
-RAG-optimized caching for Semantis Cache provides specialized caching for RAG applications.
+RAG-optimized caching for Semantys Cache provides specialized caching for RAG applications.
 
 ## Installation
 
 ```bash
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 ## Usage
 
 ```python
-from semantis_cache.integrations.rag import SemantisRAG
+from semantys_cache.integrations.rag import SemantysRAG
 
 # Initialize RAG cache
-rag = SemantisRAG(api_key="sc-your-key")
+rag = SemantysRAG(api_key="sc-your-key")
 
 # Query with context
 context = [
@@ -42,9 +42,9 @@ print(f"Cache hit: {response.cache_hit}")
 ## Configuration
 
 ```python
-rag = SemantisRAG(
+rag = SemantysRAG(
     api_key="sc-your-key",
-    base_url="https://api.semantis.ai",  # Optional
+    base_url="https://api.semantys.ai",  # Optional
     model="gpt-4o-mini",  # Optional
     cache_context=True  # Include context in cache key
 )

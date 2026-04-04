@@ -1,11 +1,11 @@
 """
-Semantis Cache - Semantic Caching SDK
+Semantys Cache - Semantic Caching SDK
 
 Easy-to-use SDK for semantic caching in LLM applications.
 Provides OpenAI-compatible interface with automatic caching.
 
 Example - Simple Query:
-    >>> from semantis_cache import SemanticCache
+    >>> from semantys_cache import SemanticCache
     >>> 
     >>> cache = SemanticCache(api_key="sc-your-key")
     >>> response = cache.query("What is our refund policy?")
@@ -20,7 +20,7 @@ Example - OpenAI-Compatible:
     >>> print(response.choices[0].message.content)
 
 Example - OpenAI Proxy (Drop-in Replacement):
-    >>> from semantis_cache.openai_proxy import ChatCompletion
+    >>> from semantys_cache.openai_proxy import ChatCompletion
     >>> response = ChatCompletion.create(
     ...     model="gpt-4o-mini",
     ...     messages=[{"role": "user", "content": "What is AI?"}]

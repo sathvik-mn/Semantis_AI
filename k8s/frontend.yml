@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: semantis-frontend
-  namespace: semantis
+  name: semantys-frontend
+  namespace: semantys
   labels:
-    app: semantis-frontend
+    app: semantys-frontend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: semantis-frontend
+      app: semantys-frontend
   template:
     metadata:
       labels:
-        app: semantis-frontend
+        app: semantys-frontend
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/sathvik-mn/semantis-frontend:latest
+          image: ghcr.io/sathvik-mn/semantys-frontend:latest
           ports:
             - containerPort: 80
           resources:
@@ -38,10 +38,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend-svc
-  namespace: semantis
+  namespace: semantys
 spec:
   selector:
-    app: semantis-frontend
+    app: semantys-frontend
   ports:
     - port: 80
       targetPort: 80

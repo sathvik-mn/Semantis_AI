@@ -1,4 +1,4 @@
-# Semantis AI - Detailed Product Requirements Document (PRD)
+# Semantys AI - Detailed Product Requirements Document (PRD)
 
 **Version:** 1.0  
 **Date:** 2025-01-27  
@@ -28,7 +28,7 @@
 
 ## Executive Summary
 
-**Semantis AI** is a production-ready SaaS platform providing a developer-friendly semantic caching layer for Large Language Model (LLM) applications. The platform reduces LLM costs by 50-70% and improves response latency through intelligent semantic caching, multi-tenant isolation, and OpenAI-compatible APIs.
+**Semantys AI** is a production-ready SaaS platform providing a developer-friendly semantic caching layer for Large Language Model (LLM) applications. The platform reduces LLM costs by 50-70% and improves response latency through intelligent semantic caching, multi-tenant isolation, and OpenAI-compatible APIs.
 
 ### Key Value Propositions
 
@@ -43,9 +43,9 @@
 
 ## Product Overview
 
-### What is Semantis AI?
+### What is Semantys AI?
 
-Semantis AI is a semantic caching service that sits between your application and OpenAI's API. It intelligently caches LLM responses based on semantic similarity, allowing similar queries to reuse cached responses without calling the LLM again.
+Semantys AI is a semantic caching service that sits between your application and OpenAI's API. It intelligently caches LLM responses based on semantic similarity, allowing similar queries to reuse cached responses without calling the LLM again.
 
 ### Target Users
 
@@ -107,7 +107,7 @@ Semantis AI is a semantic caching service that sits between your application and
 #### 3.1 OpenAI Key Management
 - **Encrypted Storage**: Fernet symmetric encryption for OpenAI API keys
 - **User-Specific Keys**: Each user provides their own OpenAI API key
-- **Privacy**: Semantis AI never sees user queries or responses
+- **Privacy**: Semantys AI never sees user queries or responses
 - **Cost Tracking**: Users track their own OpenAI usage and costs
 
 #### 3.2 Key Operations
@@ -513,7 +513,7 @@ Semantis AI is a semantic caching service that sits between your application and
 
 #### 1.1 Simple Query Method
 ```python
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
 cache = SemanticCache(api_key="sc-your-key")
 response = cache.query("What is our refund policy?")
@@ -523,7 +523,7 @@ print(f"Cache hit: {response.cache_hit}")  # 'exact', 'semantic', or 'miss'
 
 #### 1.2 OpenAI Proxy Module
 ```python
-from semantis_cache.openai_proxy import ChatCompletion
+from semantys_cache.openai_proxy import ChatCompletion
 
 response = ChatCompletion.create(
     model="gpt-4o-mini",
@@ -542,7 +542,7 @@ response = ChatCompletion.create(
 
 #### 2.1 Basic Usage
 ```typescript
-import { SemanticCache } from 'semantis-cache';
+import { SemanticCache } from 'semantys-cache';
 
 const cache = new SemanticCache({ apiKey: 'sc-your-key' });
 const response = await cache.query('What is AI?');
@@ -559,30 +559,30 @@ console.log(response.answer);
 
 #### 3.1 LangChain Integration
 ```python
-from semantis_cache.integrations.langchain import SemantisCacheLLM
+from semantys_cache.integrations.langchain import SemantysCacheLLM
 
-llm = SemantisCacheLLM(api_key="sc-your-key")
+llm = SemantysCacheLLM(api_key="sc-your-key")
 response = llm("What is Python?")
 ```
 
 #### 3.2 LlamaIndex Integration
 ```python
-from semantis_cache.integrations.llamaindex import SemantisCacheLLM
+from semantys_cache.integrations.llamaindex import SemantysCacheLLM
 
-llm = SemantisCacheLLM(api_key="sc-your-key")
+llm = SemantysCacheLLM(api_key="sc-your-key")
 response = llm.complete("What is Python?")
 ```
 
 #### 3.3 FastAPI Middleware
 ```python
-from semantis_cache.integrations.fastapi import SemanticCacheMiddleware
+from semantys_cache.integrations.fastapi import SemanticCacheMiddleware
 
 app.add_middleware(SemanticCacheMiddleware, api_key="sc-your-key")
 ```
 
 #### 3.4 Express Middleware
 ```javascript
-const semanticCacheMiddleware = require('semantis-cache/integrations/express');
+const semanticCacheMiddleware = require('semantys-cache/integrations/express');
 
 app.use(semanticCacheMiddleware({ apiKey: 'sc-your-key' }));
 ```
@@ -920,7 +920,7 @@ frontend/
 #### Python SDK Structure
 ```
 sdk/python-wrapper/
-├── semantis_cache/
+├── semantys_cache/
 │   ├── __init__.py
 │   ├── query.py              # Simple query method
 │   ├── openai_proxy.py       # OpenAI-compatible proxy
@@ -1198,7 +1198,7 @@ VITE_BACKEND_URL=http://localhost:8000
 
 **Status**: ✅ **Production Ready**
 
-This PRD documents the complete Semantis AI platform as implemented. All features described are functional and tested. The platform is ready for MVP launch and can be used with testing tools like TestSprite MCP for validation.
+This PRD documents the complete Semantys AI platform as implemented. All features described are functional and tested. The platform is ready for MVP launch and can be used with testing tools like TestSprite MCP for validation.
 
 ---
 

@@ -1,5 +1,5 @@
 """
-Simple SQL migration runner for Semantis AI.
+Simple SQL migration runner for Semantys AI.
 
 Uses a `schema_migrations` table to track which migrations have been applied.
 Migrations are numbered SQL files in the migrations/ directory.

@@ -102,7 +102,7 @@ jobs:
             ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_PREFIX }}/frontend:latest
             ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_PREFIX }}/frontend:${{ github.sha }}
           build-args: |
-            VITE_BACKEND_URL=${{ vars.VITE_BACKEND_URL || 'https://api.semantis.ai' }}
+            VITE_BACKEND_URL=${{ vars.VITE_BACKEND_URL || 'https://api.semantys.ai' }}
             VITE_SUPABASE_URL=${{ vars.VITE_SUPABASE_URL }}
             VITE_SUPABASE_ANON_KEY=${{ vars.VITE_SUPABASE_ANON_KEY }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}

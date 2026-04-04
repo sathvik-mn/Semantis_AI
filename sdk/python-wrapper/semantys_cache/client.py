@@ -1,5 +1,5 @@
 """
-Semantis AI Client - OpenAI-compatible interface with automatic caching
+Semantys AI Client - OpenAI-compatible interface with automatic caching
 """
 import os
 import sys
@@ -9,11 +9,11 @@ from typing import Optional
 # Try to import OpenAPI client from bundled package first, then from installed package
 try:
     # Try bundled OpenAPI client (in same package)
-    from .semantis_ai_semantic_cache_api_client import Client as OpenAPIClient
-    from .semantis_ai_semantic_cache_api_client.api.default import (
+    from .semantys_ai_semantic_cache_api_client import Client as OpenAPIClient
+    from .semantys_ai_semantic_cache_api_client.api.default import (
         openai_compatible_v1_chat_completions_post
     )
-    from .semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+    from .semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
 except ImportError:
     # Fallback 1: Try from parent directory (development)
     try:
@@ -21,19 +21,19 @@ except ImportError:
         _openapi_client_path = _parent_dir / "python" / "src"
         if _openapi_client_path.exists():
             sys.path.insert(0, str(_openapi_client_path))
-        from semantis_ai_semantic_cache_api_client import Client as OpenAPIClient
-        from semantis_ai_semantic_cache_api_client.api.default import (
+        from semantys_ai_semantic_cache_api_client import Client as OpenAPIClient
+        from semantys_ai_semantic_cache_api_client.api.default import (
             openai_compatible_v1_chat_completions_post
         )
-        from semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+        from semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
     except ImportError:
         # Fallback 2: Try from installed package
         try:
-            from semantis_ai_semantic_cache_api_client import Client as OpenAPIClient
-            from semantis_ai_semantic_cache_api_client.api.default import (
+            from semantys_ai_semantic_cache_api_client import Client as OpenAPIClient
+            from semantys_ai_semantic_cache_api_client.api.default import (
                 openai_compatible_v1_chat_completions_post
             )
-            from semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+            from semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
         except ImportError:
             OpenAPIClient = None
             openai_compatible_v1_chat_completions_post = None
@@ -54,13 +54,13 @@ class ChatCompletionsWrapper:
 
 class SemanticCache:
     """
-    Semantis AI Semantic Cache Client
+    Semantys AI Semantic Cache Client
     
     Provides OpenAI-compatible interface with automatic semantic caching.
     Caching is transparent - customers don't need to think about it.
     
     Example - Simple Query:
-        >>> from semantis_ai import SemanticCache
+        >>> from semantys_ai import SemanticCache
         >>> 
         >>> cache = SemanticCache(api_key="sc-your-key")
         >>> 
@@ -86,12 +86,12 @@ class SemanticCache:
         timeout: Optional[float] = None,
     ):
         """
-        Initialize Semantis AI client.
+        Initialize Semantys AI client.
         
         Args:
-            api_key: Your Semantis AI API key (format: sc-{tenant}-{anything})
-                    If not provided, will try to get from SEMANTIS_API_KEY env var
-            base_url: API base URL (default: https://api.semantis.ai or http://localhost:8000 for dev)
+            api_key: Your Semantys AI API key (format: sc-{tenant}-{anything})
+                    If not provided, will try to get from SEMANTYS_API_KEY env var
+            base_url: API base URL (default: https://api.semantys.ai or http://localhost:8000 for dev)
             timeout: Request timeout in seconds (default: 30.0)
         """
         if OpenAPIClient is None:
@@ -102,15 +102,15 @@ class SemanticCache:
         
         # Get API key from env if not provided
         if api_key is None:
-            api_key = os.getenv("SEMANTIS_API_KEY")
+            api_key = os.getenv("SEMANTYS_API_KEY")
             if api_key is None:
                 raise ValueError(
-                    "API key is required. Provide it as argument or set SEMANTIS_API_KEY environment variable."
+                    "API key is required. Provide it as argument or set SEMANTYS_API_KEY environment variable."
                 )
         
         # Set default base URL
         if base_url is None:
-            base_url = os.getenv("SEMANTIS_API_URL", "http://localhost:8000")
+            base_url = os.getenv("SEMANTYS_API_URL", "http://localhost:8000")
         
         # Ensure API key has Bearer prefix
         if not api_key.startswith("Bearer "):

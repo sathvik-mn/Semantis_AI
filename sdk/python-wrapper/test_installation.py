@@ -12,35 +12,35 @@ def test_import():
     """Test that all imports work"""
     print("Testing imports...")
     try:
-        from semantis_cache import SemanticCache, ChatCompletion, __version__
-        print(f"  [OK] semantis_cache imported successfully (v{__version__})")
+        from semantys_cache import SemanticCache, ChatCompletion, __version__
+        print(f"  [OK] semantys_cache imported successfully (v{__version__})")
     except ImportError as e:
-        print(f"  [FAIL] Failed to import semantis_cache: {e}")
+        print(f"  [FAIL] Failed to import semantys_cache: {e}")
         return False
     
     try:
-        from semantis_cache.openai_proxy import ChatCompletion as ProxyChatCompletion
+        from semantys_cache.openai_proxy import ChatCompletion as ProxyChatCompletion
         print("  [OK] OpenAI proxy imported successfully")
     except ImportError as e:
         print(f"  [FAIL] Failed to import OpenAI proxy: {e}")
         return False
     
     try:
-        from semantis_cache.client import SemanticCache
+        from semantys_cache.client import SemanticCache
         print("  [OK] Client module imported successfully")
     except ImportError as e:
         print(f"  [FAIL] Failed to import client: {e}")
         return False
     
     try:
-        from semantis_cache.chat import ChatCompletions
+        from semantys_cache.chat import ChatCompletions
         print("  [OK] Chat module imported successfully")
     except ImportError as e:
         print(f"  [FAIL] Failed to import chat: {e}")
         return False
     
     try:
-        from semantis_cache.query import SimpleQuery
+        from semantys_cache.query import SimpleQuery
         print("  [OK] Query module imported successfully")
     except ImportError as e:
         print(f"  [FAIL] Failed to import query: {e}")
@@ -52,7 +52,7 @@ def test_initialization():
     """Test SDK initialization"""
     print("\nTesting initialization...")
     try:
-        from semantis_cache import SemanticCache
+        from semantys_cache import SemanticCache
         
         # Test with API key
         cache = SemanticCache(api_key="sc-test-key-12345")
@@ -84,7 +84,7 @@ def test_openai_proxy():
     """Test OpenAI proxy interface"""
     print("\nTesting OpenAI proxy...")
     try:
-        from semantis_cache.openai_proxy import ChatCompletion
+        from semantys_cache.openai_proxy import ChatCompletion
         
         # Test that ChatCompletion.create exists
         assert hasattr(ChatCompletion, 'create'), "ChatCompletion.create should exist"
@@ -101,16 +101,16 @@ def test_package_structure():
     """Test that package structure is correct"""
     print("\nTesting package structure...")
     try:
-        import semantis_cache
-        import semantis_cache.semantis_ai_semantic_cache_api_client
+        import semantys_cache
+        import semantys_cache.semantys_ai_semantic_cache_api_client
         
         # Check that OpenAPI client is bundled
-        assert hasattr(semantis_cache, 'semantis_ai_semantic_cache_api_client'), \
+        assert hasattr(semantys_cache, 'semantys_ai_semantic_cache_api_client'), \
             "OpenAPI client should be bundled"
         print("  [OK] OpenAPI client is bundled")
         
         # Check that models are accessible
-        from semantis_cache.semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+        from semantys_cache.semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
         print("  [OK] Models are accessible")
         
         return True
@@ -124,7 +124,7 @@ def test_version():
     """Test version information"""
     print("\nTesting version...")
     try:
-        from semantis_cache import __version__
+        from semantys_cache import __version__
         assert __version__ == "1.0.0", f"Expected version 1.0.0, got {__version__}"
         print(f"  [OK] Version is correct: {__version__}")
         return True

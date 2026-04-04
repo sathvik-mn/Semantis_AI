@@ -1,13 +1,13 @@
 """
-RAG-optimized caching for Semantis Cache
+RAG-optimized caching for Semantys Cache
 
 Provides specialized caching for RAG applications that combine context and questions.
 """
 from typing import List, Optional, Dict, Any
-from semantis import SemantisCache as SemanticCache
+from semantys import SemantysCache as SemanticCache
 
 
-class SemantisRAG:
+class SemantysRAG:
     """
     RAG-optimized caching for semantic cache.
     
@@ -15,9 +15,9 @@ class SemantisRAG:
     queries combine context (retrieved documents) with questions.
     
     Example:
-        >>> from semantis_cache.integrations.rag import SemantisRAG
+        >>> from semantys_cache.integrations.rag import SemantysRAG
         >>> 
-        >>> rag = SemantisRAG(api_key="sc-your-key")
+        >>> rag = SemantysRAG(api_key="sc-your-key")
         >>> 
         >>> # Cache RAG queries with context
         >>> context = ["Document 1 content...", "Document 2 content..."]
@@ -39,7 +39,7 @@ class SemantisRAG:
         Initialize RAG cache.
         
         Args:
-            api_key: Semantis AI API key
+            api_key: Semantys AI API key
             base_url: API base URL (optional)
             model: Model to use (default: "gpt-4o-mini")
             cache_context: Whether to include context in cache key (default: True)

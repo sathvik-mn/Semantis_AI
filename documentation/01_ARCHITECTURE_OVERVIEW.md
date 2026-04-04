@@ -1,8 +1,8 @@
-# Semantis AI — Architecture & System Overview
+# Semantys AI — Architecture & System Overview
 
-## What is Semantis AI?
+## What is Semantys AI?
 
-Semantis AI is a production-ready SaaS **semantic caching gateway** that sits between applications and the OpenAI API. It intercepts LLM requests, checks if a semantically similar question has been asked before, and returns the cached response — saving both cost and latency.
+Semantys AI is a production-ready SaaS **semantic caching gateway** that sits between applications and the OpenAI API. It intercepts LLM requests, checks if a semantically similar question has been asked before, and returns the cached response — saving both cost and latency.
 
 **Core value proposition:** Reduce LLM API costs by 50–70% and cut latency from 2–5 seconds (live LLM calls) to sub-millisecond (cache hits), with zero code changes required — just swap one import line.
 
@@ -15,13 +15,13 @@ Semantis AI is a production-ready SaaS **semantic caching gateway** that sits be
 │                        CLIENT APPLICATION                        │
 │  (Python / TypeScript / Any HTTP client)                         │
 │                                                                   │
-│  from semantis_cache import ChatCompletion  ← drop-in replace    │
+│  from semantys_cache import ChatCompletion  ← drop-in replace    │
 │  ChatCompletion.create(model="gpt-4o-mini", messages=[...])      │
 └──────────────────────────┬───────────────────────────────────────┘
                            │ POST /v1/chat/completions
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                     SEMANTIS AI GATEWAY                           │
+│                     SEMANTYS AI GATEWAY                           │
 │                                                                   │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
 │  │ Auth Layer   │→│ Rate Limiter  │→│  Input Validation      │  │
@@ -71,10 +71,10 @@ Semantis AI is a production-ready SaaS **semantic caching gateway** that sits be
 | **Cache Layer** | Redis (L2 cache) |
 | **Auth** | Supabase Auth (PKCE flow, JWT) |
 | **Payments** | Stripe (subscriptions + credits) |
-| **SDKs** | Python (`semantis-cache` on PyPI), TypeScript (`semantis-cache` on npm) |
+| **SDKs** | Python (`semantys-cache` on PyPI), TypeScript (`semantys-cache` on npm) |
 | **Monitoring** | Prometheus metrics, Sentry error tracking, PostHog analytics |
 | **Deployment** | Docker Compose, Kubernetes (with Ingress, Fluent Bit, Prometheus) |
-| **Domains** | `api.semantis.ai` (backend), `app.semantis.ai` (frontend) |
+| **Domains** | `api.semantys.ai` (backend), `app.semantys.ai` (frontend) |
 
 ---
 
@@ -120,18 +120,18 @@ Every user gets full isolation:
 ### How Credits Work
 
 - **Cache hits are always free** — no credits deducted
-- **Cache misses (non-BYOK)**: charged per token at Semantis rates:
+- **Cache misses (non-BYOK)**: charged per token at Semantys rates:
   - Prompt tokens: $0.20 / 1M tokens
   - Completion tokens: $0.80 / 1M tokens
-- **BYOK users pay $0** to Semantis — they pay OpenAI directly with their own key
+- **BYOK users pay $0** to Semantys — they pay OpenAI directly with their own key
 - If `credits_balance <= 0` for a non-BYOK user → HTTP 402 (payment required)
 
 ### BYOK (Bring Your Own Key)
 
 Users can store their own OpenAI API key (encrypted with Fernet/PBKDF2HMAC at rest). When set:
 - LLM calls use the user's key directly
-- No token charges from Semantis
-- Semantis never stores the plaintext key
+- No token charges from Semantys
+- Semantys never stores the plaintext key
 
 ---
 
@@ -145,7 +145,7 @@ Two independent encryption systems:
 
 2. **Cache Entry Encryption** (AES-256-GCM per-tenant)
    - Master key: `CACHE_ENCRYPTION_KEY` (32 bytes)
-   - Per-tenant key: HKDF(SHA256, salt=`"semantis-cache-v1"`, info=`tenant_id`)
+   - Per-tenant key: HKDF(SHA256, salt=`"semantys-cache-v1"`, info=`tenant_id`)
    - Format: `"ENC:" + base64(nonce[12] + ciphertext + tag[16])`
    - Optional — only activates if master key is set
 
@@ -173,7 +173,7 @@ Two independent encryption systems:
 ## File Map
 
 ```
-Semantis_AI/
+Semantys_AI/
 ├── backend/
 │   ├── semantic_cache_server.py   # Main app: FastAPI, all endpoints, cache engine
 │   ├── database.py                # All DB access, connection pool, credits, audit
@@ -199,8 +199,8 @@ Semantis_AI/
 │   │   └── lib/                   # Supabase client init
 │   └── .env                       # Frontend env vars (VITE_*)
 ├── sdk/
-│   ├── python-wrapper/            # PyPI package: semantis-cache
-│   ├── typescript/                # npm package: semantis-cache
+│   ├── python-wrapper/            # PyPI package: semantys-cache
+│   ├── typescript/                # npm package: semantys-cache
 │   └── integrations/              # LangChain, FastAPI, Django, Express, etc.
 ├── k8s/                           # Kubernetes manifests
 ├── docker-compose.yml             # Local/production Docker setup

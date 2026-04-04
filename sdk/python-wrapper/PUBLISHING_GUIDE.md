@@ -1,4 +1,4 @@
-# Publishing Guide for Semantis Cache SDK
+# Publishing Guide for Semantys Cache SDK
 
 ## ✅ Package Build Status
 
@@ -7,14 +7,14 @@ The package has been built successfully! Distribution files are in `dist/` direc
 ## 📦 Python Package (PyPI)
 
 ### Pre-built Files
-- `dist/semantis-cache-1.0.0.tar.gz` (source distribution)
-- `dist/semantis_cache-1.0.0-py3-none-any.whl` (wheel)
+- `dist/semantys-cache-1.0.0.tar.gz` (source distribution)
+- `dist/semantys_cache-1.0.0-py3-none-any.whl` (wheel)
 
 ### Test Installation (Local)
 
 ```bash
 # Install from local build
-pip install dist/semantis_cache-1.0.0-py3-none-any.whl
+pip install dist/semantys_cache-1.0.0-py3-none-any.whl
 
 # Or install in development mode
 pip install -e .
@@ -36,7 +36,7 @@ cd sdk/python-wrapper
 twine upload --repository testpypi dist/*
 
 # Test install from Test PyPI
-pip install --index-url https://test.pypi.org/simple/ semantis-cache
+pip install --index-url https://test.pypi.org/simple/ semantys-cache
 ```
 
 #### Production PyPI
@@ -48,7 +48,7 @@ cd sdk/python-wrapper
 twine upload dist/*
 
 # Install from PyPI
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 #### Environment Variables for Publishing
@@ -68,11 +68,11 @@ export TWINE_PASSWORD=pypi-<your-api-token>
 
 ```bash
 # Check package on PyPI
-# Visit: https://pypi.org/project/semantis-cache/
+# Visit: https://pypi.org/project/semantys-cache/
 
 # Install and test
-pip install semantis-cache
-python -c "from semantis_cache import SemanticCache; print('OK')"
+pip install semantys-cache
+python -c "from semantys_cache import SemanticCache; print('OK')"
 ```
 
 ## 📦 TypeScript Package (npm)
@@ -101,7 +101,7 @@ cd sdk/typescript
 
 # Test locally first
 npm pack
-npm install semantis-cache-1.0.0.tgz
+npm install semantys-cache-1.0.0.tgz
 
 # Publish to npm
 npm publish
@@ -114,11 +114,11 @@ npm publish --tag beta
 
 ```bash
 # Check package on npm
-# Visit: https://www.npmjs.com/package/semantis-cache
+# Visit: https://www.npmjs.com/package/semantys-cache
 
 # Install and test
-npm install semantis-cache
-node -e "const { SemanticCache } = require('semantis-cache'); console.log('OK')"
+npm install semantys-cache
+node -e "const { SemanticCache } = require('semantys-cache'); console.log('OK')"
 ```
 
 ## 🔄 Update Version
@@ -128,7 +128,7 @@ node -e "const { SemanticCache } = require('semantis-cache'); console.log('OK')"
 1. Update version in:
    - `setup.py`: `version="1.0.1"`
    - `pyproject.toml`: `version = "1.0.1"`
-   - `semantis_cache/__init__.py`: `__version__ = "1.0.1"`
+   - `semantys_cache/__init__.py`: `__version__ = "1.0.1"`
 
 2. Rebuild and publish:
    ```bash
@@ -163,7 +163,7 @@ node -e "const { SemanticCache } = require('semantis-cache'); console.log('OK')"
 - [ ] License file included (MIT)
 - [ ] Package builds successfully
 - [ ] Local installation works
-- [ ] Import works: `from semantis_cache import SemanticCache`
+- [ ] Import works: `from semantys_cache import SemanticCache`
 - [ ] Basic functionality tested
 - [ ] API tokens/credentials ready
 - [ ] Test PyPI/npm tested first (recommended)
@@ -173,15 +173,15 @@ node -e "const { SemanticCache } = require('semantis-cache'); console.log('OK')"
 ### Python
 
 ```bash
-pip install semantis-cache
-python -c "from semantis_cache import SemanticCache; print('Installed successfully!')"
+pip install semantys-cache
+python -c "from semantys_cache import SemanticCache; print('Installed successfully!')"
 ```
 
 ### TypeScript
 
 ```bash
-npm install semantis-cache
-node -e "const { SemanticCache } = require('semantis-cache'); console.log('Installed successfully!')"
+npm install semantys-cache
+node -e "const { SemanticCache } = require('semantys-cache'); console.log('Installed successfully!')"
 ```
 
 ## 📞 Support

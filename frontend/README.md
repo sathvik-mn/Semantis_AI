@@ -1,4 +1,4 @@
-# Semantis AI Frontend Dashboard
+# Semantys AI Frontend Dashboard
 
 A premium, developer-first dashboard for monitoring and managing semantic cache performance for LLM APIs.
 

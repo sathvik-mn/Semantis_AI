@@ -14,15 +14,15 @@ const randomColors = (count: number): string[] =>
     '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')
   );
 
-const SEMANTIS_TUBE_COLORS = ['#a78bfa', '#7c3aed', '#6d6875'];
-const SEMANTIS_LIGHT_COLORS = ['#c4b5fd', '#a78bfa', '#7c3aed', '#6d6875'];
+const SEMANTYS_TUBE_COLORS = ['#a78bfa', '#7c3aed', '#6d6875'];
+const SEMANTYS_LIGHT_COLORS = ['#c4b5fd', '#a78bfa', '#7c3aed', '#6d6875'];
 
 export function TubesBackground({
   children,
   className,
   enableClickInteraction = true,
-  tubeColors = SEMANTIS_TUBE_COLORS,
-  lightColors = SEMANTIS_LIGHT_COLORS,
+  tubeColors = SEMANTYS_TUBE_COLORS,
+  lightColors = SEMANTYS_LIGHT_COLORS,
   lightIntensity = 200,
 }: TubesBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

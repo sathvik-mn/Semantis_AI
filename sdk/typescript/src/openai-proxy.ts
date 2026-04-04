@@ -2,8 +2,8 @@
  * OpenAI Proxy — drop-in replacement for the OpenAI SDK.
  *
  * Usage:
- *   import { SemantisOpenAI } from 'semantis-cache/openai-proxy';
- *   const client = new SemantisOpenAI({ apiKey: 'sc-...' });
+ *   import { SemantysOpenAI } from 'semantys-cache/openai-proxy';
+ *   const client = new SemantysOpenAI({ apiKey: 'sc-...' });
  *   const resp = await client.chat.completions.create({ ... });
  */
 
@@ -14,7 +14,7 @@ import {
   SemanticCacheOptions,
 } from './index';
 
-export class SemantisOpenAI {
+export class SemantysOpenAI {
   private cache: SemanticCache;
   chat: { completions: { create: (req: ChatCompletionRequest) => Promise<ChatCompletionResponse> } };
 
@@ -29,4 +29,4 @@ export class SemantisOpenAI {
   }
 }
 
-export default SemantisOpenAI;
+export default SemantysOpenAI;

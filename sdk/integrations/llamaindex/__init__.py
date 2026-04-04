@@ -1,10 +1,10 @@
 """
-LlamaIndex Integration for Semantis Cache
+LlamaIndex Integration for Semantys Cache
 
 Provides LlamaIndex LLM wrapper for semantic caching.
 """
 
-from .semantis_cache_llm import SemantisCacheLLM
+from .semantys_cache_llm import SemantysCacheLLM
 
-__all__ = ["SemantisCacheLLM"]
+__all__ = ["SemantysCacheLLM"]
 

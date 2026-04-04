@@ -1,20 +1,20 @@
 # LangChain Integration
 
-LangChain integration for Semantis Cache provides a LangChain-compatible LLM wrapper with automatic semantic caching.
+LangChain integration for Semantys Cache provides a LangChain-compatible LLM wrapper with automatic semantic caching.
 
 ## Installation
 
 ```bash
-pip install semantis-cache langchain
+pip install semantys-cache langchain
 ```
 
 ## Usage
 
 ```python
-from semantis_cache.integrations.langchain import SemantisCacheLLM
+from semantys_cache.integrations.langchain import SemantysCacheLLM
 
 # Initialize LLM with caching
-llm = SemantisCacheLLM(api_key="sc-your-key")
+llm = SemantysCacheLLM(api_key="sc-your-key")
 
 # Use like any LangChain LLM
 response = llm("What is AI?")
@@ -45,9 +45,9 @@ print(result)
 ## Configuration
 
 ```python
-llm = SemantisCacheLLM(
+llm = SemantysCacheLLM(
     api_key="sc-your-key",
-    base_url="https://api.semantis.ai",  # Optional
+    base_url="https://api.semantys.ai",  # Optional
     model="gpt-4o-mini",  # Optional
     temperature=0.2,  # Optional
     timeout=30.0  # Optional

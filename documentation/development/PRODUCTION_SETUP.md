@@ -2,19 +2,19 @@
 
 ## Overview
 
-This guide explains how to make your Semantis AI service **truly production-ready** for customers.
+This guide explains how to make your Semantys AI service **truly production-ready** for customers.
 
 ## 🎯 Goal: Industry-Ready SDK
 
 Customers should be able to:
 ```bash
 # Just install and use - no manual setup!
-pip install semantis-ai
+pip install semantys-ai
 ```
 
 ```python
 # Simple, clean API
-from semantis_ai import SemanticCache
+from semantys_ai import SemanticCache
 
 cache = SemanticCache(api_key="sc-your-key")
 response = cache.chat.completions.create(
@@ -42,7 +42,7 @@ response = cache.chat.completions.create(
 
 3. **Install from PyPI**
    ```bash
-   pip install semantis-ai
+   pip install semantys-ai
    ```
 
 ### TypeScript/JavaScript SDK (Priority 2)
@@ -50,7 +50,7 @@ response = cache.chat.completions.create(
 1. **Generate TypeScript SDK**
    ```bash
    openapi-generator-cli generate \
-     -i https://api.semantis.ai/openapi.json \
+     -i https://api.semantys.ai/openapi.json \
      -g typescript-axios \
      -o sdk/typescript
    ```
@@ -63,7 +63,7 @@ response = cache.chat.completions.create(
 
 3. **Install from npm**
    ```bash
-   npm install semantis-ai
+   npm install semantys-ai
    ```
 
 ## 🏗️ Step 2: Production Infrastructure
@@ -218,5 +218,5 @@ response = cache.chat.completions.create(
 
 ---
 
-**Goal**: Customers should be able to `pip install semantis-ai` and start using it immediately with zero configuration!
+**Goal**: Customers should be able to `pip install semantys-ai` and start using it immediately with zero configuration!
 

@@ -1,8 +1,8 @@
-# Semantis AI - Technical Architecture Document
+# Semantys AI - Technical Architecture Document
 
 ## System Overview
 
-Semantis AI is a multi-tenant semantic caching platform for LLM applications. It intercepts API calls between client applications and LLM providers, detects semantically similar queries that have been answered before, and returns cached responses with sub-50ms latency.
+Semantys AI is a multi-tenant semantic caching platform for LLM applications. It intercepts API calls between client applications and LLM providers, detects semantically similar queries that have been answered before, and returns cached responses with sub-50ms latency.
 
 ```
                         +------------------+

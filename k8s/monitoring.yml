@@ -1,16 +1,16 @@
-# Prometheus scrape config for Semantis backend
+# Prometheus scrape config for Semantys backend
 # Deploy alongside your Prometheus Operator or standalone Prometheus
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: semantis-backend-monitor
-  namespace: semantis
+  name: semantys-backend-monitor
+  namespace: semantys
   labels:
     release: prometheus
 spec:
   selector:
     matchLabels:
-      app: semantis-backend
+      app: semantys-backend
   endpoints:
     - port: "8000"
       path: /prometheus/metrics
@@ -21,13 +21,13 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: semantis-alerts
-  namespace: semantis
+  name: semantys-alerts
+  namespace: semantys
   labels:
     release: prometheus
 spec:
   groups:
-    - name: semantis.rules
+    - name: semantys.rules
       rules:
         - alert: HighErrorRate
           expr: |
@@ -38,7 +38,7 @@ spec:
             severity: critical
           annotations:
             summary: "High 5xx error rate (>5%)"
-            description: "Semantis API returning >5% server errors over last 5 minutes."
+            description: "Semantys API returning >5% server errors over last 5 minutes."
 
         - alert: HighLatency
           expr: |
@@ -71,10 +71,10 @@ spec:
             description: "Consider scaling up or reviewing cache entry count."
 
         - alert: BackendDown
-          expr: up{job="semantis-backend"} == 0
+          expr: up{job="semantys-backend"} == 0
           for: 2m
           labels:
             severity: critical
           annotations:
-            summary: "Semantis backend is down"
+            summary: "Semantys backend is down"
             description: "Backend has been unreachable for 2 minutes."

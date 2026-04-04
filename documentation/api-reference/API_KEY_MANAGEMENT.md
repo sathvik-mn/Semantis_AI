@@ -2,7 +2,7 @@
 
 ## 🔐 Overview
 
-Semantis AI uses a simple but effective API key system for multi-tenant authentication. Each API key follows the format:
+Semantys AI uses a simple but effective API key system for multi-tenant authentication. Each API key follows the format:
 
 ```
 sc-{tenant}-{random_string}
@@ -142,7 +142,7 @@ conn.commit()
 **Option 3: Environment variables**
 ```bash
 # .env file
-SEMANTIS_API_KEY=sc-user123-abc123def456
+SEMANTYS_API_KEY=sc-user123-abc123def456
 ```
 
 ### Listing Keys
@@ -204,7 +204,7 @@ Tenant: user123
 
 ### 4. Access Control
 - ✅ One key per tenant/user
-- ✅ Isolate tenant data (automatic in Semantis AI)
+- ✅ Isolate tenant data (automatic in Semantys AI)
 - ✅ Monitor API usage per tenant
 
 ## 📊 Usage Examples

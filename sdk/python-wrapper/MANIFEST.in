@@ -1,10 +1,10 @@
 include README.md
 include LICENSE
 include pyproject.toml
-recursive-include semantis_cache *.py
-recursive-include semantis_cache *.pyi
-recursive-include semantis_cache *.typed
-recursive-include semantis_ai *.py
-recursive-include semantis_ai *.pyi
-recursive-include semantis_ai *.typed
+recursive-include semantys_cache *.py
+recursive-include semantys_cache *.pyi
+recursive-include semantys_cache *.typed
+recursive-include semantys_ai *.py
+recursive-include semantys_ai *.pyi
+recursive-include semantys_ai *.typed
 

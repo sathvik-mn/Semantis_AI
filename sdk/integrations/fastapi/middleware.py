@@ -1,9 +1,9 @@
 """
-FastAPI Middleware for Semantis Cache
+FastAPI Middleware for Semantys Cache
 
 Automatically caches OpenAI API calls in FastAPI applications.
 
-Requires the main Semantis SDK: pip install semantis
+Requires the main Semantys SDK: pip install semantys
 """
 from typing import Optional, Callable, List
 import time
@@ -24,13 +24,13 @@ class SemanticCacheMiddleware(BaseHTTPMiddleware):
     Example::
 
         from fastapi import FastAPI
-        from semantis.integrations.fastapi import SemanticCacheMiddleware
+        from semantys.integrations.fastapi import SemanticCacheMiddleware
 
         app = FastAPI()
         app.add_middleware(
             SemanticCacheMiddleware,
             api_key="sc-your-key",
-            base_url="https://api.semantis.ai",
+            base_url="https://api.semantys.ai",
         )
     """
 
@@ -42,21 +42,21 @@ class SemanticCacheMiddleware(BaseHTTPMiddleware):
         cache_paths: Optional[List[str]] = None,
     ):
         super().__init__(app)
-        self.api_key = api_key or os.getenv("SEMANTIS_API_KEY")
-        self.base_url = base_url or os.getenv("SEMANTIS_API_URL", "https://api.semantis.ai")
+        self.api_key = api_key or os.getenv("SEMANTYS_API_KEY")
+        self.base_url = base_url or os.getenv("SEMANTYS_API_URL", "https://api.semantys.ai")
         self.cache_paths = cache_paths or ["/v1/chat/completions"]
 
         if not self.api_key:
             raise ValueError(
-                "API key is required. Provide it as argument or set SEMANTIS_API_KEY."
+                "API key is required. Provide it as argument or set SEMANTYS_API_KEY."
             )
 
         try:
-            from semantis import SemantisCache
-            self._cache = SemantisCache(api_key=self.api_key, base_url=self.base_url)
+            from semantys import SemantysCache
+            self._cache = SemantysCache(api_key=self.api_key, base_url=self.base_url)
         except ImportError:
             raise ImportError(
-                "semantis package is required. Install with: pip install semantis"
+                "semantys package is required. Install with: pip install semantys"
             )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

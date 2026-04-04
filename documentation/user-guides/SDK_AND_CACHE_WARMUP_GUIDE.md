@@ -24,13 +24,13 @@ python -m openapi_python_client generate --path openapi.json --output-path ../sd
 #### Using the Generated SDK
 
 ```python
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import (
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import (
     health_health_get,
     get_metrics_metrics_get,
     openai_compatible_v1_chat_completions_post
 )
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 # Initialize client
 client = Client(

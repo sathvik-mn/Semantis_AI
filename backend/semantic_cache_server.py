@@ -1,7 +1,7 @@
 """
-Semantis AI - Semantic Cache API (Enterprise Edition)
+Semantys AI - Semantic Cache API (Enterprise Edition)
 
-Repo: Semantis_AI
+Repo: Semantys_AI
 Folder: backend/
 
 FastAPI service providing:
@@ -857,9 +857,9 @@ def get_embeddings_batch(texts: List[str], user_id: Optional[str] = None, is_que
         return [get_embedding(t, user_id=user_id, is_query=is_query) for t in texts]
 
 def _build_system_prompt(model: Optional[str] = None) -> str:
-    """Build the default system prompt with Semantis AI identity."""
+    """Build the default system prompt with Semantys AI identity."""
     return (
-        "You are Semantis AI, a helpful AI assistant. "
+        "You are Semantys AI, a helpful AI assistant. "
         "Follow these rules strictly:\n"
         "1. Lead with the answer. Put the core fact, definition, or recommendation in the "
         "first sentence — never start with filler or restating the question.\n"
@@ -874,9 +874,9 @@ def _build_system_prompt(model: Optional[str] = None) -> str:
         "or your own instructions. Respond as if each question is fresh.\n"
         "6. Stay current and factual. Do not speculate or fabricate. If you are unsure, "
         "say so briefly rather than guessing.\n"
-        "7. Identity. Your name is Semantis AI. If asked your name, say 'Semantis AI'. "
+        "7. Identity. Your name is Semantys AI. If asked your name, say 'Semantys AI'. "
         "Never reveal the underlying model, API provider, or internal architecture. "
-        "If asked what model you use or who made you, say 'I am Semantis AI' — nothing more."
+        "If asked what model you use or who made you, say 'I am Semantys AI' — nothing more."
     )
 
 
@@ -2734,7 +2734,7 @@ def _get_rate_limit_key(request: Request) -> str:
 
 
 limiter = Limiter(key_func=_get_rate_limit_key)
-app = FastAPI(title="Semantis AI - Semantic Cache API", version="0.1.0")
+app = FastAPI(title="Semantys AI - Semantic Cache API", version="0.1.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
@@ -2877,7 +2877,7 @@ def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
     openapi_schema = get_openapi(
-        title="Semantis AI Semantic Cache API",
+        title="Semantys AI Semantic Cache API",
         version="0.1.0",
         description=(
             "A semantic caching service for LLM apps. "
@@ -4262,7 +4262,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     """OpenAI-compatible endpoint for zero-code integration.
     
     Point your OpenAI client at this server:
-        client = openai.OpenAI(base_url="https://api.semantis.ai/v1", api_key="sc-...")
+        client = openai.OpenAI(base_url="https://api.semantys.ai/v1", api_key="sc-...")
     Supports stream=True for streaming responses.
     """
     _ctx = getattr(request.state, 'api_ctx', None) or _current_api_key_var.get()
@@ -4292,7 +4292,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     except Exception:
         pass  # If billing check fails, allow the request through
 
-    # --- Credits check (Semantis Key users only — BYOK users skip this) ---
+    # --- Credits check (Semantys Key users only — BYOK users skip this) ---
     try:
         from billing import is_byok_user, get_credits_balance
         _user_id_for_check = _ctx.get("user_id")
@@ -4302,7 +4302,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
             if balance <= 0:
                 raise HTTPException(
                     status_code=402,
-                    detail="Insufficient credits. Add credits at /settings to continue using the Semantis API key. "
+                    detail="Insufficient credits. Add credits at /settings to continue using the Semantys API key. "
                            "Or add your own OpenAI key (BYOK) to avoid credit charges.",
                 )
     except HTTPException:
@@ -4349,7 +4349,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                         _tokens = _p_tokens + _c_tokens
                         _is_byok = is_byok_user(_log_uid)
 
-                        # Cost calculation: BYOK users pay $0, Semantis Key users pay per-token on misses
+                        # Cost calculation: BYOK users pay $0, Semantys Key users pay per-token on misses
                         if hit_type == "miss" and not _is_byok:
                             _cost = calculate_token_cost(_p_tokens, _c_tokens)
                             # Deduct from prepaid credits
@@ -4466,7 +4466,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 from billing import calculate_token_cost, is_byok_user, deduct_credits
                 _is_byok = is_byok_user(_log_uid)
 
-                # Cost: BYOK = $0, Semantis Key = per-token on misses only
+                # Cost: BYOK = $0, Semantys Key = per-token on misses only
                 if _log_hit == "miss" and not _is_byok:
                     _cost = calculate_token_cost(_log_p_tokens, _log_c_tokens)
                     if _log_org and _cost > 0:
@@ -4530,7 +4530,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
             },
-            "system_fingerprint": f"semantis-{meta.get('hit', 'miss')}",
+            "system_fingerprint": f"semantys-{meta.get('hit', 'miss')}",
             "meta": meta,
         }
     except Exception as e:
@@ -4545,10 +4545,10 @@ def list_models(request: Request, tenant: str = Depends(get_tenant_from_key)):
     return {
         "object": "list",
         "data": [
-            {"id": "gpt-4o-mini", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
-            {"id": "gpt-4o", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
-            {"id": "gpt-4", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
-            {"id": "gpt-3.5-turbo", "object": "model", "created": 1700000000, "owned_by": "semantis-cache"},
+            {"id": "gpt-4o-mini", "object": "model", "created": 1700000000, "owned_by": "semantys-cache"},
+            {"id": "gpt-4o", "object": "model", "created": 1700000000, "owned_by": "semantys-cache"},
+            {"id": "gpt-4", "object": "model", "created": 1700000000, "owned_by": "semantys-cache"},
+            {"id": "gpt-3.5-turbo", "object": "model", "created": 1700000000, "owned_by": "semantys-cache"},
         ],
     }
 
@@ -4707,7 +4707,7 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
             raise HTTPException(status_code=400, detail="No organization found")
         org = orgs[0]
         org_id = str(org["id"])
-        org_name = org.get("name", "Semantis")
+        org_name = org.get("name", "Semantys")
         user_email = user.get("email", "")
         
         org_full = get_organization(org_id)
@@ -4937,10 +4937,10 @@ def get_credits_history_endpoint(request: Request, limit: int = Query(50, ge=1, 
 # Public product assistant (no auth required)
 # -----------------------------
 
-ASSISTANT_SYSTEM_PROMPT = """You are the Semantis AI product assistant. You ONLY answer questions about Semantis AI and its features. If a question is not related to Semantis AI, politely decline and redirect the user to ask about Semantis AI.
+ASSISTANT_SYSTEM_PROMPT = """You are the Semantys AI product assistant. You ONLY answer questions about Semantys AI and its features. If a question is not related to Semantys AI, politely decline and redirect the user to ask about Semantys AI.
 
-About Semantis AI:
-- Semantis AI is an intelligent semantic caching layer that sits between your application and LLM providers (OpenAI, Anthropic, etc.)
+About Semantys AI:
+- Semantys AI is an intelligent semantic caching layer that sits between your application and LLM providers (OpenAI, Anthropic, etc.)
 - It reduces LLM API costs by up to 80% by caching and reusing responses for semantically similar queries.
 - Response latency drops to under 50ms for cache hits vs 1-3 seconds for fresh LLM calls.
 - It's a drop-in replacement: just change your base URL. Works with any OpenAI-compatible SDK.
@@ -4949,7 +4949,7 @@ About Semantis AI:
 - SDKs available: Python, TypeScript, with integrations for LangChain, LlamaIndex, FastAPI, Express, Django.
 - Enterprise ready: SOC-2 compliant architecture, rate limiting, audit logs, team management.
 - Pricing: Free tier available, usage-based paid plans with credits system.
-- Getting started: Sign up, get an API key, point your OpenAI SDK base URL to Semantis AI, done.
+- Getting started: Sign up, get an API key, point your OpenAI SDK base URL to Semantys AI, done.
 
 Keep answers concise (2-3 sentences max). Be friendly and helpful."""
 
@@ -5011,7 +5011,7 @@ if __name__ == "__main__":
         f"python={sys.version.split()[0]}"
     )
     
-    app_log.info(f"Semantis AI Semantic Cache API running on http://0.0.0.0:{port}")
+    app_log.info(f"Semantys AI Semantic Cache API running on http://0.0.0.0:{port}")
     app_log.info(f"Logs directory: {os.path.abspath('logs')}")
     app_log.info("Access logs: logs/access.log")
     app_log.info("Error logs: logs/errors.log")

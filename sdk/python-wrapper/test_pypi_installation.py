@@ -1,6 +1,6 @@
 """
 Test SDK installation as if it was installed from PyPI
-This simulates what users will experience after pip install semantis-cache
+This simulates what users will experience after pip install semantys-cache
 """
 import subprocess
 import sys
@@ -15,7 +15,7 @@ def create_venv_test():
     print("=" * 60)
     
     # Create temporary directory for test
-    test_dir = tempfile.mkdtemp(prefix="semantis_cache_test_")
+    test_dir = tempfile.mkdtemp(prefix="semantys_cache_test_")
     venv_path = os.path.join(test_dir, "venv")
     
     try:
@@ -35,7 +35,7 @@ def create_venv_test():
         print("2. Installing SDK from local wheel...")
         
         # Get the path to the built wheel
-        wheel_path = os.path.join(os.path.dirname(__file__), "dist", "semantis_cache-1.0.0-py3-none-any.whl")
+        wheel_path = os.path.join(os.path.dirname(__file__), "dist", "semantys_cache-1.0.0-py3-none-any.whl")
         
         if not os.path.exists(wheel_path):
             print(f"   [FAIL] Wheel not found at: {wheel_path}")
@@ -64,7 +64,7 @@ def create_venv_test():
         test_script = """
 import sys
 try:
-    from semantis_cache import SemanticCache, ChatCompletion, __version__
+    from semantys_cache import SemanticCache, ChatCompletion, __version__
     print(f"   [OK] Import successful (v{__version__})")
     
     # Test initialization
@@ -77,7 +77,7 @@ try:
     print("   [OK] All attributes present")
     
     # Test OpenAI proxy
-    from semantis_cache.openai_proxy import ChatCompletion as ProxyChatCompletion
+    from semantys_cache.openai_proxy import ChatCompletion as ProxyChatCompletion
     assert hasattr(ProxyChatCompletion, 'create'), "ChatCompletion.create missing"
     print("   [OK] OpenAI proxy works")
     

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the production-ready storage implementation for Semantis AI Cache, including:
+This document summarizes the production-ready storage implementation for Semantys AI Cache, including:
 - Database storage (PostgreSQL/MySQL)
 - Redis caching
 - S3 backups
@@ -126,8 +126,8 @@ Response + Metrics
 DB_BACKEND=postgresql
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=semantis_cache
-DB_USER=semantis
+DB_NAME=semantys_cache
+DB_USER=semantys
 DB_PASSWORD=your_password
 
 # Redis
@@ -138,7 +138,7 @@ REDIS_PASSWORD=your_password
 
 # S3
 S3_ENABLED=true
-S3_BUCKET=semantis-cache-backups
+S3_BUCKET=semantys-cache-backups
 AWS_ACCESS_KEY_ID=your_key
 AWS_SECRET_ACCESS_KEY=your_secret
 
@@ -159,13 +159,13 @@ pip install -r requirements_production.txt
 
 ```bash
 # Create PostgreSQL database
-createdb semantis_cache
+createdb semantys_cache
 
 # Set environment variables
 export DB_BACKEND=postgresql
 export DB_HOST=localhost
-export DB_NAME=semantis_cache
-export DB_USER=semantis
+export DB_NAME=semantys_cache
+export DB_USER=semantys
 export DB_PASSWORD=your_password
 ```
 

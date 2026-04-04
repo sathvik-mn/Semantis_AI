@@ -1,8 +1,8 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: semantis-ingress
-  namespace: semantis
+  name: semantys-ingress
+  namespace: semantys
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -12,11 +12,11 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - app.semantis.ai
-        - api.semantis.ai
-      secretName: semantis-tls
+        - app.semantys.ai
+        - api.semantys.ai
+      secretName: semantys-tls
   rules:
-    - host: api.semantis.ai
+    - host: api.semantys.ai
       http:
         paths:
           - path: /
@@ -26,7 +26,7 @@ spec:
                 name: backend-svc
                 port:
                   number: 8000
-    - host: app.semantis.ai
+    - host: app.semantys.ai
       http:
         paths:
           - path: /

@@ -25,7 +25,7 @@ The frontend will be available at `http://localhost:3000`
 
 ### Step 1: Enter Your API Key
 
-On the landing page, paste your Semantis API key. It will be stored securely in localStorage.
+On the landing page, paste your Semantys API key. It will be stored securely in localStorage.
 
 ### Step 2: Test Queries in Playground
 

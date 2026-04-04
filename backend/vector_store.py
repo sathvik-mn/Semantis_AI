@@ -1,5 +1,5 @@
 """
-Vector Store Abstraction for Semantis AI
+Vector Store Abstraction for Semantys AI
 
 Supports two backends:
 - Pinecone (production): External vector DB with namespace-per-tenant
@@ -13,10 +13,10 @@ import time
 import numpy as np
 from typing import Optional, List, Tuple, Dict
 
-logger = logging.getLogger("semantis.vector_store")
+logger = logging.getLogger("semantys.vector_store")
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "semantis-cache")
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "semantys-cache")
 PINECONE_HOST = os.getenv("PINECONE_HOST", "")  # Optional: direct host URL
 
 _pinecone_index = None

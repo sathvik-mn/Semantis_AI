@@ -5,7 +5,7 @@ FastAPI middleware for automatic semantic caching of OpenAI API calls.
 ## Installation
 
 ```bash
-pip install semantis-cache fastapi
+pip install semantys-cache fastapi
 ```
 
 ## Usage
@@ -14,7 +14,7 @@ pip install semantis-cache fastapi
 
 ```python
 from fastapi import FastAPI
-from semantis_cache.integrations.fastapi import SemanticCacheMiddleware
+from semantys_cache.integrations.fastapi import SemanticCacheMiddleware
 
 app = FastAPI()
 
@@ -30,7 +30,7 @@ app.add_middleware(
 
 ```python
 from fastapi import FastAPI
-from semantis_cache.integrations.fastapi import add_semantic_cache_middleware
+from semantys_cache.integrations.fastapi import add_semantic_cache_middleware
 
 app = FastAPI()
 
@@ -52,7 +52,7 @@ add_semantic_cache_middleware(app, api_key="sc-your-key")
 app.add_middleware(
     SemanticCacheMiddleware,
     api_key="sc-your-key",
-    base_url="https://api.semantis.ai",  # Optional
+    base_url="https://api.semantys.ai",  # Optional
     cache_paths=["/v1/chat/completions", "/v1/completions"]  # Optional
 )
 ```
@@ -60,8 +60,8 @@ app.add_middleware(
 ## Environment Variables
 
 ```bash
-export SEMANTIS_API_KEY="sc-your-key"
-export SEMANTIS_API_URL="https://api.semantis.ai"
+export SEMANTYS_API_KEY="sc-your-key"
+export SEMANTYS_API_URL="https://api.semantys.ai"
 ```
 
 ## Features

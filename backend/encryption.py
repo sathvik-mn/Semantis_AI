@@ -42,7 +42,7 @@ def _get_salt() -> bytes:
         "ENCRYPTION_SALT not set — using static dev salt. "
         "Set ENCRYPTION_SALT to a random hex string for production."
     )
-    return b'semantis_dev_salt_do_not_use_in_prod'
+    return b'semantys_dev_salt_do_not_use_in_prod'
 
 
 def _get_encryption_key() -> bytes:
@@ -194,7 +194,7 @@ def _derive_tenant_key(tenant_id: str) -> bytes:
     hkdf = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=b"semantis-cache-v1",
+        salt=b"semantys-cache-v1",
         info=tenant_id.encode("utf-8"),
     )
     return hkdf.derive(master)

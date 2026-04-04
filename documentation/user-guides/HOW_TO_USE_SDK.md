@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide explains how **your clients** can integrate the Semantis AI Semantic Cache API into their applications using the generated SDK.
+This guide explains how **your clients** can integrate the Semantys AI Semantic Cache API into their applications using the generated SDK.
 
 ## 📦 Step 1: Generate the SDK
 
@@ -46,13 +46,13 @@ openapi-generator-cli generate \
 ### Python Integration
 
 ```python
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import openai_compatible_v1_chat_completions_post
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import openai_compatible_v1_chat_completions_post
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 # Initialize client with API key
 client = Client(
-    base_url="https://api.semantis.ai",  # Your API URL
+    base_url="https://api.semantys.ai",  # Your API URL
     headers={
         "Authorization": "Bearer sc-your-tenant-api-key"
     }
@@ -99,7 +99,7 @@ import { Configuration, DefaultApi, ChatRequest, ChatMessage } from './sdk/types
 
 // Initialize client
 const config = new Configuration({
-  basePath: 'https://api.semantis.ai',
+  basePath: 'https://api.semantys.ai',
   accessToken: 'sc-your-tenant-api-key',
 });
 
@@ -148,12 +148,12 @@ response = client.chat.completions.create(
 )
 
 # After (with semantic cache)
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import openai_compatible_v1_chat_completions_post
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import openai_compatible_v1_chat_completions_post
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 cache_client = Client(
-    base_url="https://api.semantis.ai",
+    base_url="https://api.semantys.ai",
     headers={"Authorization": "Bearer sc-your-tenant-api-key"}
 )
 
@@ -174,12 +174,12 @@ response = openai_compatible_v1_chat_completions_post.sync(
 Create `test_client_integration.py`:
 
 ```python
-from semantis_ai_semantic_cache_api import Client
-from semantis_ai_semantic_cache_api.api.default import (
+from semantys_ai_semantic_cache_api import Client
+from semantys_ai_semantic_cache_api.api.default import (
     health_health_get,
     openai_compatible_v1_chat_completions_post
 )
-from semantis_ai_semantic_cache_api.models import ChatRequest, ChatMessage
+from semantys_ai_semantic_cache_api.models import ChatRequest, ChatMessage
 
 # Initialize client
 client = Client(
@@ -224,7 +224,7 @@ python test_client_integration.py
 Clients can monitor cache performance:
 
 ```python
-from semantis_ai_semantic_cache_api.api.default import get_metrics_metrics_get
+from semantys_ai_semantic_cache_api.api.default import get_metrics_metrics_get
 
 # Get metrics
 metrics = get_metrics_metrics_get.sync(client=client)
@@ -238,7 +238,7 @@ print(f"Average latency: {metrics.avg_latency_ms}ms")
 ## 🛠️ Step 5: Error Handling
 
 ```python
-from semantis_ai_semantic_cache_api.exceptions import ApiException
+from semantys_ai_semantic_cache_api.exceptions import ApiException
 
 try:
     response = openai_compatible_v1_chat_completions_post.sync(

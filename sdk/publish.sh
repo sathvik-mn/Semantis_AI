@@ -1,5 +1,5 @@
 #!/bin/bash
-# Publish Semantis AI SDKs to PyPI and npm
+# Publish Semantys AI SDKs to PyPI and npm
 # Usage: ./publish.sh [python|typescript|all]
 
 set -e

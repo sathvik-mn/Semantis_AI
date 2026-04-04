@@ -1,8 +1,8 @@
 @echo off
-REM Semantis AI - Quick Setup & Run Script for Windows
+REM Semantys AI - Quick Setup & Run Script for Windows
 
 echo ========================================
-echo Semantis AI - Semantic Cache Backend
+echo Semantys AI - Semantic Cache Backend
 echo ========================================
 echo.
 

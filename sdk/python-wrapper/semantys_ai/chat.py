@@ -5,34 +5,27 @@ import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 
-# Try to import OpenAPI client from bundled package first
+# Import OpenAPI client types
+_parent_dir = Path(__file__).parent.parent.parent
+_openapi_client_path = _parent_dir / "python" / "src"
+if _openapi_client_path.exists():
+    sys.path.insert(0, str(_openapi_client_path))
+
 try:
-    from .semantis_ai_semantic_cache_api_client.api.default import (
+    from semantys_ai_semantic_cache_api_client.api.default import (
         openai_compatible_v1_chat_completions_post
     )
-    from .semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+    from semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
 except ImportError:
-    # Fallback 1: Try from parent directory (development)
     try:
-        _parent_dir = Path(__file__).parent.parent.parent
-        _openapi_client_path = _parent_dir / "python" / "src"
-        if _openapi_client_path.exists():
-            sys.path.insert(0, str(_openapi_client_path))
-        from semantis_ai_semantic_cache_api_client.api.default import (
+        from semantys_ai_semantic_cache_api_client.api.default import (
             openai_compatible_v1_chat_completions_post
         )
-        from semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
+        from semantys_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
     except ImportError:
-        # Fallback 2: Try from installed package
-        try:
-            from semantis_ai_semantic_cache_api_client.api.default import (
-                openai_compatible_v1_chat_completions_post
-            )
-            from semantis_ai_semantic_cache_api_client.models import ChatRequest, ChatMessage
-        except ImportError:
-            openai_compatible_v1_chat_completions_post = None
-            ChatRequest = None
-            ChatMessage = None
+        openai_compatible_v1_chat_completions_post = None
+        ChatRequest = None
+        ChatMessage = None
 
 
 class ChatCompletions:
@@ -89,27 +82,14 @@ class ChatCompletions:
         else:
             chat_messages = messages
         
-        # Create chat request (only valid parameters: model, messages, temperature, ttl_seconds)
-        # Other parameters (max_tokens, etc.) are stored in additional_properties
-        request_kwargs = {
-            "model": model,
-            "messages": chat_messages,
-        }
-        
-        # Add optional parameters if provided
-        if temperature is not None:
-            request_kwargs["temperature"] = temperature
-        
-        # Create request
-        request = ChatRequest(**request_kwargs)
-        
-        # Store additional parameters (like max_tokens) in additional_properties
-        # Note: The backend may not use these, but we store them for compatibility
-        if max_tokens is not None:
-            request["max_tokens"] = max_tokens
-        for key, value in kwargs.items():
-            if key not in ["model", "messages", "temperature", "ttl_seconds"]:
-                request[key] = value
+        # Create chat request
+        request = ChatRequest(
+            model=model,
+            messages=chat_messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
         
         # Make API request (caching happens automatically on server)
         response_data = openai_compatible_v1_chat_completions_post.sync(

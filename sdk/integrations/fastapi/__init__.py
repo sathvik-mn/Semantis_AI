@@ -1,5 +1,5 @@
 """
-FastAPI Integration for Semantis Cache
+FastAPI Integration for Semantys Cache
 
 Provides FastAPI middleware for automatic semantic caching.
 """

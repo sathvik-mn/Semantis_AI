@@ -1,5 +1,5 @@
 """
-Redis Cache Backend for Semantis AI
+Redis Cache Backend for Semantys AI
 
 Provides L1 (process-local) + L2 (Redis) + L3 (PostgreSQL) tiered caching.
 Redis stores exact-match cache entries and embedding vectors per org namespace.
@@ -14,7 +14,7 @@ from typing import Optional
 
 import numpy as np
 
-logger = logging.getLogger("semantis.redis_cache")
+logger = logging.getLogger("semantys.redis_cache")
 
 REDIS_URL = os.getenv("REDIS_URL", "")
 _redis_client = None

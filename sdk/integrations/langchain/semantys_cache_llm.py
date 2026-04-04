@@ -1,7 +1,7 @@
 """
-LangChain LLM wrapper for Semantis Cache.
+LangChain LLM wrapper for Semantys Cache.
 
-Requires: pip install semantis langchain
+Requires: pip install semantys langchain
 """
 from typing import Optional, List, Any, Dict
 
@@ -10,37 +10,37 @@ from langchain.callbacks.manager import CallbackManagerForLLMRun
 from pydantic import Field
 
 
-class SemantisCacheLLM(LLM):
+class SemantysCacheLLM(LLM):
     """
-    LangChain-compatible LLM with automatic Semantis semantic caching.
+    LangChain-compatible LLM with automatic Semantys semantic caching.
 
     Example::
 
-        from semantis.integrations.langchain import SemantisCacheLLM
+        from semantys.integrations.langchain import SemantysCacheLLM
 
-        llm = SemantisCacheLLM(api_key="sc-your-key")
+        llm = SemantysCacheLLM(api_key="sc-your-key")
         response = llm("What is AI?")
         print(response)
     """
 
-    api_key: str = Field(..., description="Semantis AI API key")
+    api_key: str = Field(..., description="Semantys AI API key")
     base_url: Optional[str] = Field(None, description="API base URL")
     model: str = Field("gpt-4o-mini", description="Model to use")
     temperature: float = Field(0.2, description="Sampling temperature")
     timeout: Optional[float] = Field(30.0, description="Request timeout")
 
-    _cache: Any = None  # lazy-initialized SemantisCache instance
+    _cache: Any = None  # lazy-initialized SemantysCache instance
 
     @property
     def _llm_type(self) -> str:
-        return "semantis_cache"
+        return "semantys_cache"
 
     def _get_cache(self):
         if self._cache is None:
-            from semantis import SemantisCache
-            self._cache = SemantisCache(
+            from semantys import SemantysCache
+            self._cache = SemantysCache(
                 api_key=self.api_key,
-                base_url=self.base_url or "https://api.semantis.ai",
+                base_url=self.base_url or "https://api.semantys.ai",
                 timeout=self.timeout or 30.0,
             )
         return self._cache

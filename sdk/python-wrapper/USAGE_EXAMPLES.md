@@ -1,4 +1,4 @@
-# How Users Will Use Semantis Cache SDK
+# How Users Will Use Semantys Cache SDK
 
 ## Installation Methods
 
@@ -6,7 +6,7 @@
 Once published to PyPI, users will install it like any other Python package:
 
 ```bash
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 This is the standard way Python packages are distributed and used. Users just need to:
@@ -24,7 +24,7 @@ pip install -e .
 Or install from a wheel file directly:
 
 ```bash
-pip install dist/semantis_cache-1.0.0-py3-none-any.whl
+pip install dist/semantys_cache-1.0.0-py3-none-any.whl
 ```
 
 ## Usage After Installation
@@ -35,7 +35,7 @@ Once installed (via pip or locally), users import it like any Python package:
 
 ```python
 # Import the SDK (just like any other package)
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
 # Initialize with API key
 cache = SemanticCache(api_key="sc-your-api-key")
@@ -50,7 +50,7 @@ print(f"Cache hit: {response.cache_hit}")
 
 ```python
 # Import the SDK
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
 # Initialize
 cache = SemanticCache(api_key="sc-your-api-key")
@@ -69,7 +69,7 @@ print(f"Cache hit: {response.cache_hit}")
 
 ```python
 # Instead of: from openai import ChatCompletion
-from semantis_cache.openai_proxy import ChatCompletion
+from semantys_cache.openai_proxy import ChatCompletion
 
 # Use exactly like OpenAI
 response = ChatCompletion.create(
@@ -84,12 +84,12 @@ print(response.choices[0].message.content)
 
 ### Step 1: Install
 ```bash
-pip install semantis-cache
+pip install semantys-cache
 ```
 
 ### Step 2: Use in Code
 ```python
-from semantis_cache import SemanticCache
+from semantys_cache import SemanticCache
 
 cache = SemanticCache(api_key="sc-your-api-key-here")
 response = cache.query("What is the weather today?")
@@ -111,15 +111,15 @@ r = requests.get("https://api.example.com")
 import numpy as np
 arr = np.array([1, 2, 3])
 
-# Like semantis-cache
-from semantis_cache import SemanticCache
+# Like semantys-cache
+from semantys_cache import SemanticCache
 cache = SemanticCache(api_key="sc-key")
 response = cache.query("What is AI?")
 ```
 
 ## Distribution Methods
 
-1. **PyPI (Recommended)**: `pip install semantis-cache`
+1. **PyPI (Recommended)**: `pip install semantys-cache`
    - Standard Python package distribution
    - Automatic dependency management
    - Version control

@@ -10,13 +10,13 @@ import os
 import sys
 sys.path.insert(0, ".")
 
-from semantis import SemantisCache
+from semantys import SemantysCache
 
 # Replace with your actual API key from Supabase api_keys table
-API_KEY = os.environ.get("SEMANTIS_API_KEY", "YOUR_API_KEY_HERE")
+API_KEY = os.environ.get("SEMANTYS_API_KEY", "YOUR_API_KEY_HERE")
 BASE_URL = "http://localhost:8000"
 
-client = SemantisCache(api_key=API_KEY, base_url=BASE_URL)
+client = SemantysCache(api_key=API_KEY, base_url=BASE_URL)
 
 
 def test_health():
@@ -85,7 +85,7 @@ def test_metrics():
 
 
 if __name__ == "__main__":
-    print("\nSemantis SDK Local Test")
+    print("\nSemantys SDK Local Test")
     print("=" * 50)
     print(f"Server: {BASE_URL}")
     print()

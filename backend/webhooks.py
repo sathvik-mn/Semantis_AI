@@ -12,7 +12,7 @@ import urllib.error
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 
-logger = logging.getLogger("semantis.webhooks")
+logger = logging.getLogger("semantys.webhooks")
 
 # Private/reserved IP ranges that webhooks must not target
 _BLOCKED_NETWORKS = [

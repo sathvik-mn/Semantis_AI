@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-Create a comprehensive admin dashboard for Semantis AI - a semantic caching service for LLM applications. The dashboard should provide complete visibility into:
+Create a comprehensive admin dashboard for Semantys AI - a semantic caching service for LLM applications. The dashboard should provide complete visibility into:
 - User growth and analytics
 - Subscription plan distribution
 - Usage statistics and trends

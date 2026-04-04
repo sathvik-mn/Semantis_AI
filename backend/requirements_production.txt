@@ -1,4 +1,4 @@
-# Production Dependencies for Semantis AI Cache
+# Production Dependencies for Semantys AI Cache
 
 # Core dependencies (already in requirements.txt)
 fastapi

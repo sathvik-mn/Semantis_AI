@@ -20,14 +20,14 @@ npx @openapitools/openapi-generator-cli generate \
   -i http://localhost:8000/openapi.json \
   -g typescript-axios \
   -o . \
-  --additional-properties=supportsES6=true,npmName=semantis-cache,npmVersion=1.0.0
+  --additional-properties=supportsES6=true,npmName=semantys-cache,npmVersion=1.0.0
 
 # Or from local file
 npx @openapitools/openapi-generator-cli generate \
   -i ../../backend/openapi.json \
   -g typescript-axios \
   -o . \
-  --additional-properties=supportsES6=true,npmName=semantis-cache,npmVersion=1.0.0
+  --additional-properties=supportsES6=true,npmName=semantys-cache,npmVersion=1.0.0
 ```
 
 ## Create npm Package
@@ -39,9 +39,9 @@ cd sdk/typescript
 npm init -y
 
 # Update package.json with correct details
-# - name: semantis-cache
+# - name: semantys-cache
 # - version: 1.0.0
-# - description: Semantis Cache - Semantic Caching SDK for LLM Applications
+# - description: Semantys Cache - Semantic Caching SDK for LLM Applications
 # - main: index.ts
 # - types: index.ts
 ```
@@ -59,10 +59,10 @@ npm publish
 ## Usage
 
 ```typescript
-import { Configuration, DefaultApi } from 'semantis-cache';
+import { Configuration, DefaultApi } from 'semantys-cache';
 
 const config = new Configuration({
-  basePath: 'https://api.semantis.ai',
+  basePath: 'https://api.semantys.ai',
   accessToken: 'sc-your-key'
 });
 

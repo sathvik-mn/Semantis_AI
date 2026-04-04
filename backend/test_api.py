@@ -1,5 +1,5 @@
 """
-Test Script for Semantis AI Backend
+Test Script for Semantys AI Backend
 
 Validates:
 - Health endpoint
@@ -32,7 +32,7 @@ def test_query(prompt: str):
         print("❌ Error:", r.status_code, r.text)
 
 def run_all():
-    print("=== SEMANTIS AI BACKEND TEST SUITE ===")
+    print("=== SEMANTYS AI BACKEND TEST SUITE ===")
     test_health()
     test_metrics()
 

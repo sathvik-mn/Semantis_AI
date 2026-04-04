@@ -1,23 +1,23 @@
 /**
- * Express.js Middleware for Semantis Cache
+ * Express.js Middleware for Semantys Cache
  * 
  * Automatically caches OpenAI API calls in Express applications.
  */
 
-const { SemanticCache } = require('semantis-cache');
+const { SemanticCache } = require('semantys-cache');
 
 /**
  * Create semantic cache middleware for Express
  * 
  * @param {Object} options - Middleware options
- * @param {string} options.apiKey - Semantis AI API key
- * @param {string} [options.baseUrl] - API base URL (default: https://api.semantis.ai)
+ * @param {string} options.apiKey - Semantys AI API key
+ * @param {string} [options.baseUrl] - API base URL (default: https://api.semantys.ai)
  * @param {string[]} [options.cachePaths] - Paths to cache (default: ["/v1/chat/completions"])
  * @returns {Function} Express middleware function
  * 
  * @example
  * const express = require('express');
- * const semanticCacheMiddleware = require('semantis-cache/integrations/express');
+ * const semanticCacheMiddleware = require('semantys-cache/integrations/express');
  * 
  * const app = express();
  * app.use(express.json());
@@ -31,17 +31,17 @@ const { SemanticCache } = require('semantis-cache');
 function semanticCacheMiddleware(options) {
   const {
     apiKey,
-    baseUrl = process.env.SEMANTIS_API_URL || 'https://api.semantis.ai',
+    baseUrl = process.env.SEMANTYS_API_URL || 'https://api.semantys.ai',
     cachePaths = ['/v1/chat/completions'],
   } = options;
 
   if (!apiKey) {
-    throw new Error('API key is required. Provide it in options or set SEMANTIS_API_KEY environment variable.');
+    throw new Error('API key is required. Provide it in options or set SEMANTYS_API_KEY environment variable.');
   }
 
   // Initialize cache client
   const cache = new SemanticCache({
-    apiKey: apiKey || process.env.SEMANTIS_API_KEY,
+    apiKey: apiKey || process.env.SEMANTYS_API_KEY,
     baseUrl: baseUrl,
   });
 

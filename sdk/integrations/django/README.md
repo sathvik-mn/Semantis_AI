@@ -5,7 +5,7 @@ Django middleware for automatic semantic caching of OpenAI API calls.
 ## Installation
 
 ```bash
-pip install semantis-cache django
+pip install semantys-cache django
 ```
 
 ## Usage
@@ -15,21 +15,21 @@ pip install semantis-cache django
 ```python
 # Add middleware
 MIDDLEWARE = [
-    'semantis_cache.integrations.django.SemanticCacheMiddleware',
+    'semantys_cache.integrations.django.SemanticCacheMiddleware',
     # ... other middleware
 ]
 
 # Configuration
-SEMANTIS_CACHE_API_KEY = 'sc-your-key'
-SEMANTIS_CACHE_BASE_URL = 'https://api.semantis.ai'  # Optional
-SEMANTIS_CACHE_PATHS = ['/v1/chat/completions']  # Optional
+SEMANTYS_CACHE_API_KEY = 'sc-your-key'
+SEMANTYS_CACHE_BASE_URL = 'https://api.semantys.ai'  # Optional
+SEMANTYS_CACHE_PATHS = ['/v1/chat/completions']  # Optional
 ```
 
 ### Environment Variables
 
 ```bash
-export SEMANTIS_API_KEY="sc-your-key"
-export SEMANTIS_API_URL="https://api.semantis.ai"
+export SEMANTYS_API_KEY="sc-your-key"
+export SEMANTYS_API_URL="https://api.semantys.ai"
 ```
 
 ## How It Works

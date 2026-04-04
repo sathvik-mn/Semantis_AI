@@ -5,14 +5,14 @@ Express.js middleware for automatic semantic caching of OpenAI API calls.
 ## Installation
 
 ```bash
-npm install semantis-cache express
+npm install semantys-cache express
 ```
 
 ## Usage
 
 ```javascript
 const express = require('express');
-const semanticCacheMiddleware = require('semantis-cache/integrations/express');
+const semanticCacheMiddleware = require('semantys-cache/integrations/express');
 
 const app = express();
 app.use(express.json());
@@ -36,7 +36,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 ```javascript
 app.use(semanticCacheMiddleware({
   apiKey: 'sc-your-key',
-  baseUrl: 'https://api.semantis.ai',  // Optional
+  baseUrl: 'https://api.semantys.ai',  // Optional
   cachePaths: ['/v1/chat/completions', '/v1/completions']  // Optional
 }));
 ```
@@ -44,8 +44,8 @@ app.use(semanticCacheMiddleware({
 ## Environment Variables
 
 ```bash
-export SEMANTIS_API_KEY="sc-your-key"
-export SEMANTIS_API_URL="https://api.semantis.ai"
+export SEMANTYS_API_KEY="sc-your-key"
+export SEMANTYS_API_URL="https://api.semantys.ai"
 ```
 
 ## Features

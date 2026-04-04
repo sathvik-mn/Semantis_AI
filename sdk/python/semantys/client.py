@@ -1,5 +1,5 @@
 """
-Semantis AI Client - OpenAI-compatible interface with automatic semantic caching.
+Semantys AI Client - OpenAI-compatible interface with automatic semantic caching.
 """
 
 import json
@@ -8,10 +8,10 @@ from typing import Generator, Iterator, Optional, List, Dict, Any, Union
 
 import httpx
 
-from semantis.models import ChatCompletion, ChatCompletionChunk
+from semantys.models import ChatCompletion, ChatCompletionChunk
 
 
-_DEFAULT_BASE_URL = "https://api.semantis.ai"
+_DEFAULT_BASE_URL = "https://api.semantys.ai"
 _DEFAULT_TIMEOUT = 60.0
 _MAX_RETRIES = 3
 
@@ -19,7 +19,7 @@ _MAX_RETRIES = 3
 class _Completions:
     """Mirrors openai.chat.completions interface."""
 
-    def __init__(self, client: "SemantisCache"):
+    def __init__(self, client: "SemantysCache"):
         self._client = client
 
     def create(
@@ -56,21 +56,21 @@ class _Completions:
 class _Chat:
     """Mirrors openai.chat namespace."""
 
-    def __init__(self, client: "SemantisCache"):
+    def __init__(self, client: "SemantysCache"):
         self.completions = _Completions(client)
 
 
-class SemantisCache:
-    """Semantis AI SDK client.
+class SemantysCache:
+    """Semantys AI SDK client.
 
     Drop-in replacement for ``openai.OpenAI`` that routes requests through
-    the Semantis semantic cache.
+    the Semantys semantic cache.
 
     Example::
 
-        from semantis import SemantisCache
+        from semantys import SemantysCache
 
-        cache = SemantisCache(api_key="sc-myorg-xxxxxxxx")
+        cache = SemantysCache(api_key="sc-myorg-xxxxxxxx")
         resp = cache.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": "What is ML?"}],
@@ -97,7 +97,7 @@ class SemantisCache:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "semantis-python/0.1.0",
+                "User-Agent": "semantys-python/0.1.0",
             },
         )
         self.chat = _Chat(self)
@@ -146,11 +146,11 @@ class SemantisCache:
                     continue
 
     def _openai_fallback(self, path: str, kwargs: dict) -> dict:
-        """When Semantis is unreachable, fall back to direct OpenAI call."""
+        """When Semantys is unreachable, fall back to direct OpenAI call."""
         try:
             import openai as _openai
             payload = kwargs.get("json", {})
-            # Remove Semantis-specific params that OpenAI doesn't accept
+            # Remove Semantys-specific params that OpenAI doesn't accept
             openai_payload = {k: v for k, v in payload.items() if k not in ("ttl_seconds",)}
             client = _openai.OpenAI()
             resp = client.chat.completions.create(**openai_payload)
@@ -176,11 +176,11 @@ class SemantisCache:
             }
         except ImportError:
             raise RuntimeError(
-                "Semantis API unreachable and openai package not installed for fallback. "
-                "Install with: pip install semantis[openai]"
+                "Semantys API unreachable and openai package not installed for fallback. "
+                "Install with: pip install semantys[openai]"
             )
         except Exception as e:
-            raise RuntimeError(f"Both Semantis and OpenAI fallback failed: {e}")
+            raise RuntimeError(f"Both Semantys and OpenAI fallback failed: {e}")
 
     # ── Convenience methods ──
 
@@ -191,7 +191,7 @@ class SemantisCache:
         return resp.json()
 
     def health(self) -> dict:
-        """Check Semantis API health."""
+        """Check Semantys API health."""
         resp = self._http.get("/health")
         resp.raise_for_status()
         return resp.json()

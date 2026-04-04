@@ -1,4 +1,4 @@
-# Semantis AI - Semantic Cache Backend
+# Semantys AI - Semantic Cache Backend
 
 A production-ready FastAPI service providing semantic caching for LLM applications with multi-tenant support.
 
@@ -119,7 +119,7 @@ python test_api.py
 
 Expected output:
 ```
-=== SEMANTIS AI BACKEND TEST SUITE ===
+=== SEMANTYS AI BACKEND TEST SUITE ===
 ✅ /health: 200 {'status': 'ok', 'service': 'semantic-cache', 'version': '0.1.0'}
 ✅ /metrics: 200 {'tenant': 'test', 'hit_ratio': 0.0, ...}
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-const ONBOARDING_KEY = 'semantis_onboarding_complete';
+const ONBOARDING_KEY = 'semantys_onboarding_complete';
 
 export function useOnboarding() {
   const [dismissed, setDismissed] = useState(() =>

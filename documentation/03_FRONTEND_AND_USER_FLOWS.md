@@ -1,4 +1,4 @@
-# Semantis AI — Frontend & User Flows
+# Semantys AI — Frontend & User Flows
 
 ## Tech Stack
 
