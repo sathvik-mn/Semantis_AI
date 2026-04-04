@@ -20,6 +20,11 @@ ENCRYPTION_KEY_ENV = os.getenv("ENCRYPTION_KEY")
 ENCRYPTION_SALT_ENV = os.getenv("ENCRYPTION_SALT")
 
 
+def is_api_key_encryption_configured() -> bool:
+    """Require explicit encryption config before accepting user-supplied API keys."""
+    return bool(ENCRYPTION_KEY_ENV and ENCRYPTION_SALT_ENV)
+
+
 def _get_salt() -> bytes:
     """
     Get the PBKDF2 salt from the ENCRYPTION_SALT env var.

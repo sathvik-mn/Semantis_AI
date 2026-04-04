@@ -428,18 +428,10 @@ export interface WarmupResult {
 
 export async function warmupCache(entries: WarmupEntry[], skipDuplicates = true): Promise<WarmupResult> {
   const token = await getSupabaseToken();
-  // Extract tenant from API key so warmup entries go into the same cache
-  // partition that the playground queries. The API key format is sc-{tenant}-{suffix}.
-  const apiKey = getApiKey();
-  let tenant: string | undefined;
-  if (apiKey) {
-    const parts = apiKey.split('-');
-    if (parts.length >= 3) tenant = parts[1];
-  }
   const res = await fetch(`${BACKEND_URL}/api/cache/warmup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ entries, skip_duplicates: skipDuplicates, tenant }),
+    body: JSON.stringify({ entries, skip_duplicates: skipDuplicates }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed to warm cache' }));

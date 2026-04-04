@@ -27,6 +27,7 @@ from collections import OrderedDict
 from contextvars import ContextVar
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 
 import numpy as np
 
@@ -2512,12 +2513,17 @@ def setup_admin_routes():
 setup_admin_routes()
 
 # Simple API-key format: Bearer sc-{tenant}-{anything}
-API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]{3,128})$")
+API_KEY_REGEX = re.compile(r"^Bearer\s+(sc-[A-Za-z0-9_-]{3,256})$")
 _api_key_cache: OrderedDict = OrderedDict()  # Bounded LRU: token -> {"user_id": ..., "ts": epoch}
 _API_KEY_CACHE_MAX = 10_000
 
 # Request-scoped API key context (safe for concurrent async requests)
 _current_api_key_var: ContextVar[dict] = ContextVar('_current_api_key', default={"key": None, "user_id": None})
+
+
+def _is_allowed_api_scope(scope: Optional[str]) -> bool:
+    return scope in {"read-only", "read-write", "admin"}
+
 
 def get_tenant_from_key(request: Request) -> str:
     client_ip = request.client.host if request.client else "unknown"
@@ -2530,92 +2536,119 @@ def get_tenant_from_key(request: Request) -> str:
         )
         error_log.error(f"Unauthorized access | ip={client_ip} | Header length: {len(auth)}")
         raise HTTPException(status_code=401, detail="Missing or invalid API key")
+
     token = m.group(1)
-    parts = token.split("-")
-    if len(parts) < 3:
-        security_log.warning(
-            f"Auth failed | ip={client_ip} | reason=malformed_key | "
-            f"token_prefix={token[:10]} | path={request.url.path}"
-        )
-        raise HTTPException(status_code=401, detail="Malformed API key")
-    tenant = parts[1]
-    
-    ctx = {"key": token, "user_id": None, "org_id": None, "scope": "read-write"}
+    ctx = {
+        "key": token,
+        "user_id": None,
+        "org_id": None,
+        "scope": "read-write",
+        "plan": "free",
+        "tenant": None,
+        "db_tenant_id": None,
+    }
     _current_api_key_var.set(ctx)
     request.state.api_ctx = ctx  # Also store on request for generator access
 
     # Fast in-memory API key cache (avoids DB round-trip on every request)
     cached = _api_key_cache.get(token)
     if cached and (time.time() - cached["ts"]) < 300:
+        tenant = cached.get("tenant")
+        if not tenant:
+            raise HTTPException(status_code=401, detail="Invalid API key")
         ctx["user_id"] = cached.get("user_id")
         ctx["org_id"] = cached.get("org_id")
         ctx["scope"] = cached.get("scope", "read-write")
+        ctx["plan"] = cached.get("plan", "free")
+        ctx["tenant"] = tenant
+        ctx["db_tenant_id"] = cached.get("db_tenant_id", tenant)
         _current_api_key_var.set(ctx)
-        # Check expiration
         if cached.get("expires_at") and time.time() > cached["expires_at"]:
             raise HTTPException(status_code=401, detail="API key expired")
-        # Check IP allowlist
         allowed = cached.get("allowed_ips")
         if allowed and client_ip not in allowed:
             security_log.warning(f"IP denied | tenant={tenant} | ip={client_ip}")
             raise HTTPException(status_code=403, detail="IP not allowed for this key")
+
         def _bg_usage():
             try:
                 from database import update_api_key_usage
-                update_api_key_usage(token, tenant)
+                update_api_key_usage(token, ctx["db_tenant_id"] or tenant)
             except Exception:
                 pass
+
         _bg_executor.submit(_bg_usage)
         return tenant
 
     try:
-        from database import get_api_key_info, update_api_key_usage
+        from database import get_api_key_info, get_org_for_api_key, update_api_key_usage
+
         key_info = get_api_key_info(token)
-        if key_info:
-            # Check expiration
-            exp = key_info.get("expires_at")
-            if exp and str(exp)[:19] < time.strftime("%Y-%m-%d %H:%M:%S"):
-                raise HTTPException(status_code=401, detail="API key expired")
-            # Check IP allowlist
-            allowed = key_info.get("allowed_ips")
-            if allowed and client_ip not in allowed:
-                security_log.warning(f"IP denied | tenant={tenant} | ip={client_ip}")
-                raise HTTPException(status_code=403, detail="IP not allowed for this key")
-            
-            update_api_key_usage(token, tenant)
-            ctx["user_id"] = key_info.get('user_id')
-            ctx["org_id"] = str(key_info.get('org_id', '')) or None
-            ctx["scope"] = key_info.get('scope', 'read-write')
-            ctx["plan"] = key_info.get('plan', 'free')
-            _current_api_key_var.set(ctx)
-            _api_key_cache[token] = {
-                "user_id": ctx["user_id"],
-                "org_id": ctx["org_id"],
-                "scope": ctx["scope"],
-                "allowed_ips": allowed,
-                "expires_at": None,
-                "ts": time.time(),
-            }
-            # Evict oldest entries if cache is too large
-            while len(_api_key_cache) > _API_KEY_CACHE_MAX:
-                _api_key_cache.popitem(last=False)
-            security_log.debug(
-                f"Auth success | tenant={tenant} | ip={client_ip} | "
-                f"plan={key_info.get('plan', 'unknown')} | scope={ctx['scope']} | "
-                f"org_id={ctx['org_id']}"
-            )
-        else:
+        if not key_info:
             security_log.warning(
-                f"API key not found | tenant={tenant} | ip={client_ip} | "
-                f"key_prefix={token[:20]}"
+                f"API key not found | ip={client_ip} | key_prefix={token[:20]}"
             )
             raise HTTPException(status_code=401, detail="Invalid API key")
+
+        db_tenant_id = str(key_info.get("tenant_id") or "").strip()
+        if not db_tenant_id:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+
+        exp = key_info.get("expires_at")
+        exp_ts = exp.timestamp() if hasattr(exp, "timestamp") else None
+        if exp_ts and time.time() > exp_ts:
+            raise HTTPException(status_code=401, detail="API key expired")
+
+        org = None
+        try:
+            org = get_org_for_api_key(token)
+        except Exception:
+            org = None
+
+        runtime_tenant = str(org.get("slug") or "").strip() if org else db_tenant_id
+        resolved_scope = key_info.get("scope", "read-write")
+        if not _is_allowed_api_scope(resolved_scope):
+            resolved_scope = "read-write"
+        resolved_plan = str(org.get("plan") or "").strip() if org else ""
+        if not resolved_plan:
+            resolved_plan = str(key_info.get("plan") or "free")
+
+        allowed = key_info.get("allowed_ips")
+        if allowed and client_ip not in allowed:
+            security_log.warning(f"IP denied | tenant={runtime_tenant} | ip={client_ip}")
+            raise HTTPException(status_code=403, detail="IP not allowed for this key")
+
+        update_api_key_usage(token, db_tenant_id)
+        ctx["user_id"] = key_info.get("user_id")
+        ctx["org_id"] = str(key_info.get("org_id", "")) or None
+        ctx["scope"] = resolved_scope
+        ctx["plan"] = resolved_plan
+        ctx["tenant"] = runtime_tenant
+        ctx["db_tenant_id"] = db_tenant_id
+        _current_api_key_var.set(ctx)
+        _api_key_cache[token] = {
+            "tenant": runtime_tenant,
+            "db_tenant_id": db_tenant_id,
+            "user_id": ctx["user_id"],
+            "org_id": ctx["org_id"],
+            "scope": ctx["scope"],
+            "plan": ctx["plan"],
+            "allowed_ips": allowed,
+            "expires_at": exp_ts,
+            "ts": time.time(),
+        }
+        while len(_api_key_cache) > _API_KEY_CACHE_MAX:
+            _api_key_cache.popitem(last=False)
+        security_log.debug(
+            f"Auth success | tenant={runtime_tenant} | ip={client_ip} | "
+            f"plan={ctx['plan']} | scope={ctx['scope']} | org_id={ctx['org_id']}"
+        )
+        return runtime_tenant
     except HTTPException:
         raise
     except Exception as e:
-        error_log.warning(f"Database operation failed | tenant={tenant} | error={str(e)}")
+        error_log.warning(f"Database operation failed | key_prefix={token[:20]} | error={str(e)}")
         raise HTTPException(status_code=503, detail="Authentication service temporarily unavailable")
-    return tenant
 
 
 def _require_scope(request: Request, required: str):
@@ -2628,6 +2661,67 @@ def _require_scope(request: Request, required: str):
             status_code=403,
             detail=f"Insufficient permissions. Required: {required}, got: {scope}"
         )
+
+
+_ORG_ROLE_LEVELS = {"member": 0, "admin": 1, "owner": 2}
+
+
+def _get_user_org_membership(user_id: str, org_id: str) -> Optional[dict]:
+    from database import get_user_orgs
+
+    for org in get_user_orgs(user_id):
+        if str(org.get("id")) == str(org_id):
+            return org
+    return None
+
+
+def _require_org_membership(user_id: str, org_id: str, min_role: str = "member") -> dict:
+    membership = _get_user_org_membership(user_id, org_id)
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this organization")
+
+    current_role = str(membership.get("role") or "member")
+    required_level = _ORG_ROLE_LEVELS.get(min_role, _ORG_ROLE_LEVELS["member"])
+    current_level = _ORG_ROLE_LEVELS.get(current_role, _ORG_ROLE_LEVELS["member"])
+    if current_level < required_level:
+        raise HTTPException(status_code=403, detail=f"{min_role} role required for this organization")
+    return membership
+
+
+def _normalize_origin(url: str) -> Optional[str]:
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _get_allowed_redirect_origins() -> List[str]:
+    origins: List[str] = []
+    for raw_origin in [FRONTEND_URL, *ALLOWED_ORIGINS]:
+        origin = _normalize_origin(raw_origin)
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+def _resolve_billing_return_url(request: Request, candidate_url: str, fallback_path: str) -> str:
+    allowed_origins = _get_allowed_redirect_origins()
+    request_origin = _normalize_origin(request.headers.get("origin", ""))
+    default_origin = request_origin if request_origin in allowed_origins else (allowed_origins[0] if allowed_origins else None)
+
+    if candidate_url:
+        candidate_origin = _normalize_origin(candidate_url)
+        if not candidate_origin:
+            raise HTTPException(status_code=400, detail="Invalid billing return URL")
+        if candidate_origin not in allowed_origins:
+            raise HTTPException(status_code=400, detail="Billing return URL origin is not allowed")
+        return candidate_url
+
+    if not default_origin:
+        raise HTTPException(status_code=500, detail="Billing redirect origin is not configured")
+    return f"{default_origin}{fallback_path}"
 
 # -----------------------------
 # Request/Response models (OpenAI-like)
@@ -2991,22 +3085,46 @@ def cache_warmup(body: WarmupRequest, request: Request):
     try:
         user = _get_user_from_supabase_token(request)
         from database import get_user_orgs, list_api_keys
+
         orgs = get_user_orgs(user["id"])
-        tenant = body.tenant
-        if not tenant and orgs:
-            tenant = orgs[0].get("slug")
-        if not tenant:
-            keys = list_api_keys(user_id=user["id"])
-            if keys:
-                tenant = keys[0].get("tenant_id", f"usr_{user['id'][:8]}")
-        if not tenant:
+        keys = list_api_keys(user_id=user["id"])
+        org_slug_by_id = {
+            str(org.get("id")): str(org.get("slug"))
+            for org in orgs
+            if org.get("id") and org.get("slug")
+        }
+        allowed_tenants: Dict[str, str] = {}
+        for org in orgs:
+            slug = str(org.get("slug") or "").strip()
+            if slug:
+                allowed_tenants[slug] = slug
+        for key in keys:
+            raw_tenant = str(key.get("tenant_id") or "").strip()
+            runtime_tenant = org_slug_by_id.get(str(key.get("org_id") or ""), raw_tenant)
+            if raw_tenant:
+                allowed_tenants[raw_tenant] = runtime_tenant
+            if runtime_tenant:
+                allowed_tenants[runtime_tenant] = runtime_tenant
+
+        requested_tenant = (body.tenant or "").strip()
+        if requested_tenant:
+            tenant = allowed_tenants.get(requested_tenant)
+            if not tenant:
+                raise HTTPException(status_code=403, detail="Requested tenant is not assigned to your account")
+        elif allowed_tenants:
+            tenant = next(iter(allowed_tenants.values()))
+        else:
             tenant = f"usr_{user['id'][:8]}"
+        selected_org = next(
+            (org for org in orgs if str(org.get("slug") or "").strip() == tenant),
+            orgs[0] if orgs else None,
+        )
 
         # Enforce plan limits (Redis counter for speed, DB fallback)
         try:
             from billing import get_plan_limits
             from redis_cache import increment_monthly_usage
-            org_plan = orgs[0].get("plan", "free") if orgs else "free"
+            org_plan = selected_org.get("plan", "free") if selected_org else "free"
             current_requests = increment_monthly_usage(tenant)
             if current_requests == -1:
                 from database import get_usage_stats
@@ -3031,7 +3149,7 @@ def cache_warmup(body: WarmupRequest, request: Request):
         ]
         if len(entries) > 500:
             raise HTTPException(status_code=400, detail="Maximum 500 entries per request")
-        warmup_org_id: str = orgs[0].get("id", "") if orgs else ""
+        warmup_org_id = str(selected_org.get("id") or "") if selected_org else ""
         result = svc.warmup(
             tenant,
             entries,
@@ -3278,7 +3396,7 @@ def generate_api_key_endpoint(
     request: Request,
     tenant: Optional[str] = Query(None),
     length: int = Query(32, ge=16, le=64),
-    plan: str = Query("free"),
+    plan: Optional[str] = Query(None),
     label: Optional[str] = Query(None),
     scope: str = Query("read-write"),
 ):
@@ -3289,13 +3407,16 @@ def generate_api_key_endpoint(
         from api_key_generator import generate_api_key
         from database import create_api_key, list_api_keys, get_api_key_info, get_user_orgs
 
+        if scope not in {"read-only", "read-write"}:
+            raise HTTPException(status_code=403, detail="Only read-only and read-write API key scopes are allowed")
+
         existing_keys = list_api_keys(user_id=user_id)
         if existing_keys and tenant is None:
             existing_key = existing_keys[0]
             return {
                 "api_key": existing_key.get('api_key'),
                 "tenant_id": existing_key.get('tenant_id'),
-                "plan": existing_key.get('plan', plan),
+                "plan": existing_key.get('plan', 'free'),
                 "created_at": str(existing_key.get('created_at', '')),
                 "format": f"Bearer {existing_key.get('api_key')}",
                 "message": "Using existing API key."
@@ -3303,22 +3424,34 @@ def generate_api_key_endpoint(
 
         # Resolve org for user
         org_id = None
+        resolved_plan = "free"
+        org_slug = None
         try:
             orgs = get_user_orgs(user_id)
             if orgs:
                 org = orgs[0]
                 org_id = str(org["id"])
-                if tenant is None:
-                    tenant = org["slug"]
+                resolved_plan = str(org.get("plan") or "free")
+                org_slug = str(org.get("slug") or "").strip() or None
         except Exception:
             pass
 
+        if org_slug:
+            if tenant and tenant != org_slug:
+                security_log.warning(
+                    f"Blocked API key tenant override | user_id={user_id} | requested={tenant} | enforced={org_slug}"
+                )
+            tenant = org_slug
         if tenant is None:
             tenant = f"usr_{user_id[:8]}"
+        if plan and plan != resolved_plan:
+            security_log.warning(
+                f"Blocked API key plan override | user_id={user_id} | requested={plan} | enforced={resolved_plan}"
+            )
 
         api_key, tenant_id = generate_api_key(tenant=tenant, length=length, auto_tenant=False)
         result = create_api_key(
-            api_key, tenant_id, user_id=user_id, plan=plan,
+            api_key, tenant_id, user_id=user_id, plan=resolved_plan,
             org_id=org_id, scope=scope, label=label,
         )
         if not result:
@@ -3334,7 +3467,7 @@ def generate_api_key_endpoint(
             log_audit(
                 org_id=org_id, user_id=user_id, action="api_key.created",
                 resource_type="api_key", resource_id=api_key[:20],
-                details={"scope": scope, "label": label},
+                details={"scope": scope, "label": label, "plan": resolved_plan},
                 ip_address=request.client.host if request.client else None,
             )
         except Exception:
@@ -3346,7 +3479,7 @@ def generate_api_key_endpoint(
             "api_key": api_key,
             "tenant_id": tenant_id,
             "org_id": org_id,
-            "plan": plan,
+            "plan": resolved_plan,
             "scope": scope,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "format": f"Bearer {api_key}",
@@ -3387,7 +3520,7 @@ def _auto_provision_org(user: dict) -> Optional[dict]:
             # Generate API key
             key_suffix = secrets.token_urlsafe(24)
             api_key = f"sc-{slug}-{key_suffix}"
-            tenant_id = f"sc-{slug}"
+            tenant_id = slug
             create_api_key(
                 api_key=api_key,
                 tenant_id=tenant_id,
@@ -3473,7 +3606,13 @@ def set_user_openai_key_endpoint(request: OpenAIKeyRequest, auth_request: Reques
     try:
         user = _get_user_from_supabase_token(auth_request)
         from database import set_user_openai_key
-        from encryption import encrypt_api_key
+        from encryption import encrypt_api_key, is_api_key_encryption_configured
+
+        if not is_api_key_encryption_configured():
+            raise HTTPException(
+                status_code=503,
+                detail="OpenAI key storage is not configured. Set ENCRYPTION_KEY and ENCRYPTION_SALT first."
+            )
 
         try:
             encrypted_key = encrypt_api_key(request.api_key)
@@ -3623,6 +3762,8 @@ def invite_member(org_id: str, body: InviteMemberRequest, request: Request):
     try:
         user = _get_user_from_supabase_token(request)
         from database import add_org_member, get_user_by_email, log_audit
+
+        _require_org_membership(user["id"], org_id, min_role="admin")
         target = get_user_by_email(body.email)
         if not target:
             raise HTTPException(status_code=404, detail="User not found")
@@ -3662,10 +3803,9 @@ def update_org_settings_endpoint(org_id: str, body: OrgSettingsUpdate, request: 
     """Update organization settings (e.g. webhook URL for cache events)."""
     try:
         user = _get_user_from_supabase_token(request)
-        from database import update_org_settings, get_user_orgs
-        orgs = get_user_orgs(user["id"])
-        if not any(str(o["id"]) == org_id for o in orgs):
-            raise HTTPException(status_code=403, detail="Not a member of this organization")
+        from database import update_org_settings
+
+        _require_org_membership(user["id"], org_id, min_role="admin")
         updates = {}
         if body.webhook_url is not None:
             updates["webhook_url"] = body.webhook_url.strip() or None
@@ -3683,7 +3823,8 @@ def update_org_settings_endpoint(org_id: str, body: OrgSettingsUpdate, request: 
 def get_audit_logs(org_id: str, request: Request, limit: int = Query(50, ge=1, le=500)):
     """Get audit logs for an organization."""
     try:
-        _get_user_from_supabase_token(request)
+        user = _get_user_from_supabase_token(request)
+        _require_org_membership(user["id"], org_id, min_role="member")
         from database import get_db_connection
         from psycopg2.extras import RealDictCursor
         with get_db_connection() as conn:
@@ -4181,9 +4322,16 @@ def upgrade_plan(body: UpgradePlanRequest, request: Request):
         if not customer_id:
             raise HTTPException(status_code=500, detail="Failed to create Stripe customer")
         
-        origin = request.headers.get("origin", "") or FRONTEND_URL
-        success_url = body.success_url or f"{origin}/settings?billing=success"
-        cancel_url = body.cancel_url or f"{origin}/settings?billing=cancel"
+        success_url = _resolve_billing_return_url(
+            request,
+            body.success_url,
+            "/settings?billing=success",
+        )
+        cancel_url = _resolve_billing_return_url(
+            request,
+            body.cancel_url,
+            "/settings?billing=cancel",
+        )
         
         redirect_url = create_checkout_session(
             customer_id, price_id, success_url, cancel_url, org_id, body.plan
@@ -4214,8 +4362,8 @@ def billing_portal(request: Request):
         customer_id = settings.get("stripe_customer_id")
         if not customer_id:
             raise HTTPException(status_code=400, detail="No active subscription found")
-        origin = request.headers.get("origin", "") or FRONTEND_URL
-        url = create_portal_session(customer_id, f"{origin}/settings")
+        return_url = _resolve_billing_return_url(request, "", "/settings")
+        url = create_portal_session(customer_id, return_url)
         if not url:
             raise HTTPException(status_code=500, detail="Failed to create portal session")
         return {"portal_url": url}

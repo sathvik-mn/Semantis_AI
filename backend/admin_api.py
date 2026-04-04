@@ -53,6 +53,7 @@ def _check_admin_rate_limit(request: Request):
         _admin_rate_limit.clear()
 
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+ALLOW_ADMIN_QUERY_KEY = os.getenv("ALLOW_ADMIN_QUERY_KEY", "false").lower() == "true"
 
 if not ADMIN_API_KEY:
     system_log.warning("ADMIN_API_KEY is not set. Admin endpoints are disabled.")
@@ -66,7 +67,7 @@ def verify_admin_key(
     import hmac
 
     # Method 1: Admin API key (server-to-server calls)
-    key = x_admin_key or api_key
+    key = x_admin_key or (api_key if ALLOW_ADMIN_QUERY_KEY else None)
     if ADMIN_API_KEY and key and hmac.compare_digest(key, ADMIN_API_KEY):
         return True
 

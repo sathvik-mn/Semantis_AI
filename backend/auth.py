@@ -17,6 +17,7 @@ import requests
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+_ALLOWED_JWKS_ALGORITHMS = frozenset({"ES256", "RS256"})
 
 # JWKS cache (refreshed every 10 minutes)
 _jwks_cache: Dict = {}
@@ -69,6 +70,8 @@ def _get_signing_key_from_jwks(token: str) -> Optional[Dict]:
 
     kid = unverified_header.get("kid")
     alg = unverified_header.get("alg", "")
+    if alg not in _ALLOWED_JWKS_ALGORITHMS:
+        return None
 
     for key in jwks["keys"]:
         if key.get("kid") == kid:
@@ -92,17 +95,24 @@ def verify_token(token: str) -> Optional[Dict]:
 
     Returns the decoded payload or None if invalid/expired.
     """
+    # Supabase access tokens are signed JWTs with exactly three segments.
+    # Reject JWE-style payloads and malformed tokens before handing them to jose.
+    if not token or token.count(".") != 2:
+        return None
+
     # Strategy 1: JWKS-based verification (asymmetric keys)
     if SUPABASE_URL:
         jwk = _get_signing_key_from_jwks(token)
         if jwk:
             try:
                 unverified_header = jwt.get_unverified_header(token)
-                alg = unverified_header.get("alg", "ES256")
+                alg = unverified_header.get("alg", "")
+                if alg not in _ALLOWED_JWKS_ALGORITHMS:
+                    return None
                 payload = jwt.decode(
                     token,
                     jwk,
-                    algorithms=[alg],
+                    algorithms=list(_ALLOWED_JWKS_ALGORITHMS),
                     options={"verify_aud": False},
                 )
                 return payload
