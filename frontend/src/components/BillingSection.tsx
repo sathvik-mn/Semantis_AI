@@ -151,11 +151,11 @@ export function BillingSection() {
         <div style={styles.byokIndicator}>
           <Key size={14} style={{ color: isByok ? '#34d399' : 'rgba(255,255,255,0.7)' }} />
           <span style={{ fontSize: '13px', color: isByok ? '#86efac' : 'rgba(255,255,255,0.6)' }}>
-            {isByok ? 'Using your own OpenAI key (BYOK) — no token charges from Semantis' : 'Using Semantis API key — tokens deducted from credits on cache misses'}
+            {isByok ? 'Using your own OpenAI key (BYOK) — no token charges from Semantys' : 'Using Semantys API key — tokens deducted from credits on cache misses'}
           </span>
         </div>
 
-        {/* Credits balance (Semantis Key users) */}
+        {/* Credits balance (Semantys Key users) */}
         {!isByok && (
           <div style={styles.creditsCard}>
             <div style={styles.creditsHeader}>
@@ -167,7 +167,7 @@ export function BillingSection() {
             </div>
             {(billing?.credits_balance ?? 0) <= 0.01 && (
               <div style={styles.creditsWarning}>
-                Credits low — add more to continue using the Semantis API key
+                Credits low — add more to continue using the Semantys API key
               </div>
             )}
           </div>

@@ -14,7 +14,7 @@ export function LandingPage() {
         {/* Navigation */}
         <nav className="fixed top-0 inset-x-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/[0.06]">
           <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
-            <div className="text-2xl font-extrabold text-gradient">Semantis AI</div>
+            <div className="text-2xl font-extrabold text-gradient">Semantys AI</div>
             <div className="hidden md:flex gap-8">
               <Link to="/docs" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Docs</Link>
               <Link to="/pricing" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Pricing</Link>
@@ -110,8 +110,8 @@ export function LandingPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
             {[
-              { icon: '1', title: 'Your App Sends Query', text: 'Your application makes an LLM request through Semantis AI', highlighted: false },
-              { icon: '2', title: 'Semantis Checks Cache', text: 'We analyze semantic similarity against cached responses', highlighted: true },
+              { icon: '1', title: 'Your App Sends Query', text: 'Your application makes an LLM request through Semantys AI', highlighted: false },
+              { icon: '2', title: 'Semantys Checks Cache', text: 'We analyze semantic similarity against cached responses', highlighted: true },
               { icon: '3', title: 'Instant Response', text: 'Return cached result or fetch from LLM and cache it', highlighted: false },
             ].map((f) => (
               <div
@@ -132,7 +132,7 @@ export function LandingPage() {
 
         {/* Features */}
         <section className="py-24 px-8 max-w-6xl mx-auto">
-          <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-4">Why Choose Semantis AI?</h2>
+          <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-4">Why Choose Semantys AI?</h2>
           <p className="text-lg text-white/60 text-center mb-16">Built for modern AI applications</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -172,7 +172,7 @@ export function LandingPage() {
             <pre className="p-6 overflow-auto">
               <code className="text-sm text-white/80 font-mono leading-relaxed">{`import openai
 
-# Just point your existing OpenAI client at Semantis
+# Just point your existing OpenAI client at Semantys
 client = openai.OpenAI(
     base_url="https://api.semantis.ai/v1",
     api_key="sc-your-api-key"
@@ -205,7 +205,7 @@ print(response.choices[0].message.content)  # Instant on cache hit!`}</code>
         <footer className="border-t border-white/[0.06] px-8 py-16">
           <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-10 mb-10">
             <div>
-              <div className="text-xl font-bold text-gradient mb-3">Semantis AI</div>
+              <div className="text-xl font-bold text-gradient mb-3">Semantys AI</div>
               <p className="text-sm text-white/40 leading-relaxed">Intelligent semantic caching for modern AI applications.</p>
             </div>
             <div className="flex flex-col gap-2.5">
@@ -222,12 +222,14 @@ print(response.choices[0].message.content)  # Instant on cache hit!`}</code>
             </div>
             <div className="flex flex-col gap-2.5">
               <h4 className="text-sm font-semibold text-white mb-1">Company</h4>
-              <a href="mailto:contact@semantis.ai" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Contact</a>
+              <a href="mailto:contact@abodeex.com" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Contact</a>
               <Link to="/privacy" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Privacy</Link>
+              <Link to="/terms" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Terms</Link>
+              <Link to="/cookies" className="text-sm text-white/50 no-underline hover:text-white transition-colors">Cookies</Link>
             </div>
           </div>
           <div className="max-w-6xl mx-auto pt-8 border-t border-white/[0.06] text-center">
-            <p className="text-xs text-white/40">&copy; 2026 Semantis AI. All rights reserved.</p>
+            <p className="text-xs text-white/40">&copy; 2026 Semantys AI. All rights reserved.</p>
           </div>
         </footer>
       </div>

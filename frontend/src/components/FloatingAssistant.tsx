@@ -15,7 +15,7 @@ export function FloatingAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Hi! Ask me anything about Semantis AI — semantic caching, pricing, integrations, and more.' },
+    { role: 'assistant', content: 'Hi! Ask me anything about Semantys AI — semantic caching, pricing, integrations, and more.' },
   ]);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -151,7 +151,7 @@ export function FloatingAssistant() {
           }}
         >
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06]">
-            <span className="text-xs font-medium text-white/50 tracking-wide">Semantis AI Assistant</span>
+            <span className="text-xs font-medium text-white/50 tracking-wide">Semantys AI Assistant</span>
             <button
               type="button"
               onClick={() => setShowChat(false)}

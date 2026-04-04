@@ -156,7 +156,7 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-4xl font-bold text-white mb-2">Admin Dashboard</h1>
           <p className="text-gray-400">
-            Overview of Semantis AI platform metrics
+            Overview of Semantys AI platform metrics
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">

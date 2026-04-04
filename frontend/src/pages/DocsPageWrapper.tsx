@@ -16,7 +16,7 @@ export function DocsPageWrapper() {
             to={isAuthenticated ? '/playground' : '/'}
             className="text-2xl font-extrabold text-gradient no-underline"
           >
-            Semantis AI
+            Semantys AI
           </Link>
           <div className="flex items-center gap-4">
             {isAuthenticated ? (

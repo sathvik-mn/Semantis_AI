@@ -34,7 +34,7 @@ export function Layout() {
       <nav className="sticky top-0 z-50 bg-black/70 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-[1400px] mx-auto px-5 py-3.5 flex items-center gap-8">
           <Link to="/" className="text-xl font-bold text-gradient no-underline shrink-0">
-            Semantis AI
+            Semantys AI
           </Link>
 
           <div className="flex gap-1 flex-1">
@@ -87,10 +87,12 @@ export function Layout() {
 
       <footer className="px-5 py-5 text-center border-t border-white/[0.06]">
         <p className="text-xs text-white/30">
-          Semantis AI &mdash; Semantic Caching Platform
+          Semantys AI &mdash; Semantic Caching Platform
           <Link to="/status" className="ml-2 text-white/40 hover:text-white/60 no-underline">Status</Link>
           <Link to="/security" className="ml-2 text-white/40 hover:text-white/60 no-underline">Security</Link>
           <Link to="/privacy" className="ml-2 text-white/40 hover:text-white/60 no-underline">Privacy</Link>
+          <Link to="/terms" className="ml-2 text-white/40 hover:text-white/60 no-underline">Terms</Link>
+          <Link to="/cookies" className="ml-2 text-white/40 hover:text-white/60 no-underline">Cookies</Link>
         </p>
       </footer>
     </div>

@@ -25,7 +25,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   const steps = [
     {
-      title: 'Welcome to Semantis AI',
+      title: 'Welcome to Semantys AI',
       body: 'Semantic caching for LLM applications. Reduce costs and latency by caching similar queries.',
       cta: 'Get Started',
     },

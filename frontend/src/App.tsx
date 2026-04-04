@@ -15,6 +15,8 @@ import { DocsPageWrapper } from './pages/DocsPageWrapper';
 import { StatusPage } from './pages/StatusPage';
 import { SecurityPage } from './pages/SecurityPage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
+import { CookiesPage } from './pages/CookiesPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { Layout } from './components/Layout';
 import AdminLayout from './components/AdminLayout';
@@ -88,6 +90,8 @@ function AppRoutes() {
       <Route path="/status" element={<StatusPage />} />
       <Route path="/security" element={<SecurityPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/cookies" element={<CookiesPage />} />
       <Route path="/docs" element={<DocsPageWrapper />} />
       <Route
         element={

@@ -74,7 +74,7 @@ export function SignInPage() {
             <>
             <div style={styles.header}>
               <h1 style={styles.title}>Welcome Back</h1>
-              <p style={styles.subtitle}>Sign in to your Semantis AI account</p>
+              <p style={styles.subtitle}>Sign in to your Semantys AI account</p>
             </div>
 
             <form onSubmit={handleSubmit} style={styles.form}>

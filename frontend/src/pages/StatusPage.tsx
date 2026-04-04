@@ -38,7 +38,7 @@ export function StatusPage() {
         <div style={styles.header}>
           <h1 style={styles.title}>System Status</h1>
           <p style={styles.subtitle}>
-            Real-time status of Semantis AI services
+            Real-time status of Semantys AI services
           </p>
         </div>
 

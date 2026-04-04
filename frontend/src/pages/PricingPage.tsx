@@ -17,7 +17,7 @@ export function PricingPage() {
     {
       name: 'Free',
       price: '$0',
-      description: 'Perfect for trying out Semantis AI',
+      description: 'Perfect for trying out Semantys AI',
       features: [
         '$1.00 starting credits included',
         '1,000 API requests/month',
@@ -69,7 +69,7 @@ export function PricingPage() {
         {/* Nav */}
         <nav className="fixed top-0 inset-x-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/[0.06]">
           <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
-            <Link to="/" className="text-xl font-bold text-gradient no-underline">Semantis AI</Link>
+            <Link to="/" className="text-xl font-bold text-gradient no-underline">Semantys AI</Link>
             <div className="flex gap-3 items-center">
               <Link to="/" className="text-white/60 hover:text-white text-sm font-medium no-underline transition-colors">Home</Link>
               <Link to="/signin" className="btn-primary text-sm no-underline">Sign In</Link>

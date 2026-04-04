@@ -8,7 +8,7 @@ export function SecurityPage() {
         <div style={styles.header}>
           <h1 style={styles.title}>Security Overview</h1>
           <p style={styles.subtitle}>
-            How Semantis AI protects your data and API keys
+            How Semantys AI protects your data and API keys
           </p>
         </div>
 

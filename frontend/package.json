@@ -1,7 +1,7 @@
 {
   "name": "semantis-frontend",
   "version": "1.0.0",
-  "description": "Semantis AI Frontend Dashboard",
+  "description": "Semantys AI Frontend Dashboard",
   "type": "module",
   "scripts": {
     "dev": "vite",

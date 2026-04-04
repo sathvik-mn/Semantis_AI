@@ -20,9 +20,9 @@ client = Client(api_key="${apiKey}")
 response = client.chat("Explain reinforcement learning")
 print(response.text, response.meta)`;
 
-  const nodeExample = `import { Semantis } from "semantis";
+  const nodeExample = `import { Semantys } from "semantys";
 
-const client = new Semantis("${apiKey}");
+const client = new Semantys("${apiKey}");
 const res = await client.chat("Explain embeddings");
 console.log(res.text, res.meta);`;
 
@@ -65,7 +65,7 @@ print(response.text)`;
       <div style={styles.hero}>
         <h1 style={styles.heroTitle}>Integration Documentation</h1>
         <p style={styles.heroSubtitle}>
-          Get started with Semantis AI in minutes. Copy the code snippets below to integrate
+          Get started with Semantys AI in minutes. Copy the code snippets below to integrate
           semantic caching into your application.
         </p>
       </div>
@@ -80,7 +80,7 @@ print(response.text)`;
             <strong>Install the client</strong> — <code style={styles.inlineCode}>pip install semantis</code> or <code style={styles.inlineCode}>npm install semantis</code>
           </li>
           <li style={styles.step}>
-            <strong>Replace your LLM call</strong> — Use the Semantis client instead of direct OpenAI calls (see examples below).
+            <strong>Replace your LLM call</strong> — Use the Semantys client instead of direct OpenAI calls (see examples below).
           </li>
           <li style={styles.step}>
             <strong>Verify</strong> — Check the <code style={styles.inlineCode}>meta.hit</code> field in responses to see cache hits.
@@ -91,7 +91,7 @@ print(response.text)`;
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Quick Start</h2>
         <p style={styles.text}>
-          Semantis AI provides a drop-in replacement for your existing LLM API calls. Simply wrap
+          Semantys AI provides a drop-in replacement for your existing LLM API calls. Simply wrap
           your requests with our SDK to automatically benefit from semantic caching.
         </p>
 
@@ -205,7 +205,7 @@ print(response.text)`;
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Framework Integrations</h2>
         <p style={styles.text}>
-          Use Semantis with LangChain or LlamaIndex by pointing their OpenAI client to our
+          Use Semantys with LangChain or LlamaIndex by pointing their OpenAI client to our
           compatible endpoint.
         </p>
 

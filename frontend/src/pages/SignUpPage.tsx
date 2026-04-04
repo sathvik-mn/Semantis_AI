@@ -58,7 +58,7 @@ export function SignUpPage() {
         <nav style={styles.nav} className="pointer-events-auto">
           <div style={styles.navContent}>
             <Link to="/" style={styles.logo}>
-              <span style={styles.logoText}>Semantis AI</span>
+              <span style={styles.logoText}>Semantys AI</span>
             </Link>
           </div>
         </nav>
@@ -103,7 +103,7 @@ export function SignUpPage() {
             <>
             <h2 style={styles.cardTitle}>Create Account</h2>
             <p style={styles.cardSubtitle}>
-              Get started with Semantis AI for free
+              Get started with Semantys AI for free
             </p>
 
             <form onSubmit={handleSubmit} style={styles.form}>
