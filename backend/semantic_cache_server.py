@@ -1473,6 +1473,22 @@ class SemanticCacheService:
         """Lightweight normalization for exact-match lookup only (whitespace + lowercase)."""
         return " ".join(s.strip().split()).lower()
 
+    @staticmethod
+    def extract_cache_query(messages: List[dict]) -> str:
+        """Single source of truth for the text that identifies a cache entry.
+
+        Returns the normalized last user message.  Every code path that
+        needs a cache key or embedding text MUST call this instead of
+        doing its own extraction.  This keeps prompt_norm, embedding
+        input, and validator input aligned.
+
+        The full message list is still passed to the LLM for answer
+        quality — this function only controls *cache identity*.
+        """
+        user_msgs = [m["content"] for m in messages if m.get("role") == "user"]
+        raw = user_msgs[-1] if user_msgs else ""
+        return SemanticCacheService.norm_text(raw)
+
     def _get_embedding_for_query(self, messages: List[dict], user_id: Optional[str] = None) -> Tuple[np.ndarray, str]:
         """Get embedding for the user's raw query text with multi-layer optimization.
 
@@ -1484,13 +1500,13 @@ class SemanticCacheService:
         5. Generate embedding (local primary or OpenAI fallback)
         6. Cache result in memory + Redis for future queries
         """
-        user_messages = [m["content"] for m in messages if m.get("role") == "user"]
-        raw_text = user_messages[-1] if user_messages else ""
-        raw_text = raw_text.strip()
+        # Use extract_cache_query() as the single source of truth for
+        # which user message we embed — keeps this aligned with prompt_norm.
+        raw_text = self.extract_cache_query(messages)
         if not raw_text:
             raise ValueError("Empty query")
 
-        text_for_embed = raw_text.lower()
+        text_for_embed = raw_text  # already lowercased by extract_cache_query
 
         # ── Spelling correction before embedding (~0.1ms) ──
         # Fixes typos so the embedding model gets clean input.
@@ -3294,7 +3310,7 @@ def simple_query(request: Request, prompt: str = Query(...), model: str = CHAT_M
     if guard_err:
         raise HTTPException(status_code=400, detail=guard_err)
 
-    prompt_norm = SemanticCacheService.norm_text(messages[0]["content"])
+    prompt_norm = SemanticCacheService.extract_cache_query(messages)
     prompt_hash = hashlib.md5(prompt_norm.encode()).hexdigest()[:8]
 
     endpoint_start = time.time()
@@ -4313,12 +4329,7 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     if guard_err:
         raise HTTPException(status_code=400, detail=guard_err)
 
-    # Use only the LAST user message for cache keying — must match what
-    # _get_embedding_for_query() embeds (line 1488).  Joining ALL user
-    # messages pollutes the key with conversation history, making the
-    # second query's prompt_norm completely different from the first.
-    _user_msgs = [m["content"] for m in messages if m.get("role") == "user"]
-    prompt_norm = SemanticCacheService.norm_text(_user_msgs[-1] if _user_msgs else "")
+    prompt_norm = SemanticCacheService.extract_cache_query(messages)
 
     try:
         user_id = _ctx.get("user_id")
