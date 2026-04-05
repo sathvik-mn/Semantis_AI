@@ -16,7 +16,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Semantys AI",
-    author_email="support@semantys.ai",
+    author_email="contact@abodeex.com",
     url="https://github.com/semantys-ai/semantys-cache-python",
     packages=find_packages(include=["semantys_cache", "semantys_cache.*", "semantys_ai", "semantys_ai.*"]),
     install_requires=[

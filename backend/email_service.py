@@ -12,7 +12,7 @@ from typing import Optional
 logger = logging.getLogger("semantys.email")
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "Semantys AI <noreply@semantys.ai>")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "Semantys AI <contact@abodeex.com>")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 _resend_client = None
