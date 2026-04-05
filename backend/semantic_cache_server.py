@@ -1830,7 +1830,7 @@ class SemanticCacheService:
             #   to rescue good matches or reject bad ones
             threshold = self._resolve_threshold(T, domain_hint(query_text))
             _shortcircuit_threshold = threshold + 0.12  # very high confidence
-            _borderline_low = threshold - 0.10          # below this, skip text sim (clear miss)
+            _borderline_low = threshold - 0.35          # allow text signals to rescue moderate-cosine matches
 
             # Collect raw cosine candidates first
             _raw_candidates = []  # list of (entry, cosine_sim, idx)
@@ -1965,7 +1965,7 @@ class SemanticCacheService:
                         if not entry.fresh() or not models_compatible(model, entry.model):
                             continue
                         # Only add if response similarity is strong enough
-                        if query_to_resp_sim < 0.45:
+                        if query_to_resp_sim < 0.35:
                             continue
                         text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
                         # Use response similarity as the primary score (it
@@ -2050,6 +2050,30 @@ class SemanticCacheService:
                     # Example: "How to sort an array in JS" vs "JavaScript array sorting"
                     is_match = True
                     confidence_tier = "low"
+
+                # ── Response-backed rescue ──
+                # When query-to-query cosine is moderate (embedding model
+                # struggled) but the cached RESPONSE is clearly relevant to
+                # the new query, trust the response signal.  This catches
+                # conceptually identical queries that the embedding model
+                # scores low due to short text, acronyms, or rephrasing.
+                # Example: "What is RAG?" cached → response explains
+                # Retrieval Augmented Generation → new query "Explain
+                # Retrieval Augmented Generation" → response embedding
+                # is highly relevant even though query-to-query cosine is 0.45.
+                if not is_match and best_cosine >= 0.35 and best_entry.response_embedding is not None and query_emb is not None:
+                    resp_sim = float(np.dot(
+                        query_emb / (np.linalg.norm(query_emb) + 1e-12),
+                        best_entry.response_embedding / (np.linalg.norm(best_entry.response_embedding) + 1e-12),
+                    ))
+                    if resp_sim >= 0.55 and best_text_sim >= 0.20:
+                        is_match = True
+                        confidence_tier = "low"
+                        semantic_log.info(
+                            f"{tenant_id} | response_rescue | cosine={best_cosine:.3f} | "
+                            f"resp_sim={resp_sim:.3f} | text_sim={best_text_sim:.3f} | "
+                            f"key={prompt_norm[:80]}"
+                        )
 
                 # ── Safety checks ──
 
