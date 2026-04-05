@@ -2831,6 +2831,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Admin-Key"],
+    expose_headers=["X-Cache-Hit", "X-Cache-Similarity", "X-Cache-Latency", "X-Cache-Strategy"],
     max_age=3600,
 )
 
@@ -4300,15 +4301,15 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
         chunk_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:24]}"
 
         if body.stream:
+            # Cache lookup BEFORE generator so metadata is available for response headers
+            cached_ans, meta = svc.lookup(
+                tenant, prompt_norm, messages, body.model, user_id=user_id,
+            )
+
             def stream_generator():
                 _log_key = _captured_key
                 _log_uid = _captured_uid
                 _log_org = _captured_org
-
-                # Step 1: cache lookup only (no LLM call)
-                cached_ans, meta = svc.lookup(
-                    tenant, prompt_norm, messages, body.model, user_id=user_id,
-                )
 
                 def _bg_log(hit_type, response_text="", similarity=0.0, latency_ms=0.0, p_hash=""):
                     try:
@@ -4407,7 +4408,14 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
             return StreamingResponse(
                 stream_generator(),
                 media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "X-Cache-Hit": str(meta.get("hit", "miss")),
+                    "X-Cache-Similarity": str(meta.get("similarity", 0.0)),
+                    "X-Cache-Latency": str(meta.get("latency_ms", 0.0)),
+                    "X-Cache-Strategy": str(meta.get("strategy", "miss")),
+                },
             )
 
         ans, meta = svc.query(

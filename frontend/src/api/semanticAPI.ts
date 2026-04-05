@@ -161,10 +161,24 @@ export async function sendChatCompletion(request: ChatRequest): Promise<ChatResp
   return res.json();
 }
 
-/** Stream chat completion. Yields content deltas. */
-export async function* sendChatCompletionStream(
+/** Cache metadata returned alongside a streaming response. */
+export interface StreamCacheMeta {
+  hit: 'exact' | 'semantic' | 'miss';
+  similarity: number;
+  latency_ms: number;
+  strategy: string;
+}
+
+/** Result of a streaming chat completion — includes both the async content stream and cache metadata. */
+export interface StreamResult {
+  stream: AsyncGenerator<string, void, unknown>;
+  meta: StreamCacheMeta;
+}
+
+/** Stream chat completion. Returns an async content stream + cache metadata from headers. */
+export async function sendChatCompletionStream(
   request: Omit<ChatRequest, 'stream'> & { stream?: true }
-): AsyncGenerator<string, void, unknown> {
+): Promise<StreamResult> {
   const res = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: getCacheHeaders(),
@@ -174,30 +188,43 @@ export async function* sendChatCompletionStream(
     const err = await res.json().catch(() => ({}));
     throw new Error(extractErrorDetail(err, res.status));
   }
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('No response body');
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') return;
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed?.choices?.[0]?.delta?.content;
-          if (content) yield content;
-        } catch {
-          /* skip invalid */
+
+  // Read cache metadata from response headers (set by backend)
+  const meta: StreamCacheMeta = {
+    hit: (res.headers.get('X-Cache-Hit') || 'miss') as StreamCacheMeta['hit'],
+    similarity: parseFloat(res.headers.get('X-Cache-Similarity') || '0'),
+    latency_ms: parseFloat(res.headers.get('X-Cache-Latency') || '0'),
+    strategy: res.headers.get('X-Cache-Strategy') || 'stream',
+  };
+
+  async function* streamContent(): AsyncGenerator<string, void, unknown> {
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('No response body');
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') return;
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed?.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch {
+            /* skip invalid */
+          }
         }
       }
     }
   }
+
+  return { stream: streamContent(), meta };
 }
 
 export async function getMetrics(): Promise<Metrics> {

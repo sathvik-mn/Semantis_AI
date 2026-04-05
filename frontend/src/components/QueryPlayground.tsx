@@ -247,12 +247,14 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       conversationMessages.push({ role: 'user', content: userMessage.content });
 
       // Real SSE streaming — chunks appear as they arrive from the backend
-      let fullContent = '';
-      for await (const chunk of sendChatCompletionStream({
+      const { stream, meta: streamMeta } = await sendChatCompletionStream({
         model,
         messages: conversationMessages,
         temperature,
-      })) {
+      });
+
+      let fullContent = '';
+      for await (const chunk of stream) {
         fullContent += chunk;
         const snapshot = fullContent;
         setMessages(prev =>
@@ -260,8 +262,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
         );
       }
 
-      // Mark streaming complete — metadata comes from the next
-      // request which will be an instant cache hit.
+      // Mark streaming complete
       const estimatedTokens = Math.ceil(fullContent.split(/\s+/).length * 1.3);
       const streamUsage: ChatResponse['usage'] = {
         prompt_tokens: 0,
@@ -271,12 +272,12 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
 
       setMessages(prev =>
         prev.map(m => m.id === assistantId
-          ? { ...m, content: fullContent, isStreaming: false, usage: streamUsage }
+          ? { ...m, content: fullContent, isStreaming: false, usage: streamUsage, meta: streamMeta }
           : m
         )
       );
 
-      // Save to history
+      // Save to history with real cache metadata from response headers
       addToHistory(userMessage.content, {
         id: assistantId,
         object: 'chat.completion',
@@ -284,7 +285,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
         model,
         choices: [{ index: 0, message: { role: 'assistant', content: fullContent }, finish_reason: 'stop' }],
         usage: streamUsage,
-        meta: { hit: 'miss', similarity: 0, latency_ms: 0, strategy: 'stream' },
+        meta: streamMeta,
       } as ChatResponse);
 
       if (onQueryComplete) onQueryComplete();
@@ -612,6 +613,7 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
                   </div>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', textAlign: 'left', marginTop: '4px' }}>
                     {new Date(entry.timestamp).toLocaleString()} · {entry.response.meta.latency_ms.toFixed(0)}ms
+                    {entry.response.meta.similarity > 0 && ` · ${(entry.response.meta.similarity * 100).toFixed(1)}% match`}
                   </div>
                 </button>
               ))}
