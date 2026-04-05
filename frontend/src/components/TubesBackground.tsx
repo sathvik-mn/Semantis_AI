@@ -84,13 +84,13 @@ export function TubesBackground({
     >
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full block"
+        className="fixed inset-0 w-full h-full block"
         style={{ touchAction: 'none' }}
       />
 
       {/* Subtle vignette overlay for depth */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="fixed inset-0 pointer-events-none"
         style={{
           background:
             'radial-gradient(ellipse at center, transparent 40%, rgba(10,10,11,0.5) 100%)',
@@ -99,7 +99,7 @@ export function TubesBackground({
 
       {/* Fade transition while loading — hidden once loaded or if CDN fails */}
       <div
-        className="absolute inset-0 bg-surface transition-opacity duration-1000 pointer-events-none"
+        className="fixed inset-0 bg-surface transition-opacity duration-1000 pointer-events-none"
         style={{ opacity: isLoaded || loadFailed ? 0 : 1 }}
       />
 
