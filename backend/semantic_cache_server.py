@@ -2159,6 +2159,13 @@ class SemanticCacheService:
                     T._near_misses = T._near_misses[-100:]
 
         # ── 5) Cache miss — LLM call + two-phase storage ──
+        # Store the best similarity seen so lookup() can include it in metadata
+        # (otherwise lookup() always returns similarity=0.0 on a miss).
+        T._last_miss_similarity = getattr(T, '_last_miss_similarity', 0.0)
+        if candidates:
+            T._last_miss_similarity = round(candidates[0][1], 4)  # best cosine
+        else:
+            T._last_miss_similarity = 0.0
         T.misses += 1
         response_text = call_llm(messages, temperature, user_id, model=model)
 
@@ -2212,24 +2219,33 @@ class SemanticCacheService:
                     pass
                 except Exception:
                     pass
-            T.rows.append(entry)
-            # Invalidate cached Pinecone hash lookup so it's rebuilt with the new entry
-            if hasattr(T, '_hash_lookup'):
-                T._hash_lookup = None
-            # Add to FAISS immediately so semantic search works for the next query
+            # FAISS index position must equal T.rows index — only append
+            # to T.rows when we also add to FAISS.  Entries without embeddings
+            # are still reachable via T.exact / T.norm_hash_index for exact/hash
+            # lookups, but skipping T.rows prevents index misalignment that
+            # would cause every subsequent semantic search to return wrong entries.
             if query_emb is not None:
+                T.rows.append(entry)
+                # Invalidate cached Pinecone hash lookup so it's rebuilt with the new entry
+                if hasattr(T, '_hash_lookup'):
+                    T._hash_lookup = None
                 self._faiss_add(T, query_emb, tenant_id=tenant_id, entry_id=prompt_hash,
                                 metadata={"model": model, "domain": entry_domain})
-            # Also compute and add local embedding for the pre-filter gate
-            if LOCAL_MODEL_ENABLED:
-                try:
-                    local_text = deep_normalize(prompt_norm)
-                    local_emb = get_local_embedding(local_text)
-                    if local_emb is not None:
-                        entry.local_embedding = local_emb
-                        self._local_faiss_add(T, local_emb)
-                except Exception:
-                    pass
+                # Also compute and add local embedding for the pre-filter gate
+                if LOCAL_MODEL_ENABLED:
+                    try:
+                        local_text = deep_normalize(prompt_norm)
+                        local_emb = get_local_embedding(local_text)
+                        if local_emb is not None:
+                            entry.local_embedding = local_emb
+                            self._local_faiss_add(T, local_emb)
+                    except Exception:
+                        pass
+            else:
+                error_log.warning(
+                    f"{tenant_id} | skipping T.rows/FAISS (no embedding) | "
+                    f"entry still in exact/hash indexes | key={prompt_norm[:80]}"
+                )
 
         # Phase 2 (background): persistence + enrichment only
         try:
@@ -2332,7 +2348,11 @@ class SemanticCacheService:
             latency = round((time.time() - t0) * 1000, 2)
             # Undo the miss counter increment that query() did before calling call_llm
             T.misses = max(0, T.misses - 1)
-            return None, {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "miss"}
+            # Include the best similarity score the engine found (even though
+            # it wasn't high enough for a hit).  This lets the frontend show
+            # "MISS · 68.2% match" so users can see the engine IS working.
+            best_sim = getattr(T, '_last_miss_similarity', 0.0)
+            return None, {"hit": "miss", "similarity": best_sim, "latency_ms": latency, "strategy": "miss"}
         finally:
             globals()["call_llm"] = _original
 
@@ -2406,21 +2426,26 @@ class SemanticCacheService:
                     pass
                 except Exception:
                     pass
-            T.rows.append(entry)
-            # Add to FAISS immediately so semantic search works for the next query
+            # Only append to T.rows when we also add to FAISS — keeps
+            # FAISS index positions aligned with T.rows indices.
             if emb is not None:
+                T.rows.append(entry)
                 self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
                                 metadata={"model": model, "domain": entry_domain})
-            # Also compute and add local embedding for the pre-filter gate
-            if LOCAL_MODEL_ENABLED:
-                try:
-                    local_text = deep_normalize(prompt_norm)
-                    local_emb = get_local_embedding(local_text)
-                    if local_emb is not None:
-                        entry.local_embedding = local_emb
-                        self._local_faiss_add(T, local_emb)
-                except Exception:
-                    pass
+                if LOCAL_MODEL_ENABLED:
+                    try:
+                        local_text = deep_normalize(prompt_norm)
+                        local_emb = get_local_embedding(local_text)
+                        if local_emb is not None:
+                            entry.local_embedding = local_emb
+                            self._local_faiss_add(T, local_emb)
+                    except Exception:
+                        pass
+            else:
+                error_log.warning(
+                    f"{tenant_id} | store_miss skipping T.rows/FAISS (no embedding) | "
+                    f"entry still in exact/hash indexes | key={prompt_norm[:80]}"
+                )
 
         access_log.info(
             f"{tenant_id} | store_miss | phase1 done | exact+hash+faiss stored | "
@@ -4288,9 +4313,12 @@ def openai_compatible(request: Request, body: ChatRequest, tenant: str = Depends
     if guard_err:
         raise HTTPException(status_code=400, detail=guard_err)
 
-    prompt_norm = SemanticCacheService.norm_text(
-        " ".join([m["content"] for m in messages if m.get("role") == "user"]) or ""
-    )
+    # Use only the LAST user message for cache keying — must match what
+    # _get_embedding_for_query() embeds (line 1488).  Joining ALL user
+    # messages pollutes the key with conversation history, making the
+    # second query's prompt_norm completely different from the first.
+    _user_msgs = [m["content"] for m in messages if m.get("role") == "user"]
+    prompt_norm = SemanticCacheService.norm_text(_user_msgs[-1] if _user_msgs else "")
 
     try:
         user_id = _ctx.get("user_id")
