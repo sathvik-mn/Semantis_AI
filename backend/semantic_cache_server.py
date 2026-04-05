@@ -2169,14 +2169,23 @@ class SemanticCacheService:
         meta = {"hit": "miss", "similarity": 0.0, "latency_ms": latency, "strategy": "miss"}
         self._append_event(T, tenant_id, prompt_hash, "miss", 0.0, latency)
 
-        # Phase 1 (synchronous): exact + hash indexes — guarantees next
-        # identical/normalized query is a cache hit regardless of embedding health.
+        # Phase 1 (synchronous): exact + hash + embedding + FAISS
+        # Embedding MUST be computed synchronously so the FAISS index is
+        # populated before the next query arrives.
         user_text = " ".join(m["content"] for m in messages if m.get("role") == "user") or prompt_norm
         entry_domain = domain_hint(user_text)
+
+        # Ensure we have an embedding — compute now if semantic search was skipped
+        if query_emb is None:
+            try:
+                query_emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
+            except Exception as emb_err:
+                error_log.warning(f"{tenant_id} | embedding failed (non-fatal): {emb_err}")
+
         entry = CacheEntry(
             prompt_norm=prompt_norm,
             response_text=response_text,
-            embedding=query_emb,  # may be None if semantic search was skipped
+            embedding=query_emb,
             model=model,
             ttl_seconds=ttl_seconds,
             domain=entry_domain,
@@ -2207,30 +2216,30 @@ class SemanticCacheService:
             # Invalidate cached Pinecone hash lookup so it's rebuilt with the new entry
             if hasattr(T, '_hash_lookup'):
                 T._hash_lookup = None
-            # If we already have the embedding from semantic search, add to FAISS now
+            # Add to FAISS immediately so semantic search works for the next query
             if query_emb is not None:
                 self._faiss_add(T, query_emb, tenant_id=tenant_id, entry_id=prompt_hash,
                                 metadata={"model": model, "domain": entry_domain})
+            # Also compute and add local embedding for the pre-filter gate
+            if LOCAL_MODEL_ENABLED:
+                try:
+                    local_text = deep_normalize(prompt_norm)
+                    local_emb = get_local_embedding(local_text)
+                    if local_emb is not None:
+                        entry.local_embedding = local_emb
+                        self._local_faiss_add(T, local_emb)
+                except Exception:
+                    pass
 
-        # Phase 2 (background): embeddings (if missing), DB, Redis, enrichment
+        # Phase 2 (background): persistence + enrichment only
         try:
             _query_org_id = _current_api_key_var.get().get("org_id")
         except Exception:
             _query_org_id = None
 
-        def _embed_and_persist():
+        def _persist_and_enrich():
             try:
                 emb = entry.embedding
-                if emb is None:
-                    try:
-                        emb, _ = self._get_embedding_for_query(messages, user_id=user_id)
-                        with self._cache_lock:
-                            entry.embedding = emb
-                            self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
-                                            metadata={"model": model, "domain": entry_domain})
-                    except Exception as emb_err:
-                        error_log.warning(f"{tenant_id} | embedding failed (non-fatal): {emb_err}")
-
                 if len(T.rows) % 10 == 0:
                     self._save_cache()
 
@@ -2259,45 +2268,17 @@ class SemanticCacheService:
                 except Exception as _db_err:
                     error_log.warning(f"DB cache store failed: {_db_err}")
 
-                # Enrichment: response + local embeddings
-                # Use batch embedding when both query and response need embedding
-                # (single API call instead of two — saves ~200-800ms)
+                # Enrichment: response embedding for query-to-response matching
                 try:
                     resp_emb = None
                     resp_text_for_embed = response_text[:500]
+                    try:
+                        resp_emb = get_embedding(resp_text_for_embed, user_id=user_id, is_query=False)
+                    except Exception:
+                        pass
 
-                    # Batch: if query embedding is missing AND we need response embedding,
-                    # generate both in a single API call
-                    if emb is None:
-                        try:
-                            batch_results = get_embeddings_batch(
-                                [prompt_norm, resp_text_for_embed],
-                                user_id=user_id,
-                                is_query=False,  # both stored as documents
-                            )
-                            if len(batch_results) >= 2:
-                                emb = batch_results[0]
-                                resp_emb = batch_results[1]
-                                with self._cache_lock:
-                                    entry.embedding = emb
-                                    self._faiss_add(T, emb, tenant_id=tenant_id, entry_id=prompt_hash,
-                                                    metadata={"model": model, "domain": entry_domain})
-                        except Exception:
-                            pass
-                    else:
-                        # Only need response embedding
-                        try:
-                            resp_emb = get_embedding(resp_text_for_embed, user_id=user_id, is_query=False)
-                        except Exception:
-                            pass
-
-                    local_text = deep_normalize(prompt_norm)
-                    local_emb = get_local_embedding(local_text) if LOCAL_MODEL_ENABLED else None
                     with self._cache_lock:
                         entry.response_embedding = resp_emb
-                        entry.local_embedding = local_emb
-                        if local_emb is not None:
-                            self._local_faiss_add(T, local_emb)
                         if resp_emb is not None:
                             row_idx = T.rows.index(entry) if entry in T.rows else len(T.rows) - 1
                             self._response_faiss_add(T, resp_emb, row_idx)
@@ -2306,9 +2287,9 @@ class SemanticCacheService:
                 except Exception:
                     pass
             except Exception as e:
-                error_log.warning(f"Cache embed/persist failed (non-fatal) | tenant={tenant_id} | {e}")
+                error_log.warning(f"Cache persist/enrich failed (non-fatal) | tenant={tenant_id} | {e}")
 
-        _bg_executor.submit(_embed_and_persist)
+        _bg_executor.submit(_persist_and_enrich)
 
         return response_text, meta
 
