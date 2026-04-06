@@ -241,10 +241,12 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       // Build conversation history for context carryover.
       // Include previous user/assistant turns so the LLM can handle
       // follow-up questions like "what does it mean?" after a prior answer.
-      const conversationMessages = messages
+      const allMessages = messages
         .filter(m => m.content && !m.isStreaming)
         .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-      conversationMessages.push({ role: 'user', content: userMessage.content });
+      allMessages.push({ role: 'user', content: userMessage.content });
+      // Only send the last 50 messages to stay within the API limit
+      const conversationMessages = allMessages.slice(-50);
 
       // Real SSE streaming — chunks appear as they arrive from the backend
       const { stream, meta: streamMeta } = await sendChatCompletionStream({
