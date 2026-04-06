@@ -5,6 +5,8 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { Key, ExternalLink, Copy, Trash2, Clock, Send, Bot, User, Zap, Gauge, Layers, Sparkles } from 'lucide-react';
 
 const MAX_HISTORY = 50;
+const MAX_API_MESSAGES = 50;          // hard backend limit
+const DEFAULT_CONTEXT_TURNS = 10;     // default recent turns sent to LLM
 const MESSAGES_KEY_PREFIX = 'semantys_chat_messages_';
 const HISTORY_KEY_PREFIX = 'semantys_chat_history_';
 
@@ -82,6 +84,12 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
       return stored !== null ? parseFloat(stored) : 0.2;
     } catch { return 0.2; }
   });
+  const [contextTurns, setContextTurnsState] = useState(() => {
+    try {
+      const stored = localStorage.getItem('semantys_playground_context_turns');
+      return stored !== null ? parseInt(stored, 10) : DEFAULT_CONTEXT_TURNS;
+    } catch { return DEFAULT_CONTEXT_TURNS; }
+  });
 
   const setModel = useCallback((value: string) => {
     setModelState(value);
@@ -91,6 +99,11 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
   const setTemperature = useCallback((value: number) => {
     setTemperatureState(value);
     try { localStorage.setItem('semantys_playground_temperature', String(value)); } catch {}
+  }, []);
+
+  const setContextTurns = useCallback((value: number) => {
+    setContextTurnsState(value);
+    try { localStorage.setItem('semantys_playground_context_turns', String(value)); } catch {}
   }, []);
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [isLoading, setIsLoading] = useState(false);
@@ -245,10 +258,13 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
         .filter(m => m.content && !m.isStreaming)
         .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
       allMessages.push({ role: 'user', content: userMessage.content });
-      // Only send the last 50 messages to stay within the API limit.
+      // Prioritize recent context: take the last N turns (user+assistant pairs)
+      // so the LLM focuses on the current topic, not old conversation history.
+      // Also cap at MAX_API_MESSAGES to stay within the backend validation limit.
+      const maxMessages = Math.min(contextTurns * 2, MAX_API_MESSAGES);
+      let trimmed = allMessages.slice(-maxMessages);
       // Ensure the window starts on a user message so we never send an
       // orphaned assistant reply without its preceding question.
-      let trimmed = allMessages.slice(-50);
       if (trimmed.length > 0 && trimmed[0].role === 'assistant') {
         trimmed = trimmed.slice(1);
       }
@@ -569,6 +585,15 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
                 type="range" min="0" max="1" step="0.1"
                 value={temperature}
                 onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                style={{ width: '120px', cursor: 'pointer' }}
+              />
+            </div>
+            <div style={styles.settingItem}>
+              <label style={styles.settingLabel}>Context: {contextTurns} turns</label>
+              <input
+                type="range" min="1" max="25" step="1"
+                value={contextTurns}
+                onChange={(e) => setContextTurns(parseInt(e.target.value, 10))}
                 style={{ width: '120px', cursor: 'pointer' }}
               />
             </div>
