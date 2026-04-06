@@ -245,8 +245,14 @@ export function QueryPlayground({ onQueryComplete }: QueryPlaygroundProps) {
         .filter(m => m.content && !m.isStreaming)
         .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
       allMessages.push({ role: 'user', content: userMessage.content });
-      // Only send the last 50 messages to stay within the API limit
-      const conversationMessages = allMessages.slice(-50);
+      // Only send the last 50 messages to stay within the API limit.
+      // Ensure the window starts on a user message so we never send an
+      // orphaned assistant reply without its preceding question.
+      let trimmed = allMessages.slice(-50);
+      if (trimmed.length > 0 && trimmed[0].role === 'assistant') {
+        trimmed = trimmed.slice(1);
+      }
+      const conversationMessages = trimmed;
 
       // Real SSE streaming — chunks appear as they arrive from the backend
       const { stream, meta: streamMeta } = await sendChatCompletionStream({

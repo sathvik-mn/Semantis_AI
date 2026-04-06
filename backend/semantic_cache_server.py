@@ -1968,10 +1968,24 @@ class SemanticCacheService:
                         if query_to_resp_sim < 0.35:
                             continue
                         text_sims = compute_text_similarity(query_text, entry.prompt_norm, query_deep_norm=_query_deep_norm)
-                        # Use response similarity as the primary score (it
-                        # measures "does this answer address the question?")
+                        # Compute real prompt-to-prompt cosine so that
+                        # downstream decision logic (threshold checks, rescue
+                        # gate) operates on actual query similarity, not the
+                        # response similarity that found this candidate.
+                        if entry.embedding is not None and query_emb is not None:
+                            _e = entry.embedding.astype("float32").ravel()
+                            _q = query_emb.astype("float32").ravel()
+                            prompt_cosine = float(np.dot(
+                                _q / (np.linalg.norm(_q) + 1e-12),
+                                _e / (np.linalg.norm(_e) + 1e-12),
+                            ))
+                        else:
+                            prompt_cosine = 0.0
+                        # Use response similarity to drive ranking (hybrid
+                        # score) but store real prompt cosine for threshold
+                        # decisions downstream.
                         h_score = hybrid_score(query_to_resp_sim, text_sims["text_sim"])
-                        candidates.append((entry, query_to_resp_sim, text_sims, h_score, row_idx))
+                        candidates.append((entry, prompt_cosine, text_sims, h_score, row_idx))
                         existing_rows.add(row_idx)
                         semantic_log.debug(
                             f"{tenant_id} | resp_index_candidate | resp_sim={query_to_resp_sim:.3f} | "
